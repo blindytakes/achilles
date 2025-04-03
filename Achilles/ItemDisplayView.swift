@@ -162,3 +162,18 @@ func daySuffix(for date: Date) -> String {
         }
     }
 }
+
+func formattedDateWithSuffix(_ date: Date) -> String {
+    let day = Calendar.current.component(.day, from: date)
+    let suffix = daySuffix(for: date)
+
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMMM"
+    let month = formatter.string(from: date)
+
+    formatter.dateFormat = "yyyy"
+    let year = formatter.string(from: date)
+
+    return "\(month) \(day)\(suffix), \(year)"
+}
+

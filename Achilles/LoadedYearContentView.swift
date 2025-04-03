@@ -112,7 +112,7 @@ struct LoadedYearContentView: View {
                     .padding(.horizontal, 2) // Match horizontal spacing
                 } else if featuredItem != nil {
                     // Message if only featured item exists
-                    Text("No other items found for this day.")
+                    Text("Take More Photos!")
                         .foregroundColor(.secondary)
                         .padding()
                     Spacer()
@@ -149,16 +149,30 @@ struct LoadedYearContentView: View {
         }
     }
 
-    // Removed: fetchLocationText function (Was for ZoomablePhotoView)
-
-    // Formatter for Date (Adjust format as desired)
+    // Formatter for Date with Suffix
     private func formattedDate(from date: Date) -> String {
         let formatter = DateFormatter()
-        // Example format: "MMMM d" (e.g., "April 2")
-        // Use "MMMM d, yyyy" if you want the year too, but actualYear is separate
         formatter.dateFormat = "MMMM d"
-        return formatter.string(from: date)
+        let baseDate = formatter.string(from: date)
+
+        let calendar = Calendar.current
+        let day = calendar.component(.day, from: date)
+        let suffix: String
+        switch day {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch day % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+
+        let year = calendar.component(.year, from: date)
+        return baseDate + suffix + ", \(year)"
     }
 }
 
 // Removed: struct ZoomablePhotoView (Use MediaDetailView/ItemDisplayView instead)
+
