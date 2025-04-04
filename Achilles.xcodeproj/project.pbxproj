@@ -23,10 +23,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		2AEE438F2DA013B900EA2836 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		2A8092ED2D98827F00EED088 /* Achilles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Achilles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A8092FD2D98828000EED088 /* AchillesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AchillesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A8093072D98828000EED088 /* AchillesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AchillesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2AEE43762DA013B800EA2836 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		2AEE43782DA013B800EA2836 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -91,6 +106,7 @@
 				2A8092EF2D98827F00EED088 /* Achilles */,
 				2A8093002D98828000EED088 /* AchillesTests */,
 				2A80930A2D98828000EED088 /* AchillesUITests */,
+				2AEE43752DA013B800EA2836 /* Frameworks */,
 				2A8092EE2D98827F00EED088 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -105,6 +121,15 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		2AEE43752DA013B800EA2836 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				2AEE43762DA013B800EA2836 /* WidgetKit.framework */,
+				2AEE43782DA013B800EA2836 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -115,6 +140,7 @@
 				2A8092E92D98827F00EED088 /* Sources */,
 				2A8092EA2D98827F00EED088 /* Frameworks */,
 				2A8092EB2D98827F00EED088 /* Resources */,
+				2AEE438F2DA013B900EA2836 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);

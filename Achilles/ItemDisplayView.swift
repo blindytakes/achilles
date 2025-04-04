@@ -21,6 +21,7 @@ struct ItemDisplayView: View {
 
     @State private var viewState: DetailViewState = .loading
     @State private var controlsHidden: Bool = false
+    @State private var zoomScale: CGFloat = 1.0
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -30,12 +31,15 @@ struct ItemDisplayView: View {
                 .contentShape(Rectangle())
                 .zIndex(0)
 
-            if showInfoPanel && !controlsHidden {
+            if showInfoPanel {
                 LocationInfoPanelView(asset: item.asset)
                     .background(.ultraThinMaterial)
                     .cornerRadius(15, corners: [.topLeft, .topRight])
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(1)
+                    .onTapGesture {
+                        withAnimation { showInfoPanel = false }
+                    }
             }
         }
         .background(Color.black)
@@ -77,6 +81,7 @@ struct ItemDisplayView: View {
                 ZoomableScrollView(
                     showInfoPanel: $showInfoPanel,
                     controlsHidden: $controlsHidden,
+                    zoomScale: $zoomScale,
                     dismissAction: { dismiss() }
                 ) {
                     Image(uiImage: displayImage)
@@ -147,6 +152,19 @@ struct RoundedCorner: Shape {
     }
 }
 
+struct VideoPlayerPlaceholderView: View {
+    let asset: PHAsset
+    var body: some View {
+        ZStack {
+            Color.black
+            Image(systemName: "play.circle.fill")
+                .font(.system(size: 60, weight: .regular))
+                .foregroundColor(.white.opacity(0.8))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 // MARK: - Date Suffix Helper
 func daySuffix(for date: Date) -> String {
     let calendar = Calendar.current
@@ -161,19 +179,5 @@ func daySuffix(for date: Date) -> String {
         default: return "th"
         }
     }
-}
-
-func formattedDateWithSuffix(_ date: Date) -> String {
-    let day = Calendar.current.component(.day, from: date)
-    let suffix = daySuffix(for: date)
-
-    let formatter = DateFormatter()
-    formatter.dateFormat = "MMMM"
-    let month = formatter.string(from: date)
-
-    formatter.dateFormat = "yyyy"
-    let year = formatter.string(from: date)
-
-    return "\(month) \(day)\(suffix), \(year)"
 }
 
