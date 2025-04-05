@@ -1,9 +1,34 @@
-// This version of FeaturedYearFullScreenView adds a parallax motion effect
-// and sets us up for future widget support.
-
 import SwiftUI
 import Photos
 import CoreMotion
+
+// Custom view modifier to create the drawing animation effect
+struct DrawTextModifier: ViewModifier {
+    let duration: Double
+    let delay: Double
+    @State private var progress: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .mask(
+                GeometryReader { geometry in
+                    Rectangle()
+                        .size(width: geometry.size.width * progress, height: geometry.size.height)
+                }
+            )
+            .onAppear {
+                withAnimation(.easeOut(duration: duration).delay(delay)) {
+                    progress = 1.0
+                }
+            }
+    }
+}
+
+extension View {
+    func animateDrawing(duration: Double = 1.0, delay: Double = 0.0) -> some View {
+        modifier(DrawTextModifier(duration: duration, delay: delay))
+    }
+}
 
 struct FeaturedYearFullScreenView: View {
     let item: MediaItem
@@ -13,9 +38,11 @@ struct FeaturedYearFullScreenView: View {
     @State private var pulseScale: CGFloat = 1.0
     @State private var opacity: Double = 0
     @State private var scale: CGFloat = 1.0
-    @State private var textOffset: CGFloat = 20
     @State private var textOpacity: Double = 0
     @State private var showLoadingTransition: Bool = false
+
+    // Animation states
+    @State private var showText = false
 
     private var yearLabel: String {
         yearsAgo == 1 ? "1 Year Ago" : "\(yearsAgo) Years Ago"
@@ -36,41 +63,15 @@ struct FeaturedYearFullScreenView: View {
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: geometry.size.width, height: geometry.size.height)
                                 .clipped()
-                                .colorMultiply(Color(white: 1.1)) // Slightly brightens the image
-                                .saturation(1.2) // Increases color saturation by 20%
-                                .overlay(
-                                    // Enhanced vignette effect
-                                    RadialGradient(
-                                        gradient: Gradient(colors: [
-                                            .clear,
-                                            .black.opacity(0.3)
-                                        ]),
-                                        center: .center,
-                                        startRadius: 0,
-                                        endRadius: max(geometry.size.width, geometry.size.height) * 0.7
-                                    )
-                                )
-                                .overlay(
-                                    // Enhanced top gradient
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [
-                                            .black.opacity(0.4),
-                                            .clear
-                                        ]),
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .overlay(
-                                    // Enhanced bottom gradient
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [
-                                            .clear,
-                                            .black.opacity(0.4)
-                                        ]),
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
+                                .colorMultiply(Color(white: 1.1))
+                                .saturation(1.3)
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        .clear,
+                                        .black.opacity(0.4)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
                                 )
                                 .scaleEffect(pulseScale * scale)
                                 .ignoresSafeArea()
@@ -88,55 +89,43 @@ struct FeaturedYearFullScreenView: View {
                         }
 
                         VStack(spacing: 16) {
-                            Text(yearLabel)
-                                .font(.custom("PlayfairDisplay-Bold", size: 53))
-                                .foregroundColor(.white)
-                                // Stronger base shadow for better contrast
-                                .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
-                                // Subtle inner glow
-                                .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
-                                // Outer glow for depth
-                                .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 0)
-                                // Text outline effect
-                                .overlay(
-                                    Text(yearLabel)
-                                        .font(.custom("PlayfairDisplay-Bold", size: 53))
-                                        .foregroundColor(.clear)
-                                        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 0)
-                                )
-                                .padding(.horizontal, 20)
-                                .offset(y: textOffset)
-                                .opacity(textOpacity)
-
-                            if let date = item.asset.creationDate {
-                                Text(formattedDate(from: date))
-                                    .font(.custom("PlayfairDisplay-Bold", size: 42))
+                            if showText {
+                                Text(yearLabel)
+                                    .font(.custom("Georgia-Bold", size: 56))
                                     .foregroundColor(.white)
-                                    // Stronger base shadow for better contrast
                                     .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
-                                    // Subtle inner glow
                                     .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
-                                    // Outer glow for depth
                                     .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 0)
-                                    // Text outline effect
                                     .overlay(
-                                        Text(formattedDate(from: date))
-                                            .font(.custom("PlayfairDisplay-Bold", size: 42))
+                                        Text(yearLabel)
+                                            .font(.custom("SnellRoundhand-Bold", size: 56))
                                             .foregroundColor(.clear)
                                             .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 0)
                                     )
                                     .padding(.horizontal, 20)
-                                    .offset(y: textOffset)
-                                    .opacity(textOpacity)
+                                    .opacity(textOpacity) // No animateDrawing here
+
+                                if let date = item.asset.creationDate {
+                                    Text(formattedDate(from: date))
+                                        .font(.custom("SnellRoundhand-Bold", size: 50))
+                                        .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
+                                        .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
+                                        .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 0)
+                                        .offset(y: -15) // pushes it up by 10 points
+                                        .overlay(
+                                            Text(formattedDate(from: date))
+                                                .font(.custom("SnellRoundhand-Bold", size: 45))
+                                                .foregroundColor(.clear)
+                                                .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 0)
+                                        )
+                                        .padding(.horizontal, 20)
+                                        .opacity(textOpacity)
+                                        .animateDrawing(duration: 1.1, delay: 0.9)
+                                }
                             }
                         }
                         .padding(.top, geometry.size.height * 0.55)
-                        .onAppear {
-                            withAnimation(.easeOut(duration: 0.8)) {
-                                textOffset = 0
-                                textOpacity = 1
-                            }
-                        }
                     }
                 }
             }
@@ -144,18 +133,25 @@ struct FeaturedYearFullScreenView: View {
         .onAppear {
             requestImage()
             startPulseAnimation()
-            // Reset scale on appear
             scale = 1.0
-            textOffset = 20
             textOpacity = 0
+            showText = false
             showLoadingTransition = false
+
+            withAnimation(.easeIn(duration: 0.5).delay(0.2)) {
+                textOpacity = 1
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                showText = true
+            }
         }
         .onDisappear {
             opacity = 0
             textOpacity = 0
+            showText = false
         }
         .onChange(of: item) { _, _ in
-            // Animate scale when item changes (during swipe)
             withAnimation(.easeInOut(duration: 0.2)) {
                 scale = 0.97
             }
@@ -163,6 +159,16 @@ struct FeaturedYearFullScreenView: View {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     scale = 1.0
                 }
+            }
+
+            textOpacity = 0
+            showText = false
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeIn(duration: 0.5)) {
+                    textOpacity = 1
+                }
+                showText = true
             }
         }
     }
@@ -192,7 +198,7 @@ struct FeaturedYearFullScreenView: View {
         withAnimation(.easeInOut(duration: 0.5).repeatCount(1, autoreverses: true)) {
             pulseScale = 1.05
         }
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             withAnimation(.easeInOut(duration: 0.5)) {
                 pulseScale = 1.0
@@ -223,5 +229,4 @@ struct FeaturedYearFullScreenView: View {
         return baseDate + suffix + ", \(year)"
     }
 }
-
 
