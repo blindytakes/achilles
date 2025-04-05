@@ -170,20 +170,28 @@ struct PhotoWidgetEntryView: View {
                 VStack {
                     Spacer()
 
-                    // Inner VStack containing the text
-                    VStack(spacing: 2) {
+                    VStack(spacing: 0) {
                         Text(entry.yearsAgoText)
-                            .font(.custom("SnellRoundhand-Bold", size: min(geometry.size.width, geometry.size.height) * 0.16)) // Doubled the size
+                            .font(.system(
+                                size: min(geometry.size.width, geometry.size.height) * 0.12,
+                                weight: .semibold,
+                                design: .default
+                            ))
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
                             .frame(maxWidth: .infinity, alignment: .center)
 
                         Text(entry.formattedDate)
-                            .font(.custom("SnellRoundhand-Bold", size: min(geometry.size.width, geometry.size.height) * 0.12)) // Doubled the size
+                            .font(.system(
+                                size: min(geometry.size.width, geometry.size.height) * 0.11,
+                                weight: .regular,
+                                design: .default
+                            ))
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
+
                     .padding(.bottom, geometry.size.height * 0.06)  // Increased padding to move the text up
                     .padding(.horizontal, geometry.size.width * 0.05)
                     .background(Color.black.opacity(0.05))
