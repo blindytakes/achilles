@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2A8232862DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232842DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf */; };
+		2A8232872DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		2A8092FE2D98828000EED088 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -40,6 +45,8 @@
 		2A8092ED2D98827F00EED088 /* Achilles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Achilles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A8092FD2D98828000EED088 /* AchillesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AchillesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A8093072D98828000EED088 /* AchillesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AchillesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2A8232842DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-Italic-VariableFont_wght.ttf"; sourceTree = "<group>"; };
+		2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-VariableFont_wght.ttf"; sourceTree = "<group>"; };
 		2AEE43762DA013B800EA2836 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		2AEE43782DA013B800EA2836 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -103,6 +110,8 @@
 		2A8092E42D98827F00EED088 = {
 			isa = PBXGroup;
 			children = (
+				2A8232842DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf */,
+				2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */,
 				2A8092EF2D98827F00EED088 /* Achilles */,
 				2A8093002D98828000EED088 /* AchillesTests */,
 				2A80930A2D98828000EED088 /* AchillesUITests */,
@@ -251,6 +260,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2A8232862DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf in Resources */,
+				2A8232872DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
