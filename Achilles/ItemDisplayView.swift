@@ -89,6 +89,7 @@ struct ItemDisplayView: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black)
+                        .offset(y: -20)
                 }
             case .unsupported:
                 Text("Unsupported image state?")
@@ -180,4 +181,5 @@ func daySuffix(for date: Date) -> String {
         }
     }
 }
+
 

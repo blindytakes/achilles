@@ -28,77 +28,114 @@ struct FeaturedYearFullScreenView: View {
                     onTap()
                 }
             } else {
-                ZStack(alignment: .top) {
-                    if let image = image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .overlay(
-                                // Vignette effect
-                                RadialGradient(
-                                    gradient: Gradient(colors: [
-                                        Color.black.opacity(0.0),
-                                        Color.black.opacity(0.3)
-                                    ]),
-                                    center: .center,
-                                    startRadius: 0,
-                                    endRadius: max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * 0.7
+                GeometryReader { geometry in
+                    ZStack(alignment: .top) {
+                        if let image = image {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                                .clipped()
+                                .colorMultiply(Color(white: 1.1)) // Slightly brightens the image
+                                .saturation(1.2) // Increases color saturation by 20%
+                                .overlay(
+                                    // Enhanced vignette effect
+                                    RadialGradient(
+                                        gradient: Gradient(colors: [
+                                            .clear,
+                                            .black.opacity(0.3)
+                                        ]),
+                                        center: .center,
+                                        startRadius: 0,
+                                        endRadius: max(geometry.size.width, geometry.size.height) * 0.7
+                                    )
                                 )
-                            )
-                            .overlay(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [
-                                        Color.black.opacity(0.6),
-                                        Color.clear,
-                                        Color.black.opacity(0.6)
-                                    ]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
+                                .overlay(
+                                    // Enhanced top gradient
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            .black.opacity(0.4),
+                                            .clear
+                                        ]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
                                 )
-                            )
-                            .scaleEffect(pulseScale * scale)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    showLoadingTransition = true
-                                }
-                            }
-                    } else {
-                        ZStack {
-                            Color(.systemGray4)
+                                .overlay(
+                                    // Enhanced bottom gradient
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            .clear,
+                                            .black.opacity(0.4)
+                                        ]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .scaleEffect(pulseScale * scale)
                                 .ignoresSafeArea()
-                            ProgressView()
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        showLoadingTransition = true
+                                    }
+                                }
+                        } else {
+                            ZStack {
+                                Color(.systemGray4)
+                                    .ignoresSafeArea()
+                                ProgressView()
+                            }
                         }
-                    }
 
-                    VStack(spacing: 16) {
-                        Text(yearLabel)
-                            .font(.custom("PlayfairDisplay-Bold", size: 53))
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
-                            .shadow(color: .white.opacity(0.2), radius: 10, x: 0, y: 0)
-                            .padding(.horizontal, 20)
-                            .offset(y: textOffset)
-                            .opacity(textOpacity)
-
-                        if let date = item.asset.creationDate {
-                            Text(formattedDate(from: date))
-                                .font(.custom("PlayfairDisplay-Regular", size: 35))
-                                .foregroundColor(.white.opacity(0.9))
-                                .shadow(color: .black.opacity(0.5), radius: 6, x: 0, y: 2)
-                                .shadow(color: .white.opacity(0.2), radius: 8, x: 0, y: 0)
+                        VStack(spacing: 16) {
+                            Text(yearLabel)
+                                .font(.custom("PlayfairDisplay-Bold", size: 53))
+                                .foregroundColor(.white)
+                                // Stronger base shadow for better contrast
+                                .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
+                                // Subtle inner glow
+                                .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
+                                // Outer glow for depth
+                                .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 0)
+                                // Text outline effect
+                                .overlay(
+                                    Text(yearLabel)
+                                        .font(.custom("PlayfairDisplay-Bold", size: 53))
+                                        .foregroundColor(.clear)
+                                        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 0)
+                                )
                                 .padding(.horizontal, 20)
                                 .offset(y: textOffset)
                                 .opacity(textOpacity)
+
+                            if let date = item.asset.creationDate {
+                                Text(formattedDate(from: date))
+                                    .font(.custom("PlayfairDisplay-Bold", size: 42))
+                                    .foregroundColor(.white)
+                                    // Stronger base shadow for better contrast
+                                    .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
+                                    // Subtle inner glow
+                                    .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
+                                    // Outer glow for depth
+                                    .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 0)
+                                    // Text outline effect
+                                    .overlay(
+                                        Text(formattedDate(from: date))
+                                            .font(.custom("PlayfairDisplay-Bold", size: 42))
+                                            .foregroundColor(.clear)
+                                            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 0)
+                                    )
+                                    .padding(.horizontal, 20)
+                                    .offset(y: textOffset)
+                                    .opacity(textOpacity)
+                            }
                         }
-                    }
-                    .padding(.top, UIScreen.main.bounds.height * 0.4)
-                    .onAppear {
-                        withAnimation(.easeOut(duration: 0.8)) {
-                            textOffset = 0
-                            textOpacity = 1
+                        .padding(.top, geometry.size.height * 0.55)
+                        .onAppear {
+                            withAnimation(.easeOut(duration: 0.8)) {
+                                textOffset = 0
+                                textOpacity = 1
+                            }
                         }
                     }
                 }

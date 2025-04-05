@@ -22,19 +22,46 @@ struct GridItemView: View {
             if let thumbnail = thumbnail {
                 Image(uiImage: thumbnail)
                     .resizable()
-                    // --- Revert to .scaledToFill ---
                     .scaledToFill()
-                    // --- Apply square frame ---
                     .frame(maxWidth: .infinity)
                     .aspectRatio(1, contentMode: .fit)
-
                     .clipped()
-                    // Fade-in animation
                     .opacity(showImage ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: showImage)
                     .onAppear {
                          DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { showImage = true }
                     }
+                    .overlay(
+                        Group {
+                            if item.asset.mediaType == .video {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 20))
+                                    Text(formattedDuration(item.asset.duration))
+                                        .font(.caption2.bold())
+                                }
+                                .foregroundColor(.white)
+                                .padding(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            Color.black.opacity(0.9),
+                                            Color.black.opacity(0.7)
+                                        ]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                                )
+                                .padding(8)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                            }
+                        }
+                    )
             } else {
                 // Progress view constrained within the frame
                 ZStack { // Use ZStack to add background color behind ProgressView
@@ -43,17 +70,6 @@ struct GridItemView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .aspectRatio(1, contentMode: .fit)
-            }
-
-            // Duration label for videos (styling remains the same)
-            if item.asset.mediaType == .video {
-                Text(formattedDuration(item.asset.duration))
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .padding(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
-                    .background(Color.black.opacity(0.6))
-                    .clipShape(Capsule())
-                    .padding(5)
             }
         }
         // --- Apply frame, cornerRadius, and clipping to the ZStack container ---
@@ -100,3 +116,4 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
+
