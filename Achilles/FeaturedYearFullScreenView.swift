@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 import Photos
 import CoreMotion
 
@@ -40,8 +41,6 @@ struct FeaturedYearFullScreenView: View {
     @State private var scale: CGFloat = 1.0
     @State private var textOpacity: Double = 0
     @State private var showLoadingTransition: Bool = false
-
-    // Animation states
     @State private var showText = false
 
     private var yearLabel: String {
@@ -82,8 +81,7 @@ struct FeaturedYearFullScreenView: View {
                                 }
                         } else {
                             ZStack {
-                                Color(.systemGray4)
-                                    .ignoresSafeArea()
+                                Color(.systemGray4).ignoresSafeArea()
                                 ProgressView()
                             }
                         }
@@ -103,7 +101,7 @@ struct FeaturedYearFullScreenView: View {
                                             .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 0)
                                     )
                                     .padding(.horizontal, 20)
-                                    .opacity(textOpacity) // No animateDrawing here
+                                    .opacity(textOpacity)
 
                                 if let date = item.asset.creationDate {
                                     Text(formattedDate(from: date))
@@ -112,7 +110,7 @@ struct FeaturedYearFullScreenView: View {
                                         .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 2)
                                         .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
                                         .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 0)
-                                        .offset(y: -15) // pushes it up by 10 points
+                                        .offset(y: -15)
                                         .overlay(
                                             Text(formattedDate(from: date))
                                                 .font(.custom("SnellRoundhand-Bold", size: 45))
@@ -188,8 +186,34 @@ struct FeaturedYearFullScreenView: View {
         ) { img, _ in
             if let img = img {
                 withAnimation(.easeIn(duration: 0.5)) {
+                    self.image = img // Keep original image for full-screen view
                     self.image = img
+                    saveFeaturedPhotoToSharedContainer(image: img)
                 }
+            }
+        }
+    }
+
+    private func saveFeaturedPhotoToSharedContainer(image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+
+        if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.plzwork.Achilles") {
+            let fileURL = containerURL.appendingPathComponent("featured.jpg")
+
+            do {
+                try data.write(to: fileURL)
+                print("✅ Featured photo saved for widget.")
+
+                if let creationDate = item.asset.creationDate {
+                    let timestamp = creationDate.timeIntervalSince1970
+                    let dateFileURL = containerURL.appendingPathComponent("featured_date.txt")
+                    try? "\(timestamp)".write(to: dateFileURL, atomically: true, encoding: .utf8)
+                }
+
+                WidgetCenter.shared.reloadAllTimelines()
+
+            } catch {
+                print("❌ Error saving image to shared container: \(error)")
             }
         }
     }
@@ -229,4 +253,3 @@ struct FeaturedYearFullScreenView: View {
         return baseDate + suffix + ", \(year)"
     }
 }
-
