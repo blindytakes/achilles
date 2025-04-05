@@ -221,7 +221,6 @@ struct ShareableItem: Identifiable {
     let items: [Any]
 }
 
-
 // MARK: - UIActivityViewControllerRepresentable (Unchanged)
 struct ActivityViewControllerRepresentable: UIViewControllerRepresentable {
     var activityItems: [Any]
