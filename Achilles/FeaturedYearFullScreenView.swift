@@ -2,6 +2,76 @@ import SwiftUI
 import WidgetKit
 import Photos
 
+// Custom modifier for handwriting animation
+struct HandwritingAnimationModifier: ViewModifier {
+    let duration: Double
+    let delay: Double
+    
+    @State private var progress: CGFloat = 0
+    @State private var opacity: CGFloat = 0
+    @State private var scale: CGFloat = 0.95
+    
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .scaleEffect(scale)
+            .mask(
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                            .fill(LinearGradient(
+                                gradient: Gradient(colors: [.black, .clear]),
+                                startPoint: .trailing,
+                                endPoint: .leading
+                            ))
+                            .frame(width: geo.size.width * 0.15) // Gradient edge width
+                            .offset(x: progress * geo.size.width - geo.size.width * 0.15)
+                        
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(width: progress * geo.size.width, height: geo.size.height)
+                    }
+                }
+            )
+            .onAppear {
+                // Reset then animate
+                progress = 0
+                opacity = 0
+                scale = 0.95
+                
+                // First fade in - immediate
+                withAnimation(.easeIn(duration: duration * 0.15)) {
+                    opacity = 1.0
+                }
+                
+                // Then write out the text - minimal delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay * 0.5) {
+                    withAnimation(.easeOut(duration: duration)) {
+                        progress = 1.0
+                    }
+                    
+                    // Subtle flourish at the end
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay + duration * 0.8) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            scale = 1.02
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                                scale = 1.0
+                            }
+                        }
+                    }
+                }
+            }
+    }
+}
+
+extension View {
+    func handwritingAnimation(duration: Double = 1.5, delay: Double = 0.2) -> some View {
+        self.modifier(HandwritingAnimationModifier(duration: duration, delay: delay))
+    }
+}
+
 struct FeaturedYearFullScreenView: View {
     let item: MediaItem
     let yearsAgo: Int
@@ -14,6 +84,7 @@ struct FeaturedYearFullScreenView: View {
     @State private var showLoadingTransition: Bool = false
     @State private var showText = false
     @State private var triggerAnimation = false
+    @State private var dateAnimationProgress: CGFloat = 0
 
     private var yearLabel: String {
         yearsAgo == 1 ? "1 Year Ago" : "\(yearsAgo) Years Ago"
@@ -87,6 +158,8 @@ struct FeaturedYearFullScreenView: View {
                                         .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 0)
                                         .offset(y: -10)
                                         .padding(.horizontal, 20)
+                                        .handwritingAnimation(duration: 2.0, delay: 0.3)
+                                        .id("date-\(item.id)") // Ensure animation resets when item changes
                                 }
                             }
                         }
@@ -121,26 +194,24 @@ struct FeaturedYearFullScreenView: View {
     }
     
     private func handleItemChange(_ oldItem: MediaItem, _ newItem: MediaItem) {
-        // Simple crossfade instead of scaling
+        // Reset state
         showText = false
         triggerAnimation = false
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // Start new animations immediately
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             showText = true
             triggerAnimation = true
         }
     }
     
     private func handleImageAppear() {
-        // Simple animation sequence
-        withAnimation(.easeIn(duration: 0.3)) {
-            showText = true
-        }
+        // Start both animations almost immediately
+        showText = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            withAnimation(.easeIn(duration: 0.3)) {
-                triggerAnimation = true
-            }
+        // Trigger the date animation with minimal delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            triggerAnimation = true
         }
     }
 
