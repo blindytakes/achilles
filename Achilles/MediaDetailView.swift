@@ -16,6 +16,9 @@ struct MediaDetailView: View {
     // State for Sharing
     @State private var itemToShare: ShareableItem? = nil
     @State private var isFetchingShareItem = false
+    
+    // State for location panel
+    @State private var showLocationPanel: Bool = false
 
     // --- NEW: State for managing ONE active player ---
     @State private var currentPlayer: AVPlayer? = nil
@@ -30,12 +33,12 @@ struct MediaDetailView: View {
                 ForEach(Array(itemsForYear.enumerated()), id: \.element.id) { index, item in
 
                     // --- Pass the shared player down ---
-                    // Also pass a dummy .constant binding for showInfoPanel as ItemDisplayView expects it
+                    // Pass a real binding for showInfoPanel
                     ItemDisplayView(
                         viewModel: viewModel,
                         item: item,
                         player: currentPlayer,
-                        showInfoPanel: .constant(false) // Dummy binding
+                        showInfoPanel: $showLocationPanel
                     )
                     .tag(index)
                 }
@@ -228,3 +231,4 @@ struct ActivityViewControllerRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities) }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+

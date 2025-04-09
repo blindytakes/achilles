@@ -22,36 +22,88 @@ struct ItemDisplayView: View {
     @State private var viewState: DetailViewState = .loading
     @State private var controlsHidden: Bool = false
     @State private var zoomScale: CGFloat = 1.0
+    @State private var dragOffset: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            mainContentSwitchView
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .zIndex(0)
-
-            if showInfoPanel {
-                LocationInfoPanelView(asset: item.asset)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(15, corners: [.topLeft, .topRight])
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(1)
-                    .onTapGesture {
-                        withAnimation { showInfoPanel = false }
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                mainContentSwitchView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .zIndex(0)
+                    
+                if showInfoPanel && item.asset.location != nil {
+                    VStack(spacing: 0) {
+                        // Drag handle
+                        Rectangle()
+                            .fill(Color.white.opacity(0.5))
+                            .frame(width: 40, height: 4)
+                            .cornerRadius(2)
+                            .padding(.top, 15)
+                            .padding(.bottom, 10)
+                        
+                        LocationInfoPanelView(asset: item.asset)
+                            .padding(.bottom, 20)
                     }
+                    .frame(width: geometry.size.width - 20)
+                    .frame(height: min(geometry.size.height * 0.6, 500))
+                    .background(
+                        RoundedRectangle(cornerRadius: 15)
+                            .fill(Color(.systemBackground))
+                            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: -5)
+                    )
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + dragOffset)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity,
+                            removal: .opacity
+                        )
+                    )
+                    .zIndex(2) // Higher z-index than the indicator
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                // Allow dragging in any direction but limit to reasonable amounts
+                                dragOffset = min(100, max(-100, -value.translation.height))
+                            }
+                            .onEnded { value in
+                                let velocity = -value.predictedEndTranslation.height / max(1, abs(value.translation.height))
+                                
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+                                    // If swipe down is significant, hide panel
+                                    if dragOffset < -30 || velocity < -0.5 {
+                                        showInfoPanel = false
+                                    }
+                                    
+                                    // Reset drag offset
+                                    dragOffset = 0
+                                }
+                            }
+                    )
+                    // Also add a tap gesture to dismiss
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+                            showInfoPanel = false
+                        }
+                    }
+                }
             }
+            .background(Color.black)
+            .id(item.id)
+            .ignoresSafeArea(.all, edges: .all)
         }
-        .background(Color.black)
         .task { await loadImageOnlyIfNeeded() }
-        .id(item.id)
-        .ignoresSafeArea(.all, edges: .all)
         .onChange(of: item.id) { _, _ in
             if item.asset.mediaType == .image {
                 viewState = .loading
             } else {
                 viewState = .unsupported
             }
+            
+            // Reset panel state when item changes
+            showInfoPanel = false
+            dragOffset = 0
         }
     }
 
@@ -181,5 +233,6 @@ func daySuffix(for date: Date) -> String {
         }
     }
 }
+
 
 

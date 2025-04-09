@@ -51,22 +51,34 @@ struct LoadedYearContentView: View {
                     item: item,
                     yearsAgo: yearsAgo
                 ) {
-                    withAnimation(.easeInOut(duration: 0.6)) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         hasTappedSplash = true
                     }
                 }
+                // Make sure we don't consume gestures that should go to the parent TabView
+                .gesture(
+                    DragGesture()
+                        .onEnded { _ in }
+                    , including: .subviews
+                )
+                .allowsHitTesting(true)
+                .transition(.opacity)
             } else {
                 ScrollView(.vertical) {
                     VStack(spacing: 0) {
                         Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
                             .font(.largeTitle.bold())
                             .padding(.top)
+                            .opacity(hasTappedSplash ? 1.0 : 0.0)
+                            .animation(.easeInOut(duration: 0.4).delay(0.1), value: hasTappedSplash)
 
                         LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(allGridItems) { item in
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
+                                .animation(.easeIn(duration: 0.2).delay(Double.random(in: 0...0.2)), value: hasTappedSplash)
+                                .transition(.opacity)
                             }
                         }
                         .padding(.horizontal, 2)
@@ -80,8 +92,10 @@ struct LoadedYearContentView: View {
                     }
                     .padding(.top, 5)
                 }
+                .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: hasTappedSplash)
         .sheet(item: $selectedItemForDetail) { itemToDisplay in
             MediaDetailView(
                 viewModel: viewModel,
@@ -94,4 +108,5 @@ struct LoadedYearContentView: View {
         }
     }
 }
+
 
