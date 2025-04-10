@@ -14,50 +14,47 @@ struct GridItemView: View {
 
     var body: some View {
         ZStack {
-            // Background color for loading state AND letter/pillar boxing
-            Color(.systemGray6) // This will show in empty areas for non-square images
+            // Background color for letter/pillar boxing
+            Color(.systemGray6) // This matches Apple Photos' subtle light gray for letterbox areas
 
             // Thumbnail image when loaded
             if let thumbnail = thumbnail {
                 Image(uiImage: thumbnail)
                     .resizable()
-                    .scaledToFill()
-                    .clipped()
+                    .scaledToFit() // Show the entire photo
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                    .clipped() // Essential to prevent overflow/overlapping
                     .opacity(showImage ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: showImage)
                     .onAppear {
                         withAnimation { showImage = true }
                     }
             } else {
-                // Loading indicator
+                // Loading indicator - Apple's is more subtle
                 ProgressView()
+                    .scaleEffect(0.7)
+                    .tint(Color.gray)
             }
 
-            // Video indicator overlay (positioning might need slight adjustment if desired)
+            // Video indicator overlay
             if thumbnail != nil && item.asset.mediaType == .video {
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
-                        HStack(spacing: 4) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.system(size: 18))
-                            Text(formattedDuration(item.asset.duration))
-                                .font(.caption2.bold())
-                        }
-                        .foregroundColor(.white)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(12)
-                        .padding(8)
+                        Text(formattedDuration(item.asset.duration))
+                            .font(.caption2.bold())
+                            .foregroundColor(.white)
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 4)
+                            .background(Color.black.opacity(0.3))
                     }
+                    .padding(4)
                 }
             }
         }
-        .aspectRatio(1, contentMode: .fit) // Keep forcing the ZStack container to be square
-        .contentShape(Rectangle()) // Define the tappable area
-        // --- Rest of your modifiers for animation, tap gesture, etc. ---
+        // Remove forced aspect ratio to allow parent view to control this
+        .contentShape(Rectangle())
         .scaleEffect(isPressed ? 0.97 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
         .onTapGesture {
@@ -78,8 +75,19 @@ struct GridItemView: View {
     // Function to load the thumbnail
     private func loadThumbnail() {
         let scale = UIScreen.main.scale
-        let targetSize = CGSize(width: itemFrameSize * scale, height: itemFrameSize * scale)
+        
+        // Get asset's actual dimensions
+        let assetWidth = CGFloat(item.asset.pixelWidth)
+        let assetHeight = CGFloat(item.asset.pixelHeight)
+        
+        // Apple Photos uses high-quality thumbnails scaled for the screen
+        // Request a larger size than needed to ensure quality
+        let targetSize = CGSize(
+            width: 300 * scale,  // Apple Photos uses higher resolution thumbnails
+            height: 300 * scale
+        )
 
+        // Use PHImageManager's requestImage with proper options
         viewModel.requestImage(for: item.asset, targetSize: targetSize) { image in
             DispatchQueue.main.async {
                 self.thumbnail = image
@@ -95,3 +103,4 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
+

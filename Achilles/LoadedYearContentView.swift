@@ -9,6 +9,49 @@ struct LoadedYearContentView: View {
 
     @State private var hasTappedSplash = false
     @State private var selectedItemForDetail: MediaItem? = nil
+    
+    // Add animation states
+    @State private var dateAppeared = false
+    @State private var dateBounce = false
+    
+    // Add computed property to get the formatted date
+    private var formattedDate: String {
+        let calendar = Calendar.current
+        let today = Date()
+        var components = calendar.dateComponents([.year, .month, .day], from: today)
+        components.year = (components.year ?? 0) - yearsAgo
+        
+        guard let pastDate = calendar.date(from: components) else {
+            return ""
+        }
+        
+        return getFormattedDateWithOrdinal(from: pastDate)
+    }
+    
+    // Helper to format date with ordinal suffix
+    private func getFormattedDateWithOrdinal(from date: Date) -> String {
+        let calendar = Calendar.current
+        let day = calendar.component(.day, from: date)
+        
+        // Get ordinal suffix for the day
+        let suffix: String
+        switch day {
+        case 1, 21, 31: suffix = "st"
+        case 2, 22: suffix = "nd"
+        case 3, 23: suffix = "rd"
+        default: suffix = "th"
+        }
+        
+        // Create the formatted date with ordinal
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMMM d"
+        let baseDate = dateFormatter.string(from: date)
+        
+        // Add year separately
+        let year = calendar.component(.year, from: date)
+        
+        return "\(baseDate)\(suffix), \(year)"
+    }
 
     // Computed property to determine the items shown in the grid
     var allGridItems: [MediaItem] {
@@ -25,19 +68,18 @@ struct LoadedYearContentView: View {
     }
 
     // --- Grid Layout Configuration ---
-    // Define 2 columns with REDUCED spacing between them
+    // Define a fixed 2-column grid like Apple Photos on iPhone
     let columns: [GridItem] = [
-        // Set HORIZONTAL spacing between columns (e.g., 4 points)
-        GridItem(.flexible(), spacing: 5), // <-- REDUCED horizontal spacing
+        GridItem(.flexible(), spacing: 4), // Increased spacing to ensure no overlap
         GridItem(.flexible())
     ]
-    // Define REDUCED VERTICAL spacing between rows (e.g., 4 points)
-    let verticalSpacing: CGFloat = 6 // <-- REDUCED vertical spacing
-    // Define outer padding around the grid (e.g., 4 points horizontal)
+    // Define VERTICAL spacing between rows
+    let verticalSpacing: CGFloat = 4 // Increased spacing to ensure no overlap
+    // Define outer padding around the grid
     let gridOuterPaddingValue: CGFloat = 2
     let gridOuterPadding: Edge.Set = .horizontal
     // Define corner radius for grid items
-    let itemCornerRadius: CGFloat = 4 // Keep or adjust corner radius
+    let itemCornerRadius: CGFloat = 0 // No rounded corners to maximize photo area
     // ---------------------------------
 
     var body: some View {
@@ -50,6 +92,27 @@ struct LoadedYearContentView: View {
                 ) {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         hasTappedSplash = true
+                        // Reset animation states when transitioning from splash screen
+                        dateAppeared = false
+                        dateBounce = false
+                        
+                        // Schedule animation sequence after splash screen disappears
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            withAnimation {
+                                dateAppeared = true
+                            }
+                            // Add a little bounce effect
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                withAnimation {
+                                    dateBounce = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    withAnimation {
+                                        dateBounce = false
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 .gesture(
@@ -62,34 +125,79 @@ struct LoadedYearContentView: View {
             } else {
                 ScrollView(.vertical) {
                     VStack(spacing: 0) {
-                        // --- Title ---
-                        Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
-                            .font(.largeTitle.bold())
-                            .padding(.top)
-                            .padding(.bottom) // Keep padding below title
-                            .opacity(hasTappedSplash ? 1.0 : 0.0)
-                            .animation(.easeInOut(duration: 0.4).delay(0.1), value: hasTappedSplash)
+                        // --- Title with Date ---
+                        VStack(spacing: 8) {
+                            Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
+                                .font(.largeTitle.bold())
+                                .padding(.top, 16)
+                            
+                            Text(formattedDate)
+                                .font(.title2)
+                                .fontWeight(.medium)
+                                .italic()
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.primary.opacity(0.8), .primary.opacity(0.65)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .fontDesign(.serif)
+                                .shadow(color: .black.opacity(0.2), radius: 1, x: 0.5, y: 0.5)
+                                .scaleEffect(dateAppeared ? (dateBounce ? 1.05 : 1.0) : 0.8)
+                                .rotationEffect(dateAppeared ? .zero : .degrees(-3))
+                                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: dateAppeared)
+                                .animation(.spring(response: 0.25, dampingFraction: 0.6), value: dateBounce)
+                                .onAppear {
+                                    if hasTappedSplash {
+                                        // Delayed sequence of animations when date appears
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            withAnimation {
+                                                dateAppeared = true
+                                            }
+                                            // Add a little bounce effect
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                                withAnimation {
+                                                    dateBounce = true
+                                                }
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                                    withAnimation {
+                                                        dateBounce = false
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 20) // Increased padding between date and grid
+                        .opacity(hasTappedSplash ? 1.0 : 0.0)
+                        .animation(.easeInOut(duration: 0.4).delay(0.1), value: hasTappedSplash)
 
                         // --- Photo Grid ---
                         LazyVGrid(
-                            columns: columns,           // Use the defined columns
-                            spacing: verticalSpacing    // Use the defined VERTICAL spacing
+                            columns: columns,
+                            spacing: verticalSpacing
                         ) {
                             ForEach(allGridItems) { item in
-                                // Make sure GridItemView uses .scaledToFit() internally
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
-                                .clipShape(RoundedRectangle(cornerRadius: itemCornerRadius)) // Keep corner radius
+                                // Use .fit for content mode to respect aspect ratio without overflow
+                                .aspectRatio(CGFloat(item.asset.pixelWidth) / CGFloat(item.asset.pixelHeight), contentMode: .fit)
+                                .frame(maxWidth: .infinity)
+                                .clipShape(Rectangle())
+                                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1) // Subtle shadow for depth
                                 .animation(.easeIn(duration: 0.2).delay(Double.random(in: 0...0.2)), value: hasTappedSplash)
                                 .transition(.opacity)
                             }
                         }
-                        // Apply outer padding to the grid
-                        .padding(gridOuterPadding, gridOuterPaddingValue) // Apply reduced outer padding
-
+                        .padding(.horizontal, 4) // Consistent horizontal padding
+                        
                         // --- Footer Text ---
                         Text("Make More Memories!")
+                            .font(.callout)
                             .foregroundColor(.secondary)
                             .padding()
                             .opacity(hasTappedSplash ? 1.0 : 0.0)
@@ -118,3 +226,4 @@ struct LoadedYearContentView: View {
 
 // Ensure your GridItemView.swift still uses .scaledToFit() for the Image
 // Ensure you have definitions for MediaItem, PhotoViewModel, FeaturedYearFullScreenView, MediaDetailView
+

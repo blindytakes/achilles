@@ -19,7 +19,7 @@ enum PageState {
 }
 
 // --- ViewModel ---
-@MainActor // Ensure UI updates happen on the main threadlets 
+@MainActor // Ensure UI updates happen on the main threadlets
 class PhotoViewModel: ObservableObject {
 
     // --- Published Properties for UI ---
@@ -227,9 +227,21 @@ class PhotoViewModel: ObservableObject {
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .opportunistic
-        options.resizeMode = .fast
-        imageManager.requestImage(for: asset, targetSize: targetSize, contentMode: .aspectFill, options: options) { image, info in
+        options.deliveryMode = .highQualityFormat  // High quality for better display
+        options.resizeMode = .exact
+        options.isSynchronous = false  // Async loading for better UI performance
+        
+        // Use aspectFit to show the entire image without cropping
+        imageManager.requestImage(for: asset,
+                                targetSize: targetSize,
+                                contentMode: .aspectFit,
+                                options: options) { image, info in
+            
+            // Check if this is a degraded image (preview while loading)
+            if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                // Still show degraded images initially
+            }
+            
             completion(image)
         }
     }
@@ -294,3 +306,4 @@ class PhotoViewModel: ObservableObject {
     }
 
 } // End of class PhotoViewModel
+
