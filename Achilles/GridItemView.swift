@@ -14,9 +14,9 @@ struct GridItemView: View {
 
     var body: some View {
         ZStack {
-            // Background color for loading state
-            Color(.systemGray6)
-            
+            // Background color for loading state AND letter/pillar boxing
+            Color(.systemGray6) // This will show in empty areas for non-square images
+
             // Thumbnail image when loaded
             if let thumbnail = thumbnail {
                 Image(uiImage: thumbnail)
@@ -32,8 +32,8 @@ struct GridItemView: View {
                 // Loading indicator
                 ProgressView()
             }
-            
-            // Video indicator overlay
+
+            // Video indicator overlay (positioning might need slight adjustment if desired)
             if thumbnail != nil && item.asset.mediaType == .video {
                 VStack {
                     Spacer()
@@ -55,8 +55,9 @@ struct GridItemView: View {
                 }
             }
         }
-        .aspectRatio(1, contentMode: .fit) // Force square aspect ratio
-        .contentShape(Rectangle())
+        .aspectRatio(1, contentMode: .fit) // Keep forcing the ZStack container to be square
+        .contentShape(Rectangle()) // Define the tappable area
+        // --- Rest of your modifiers for animation, tap gesture, etc. ---
         .scaleEffect(isPressed ? 0.97 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
         .onTapGesture {
@@ -94,5 +95,3 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
-
-

@@ -10,42 +10,39 @@ struct LoadedYearContentView: View {
     @State private var hasTappedSplash = false
     @State private var selectedItemForDetail: MediaItem? = nil
 
+    // Computed property to determine the items shown in the grid
     var allGridItems: [MediaItem] {
-        print("--- Calculating allGridItems ---")
-        print("hasTappedSplash: \(hasTappedSplash)")
-        // VITAL CHECK: Is featuredItem nil or does it have an ID?
-        // CORRECTED line:
-        print("featuredItem ID: \(featuredItem?.id ?? "nil")")
-        print("gridItems count: \(gridItems.count)")
-
+        // Print statements removed for brevity, assuming logic is correct now
         if hasTappedSplash {
-            // This block runs ONLY when the grid should be visible
             if let featured = featuredItem {
-                 // This block runs if featuredItem HAS A VALUE
-                print(">>> Branch 1: featuredItem is NOT nil. Combining items.")
-                let finalItems = [featured] + gridItems
-                print("Final combined count: \(finalItems.count)")
-                return finalItems
+                return [featured] + gridItems
             } else {
-                 // This block runs if featuredItem IS NIL
-                print(">>> Branch 2: featuredItem IS nil. Returning only gridItems.")
                 return gridItems
             }
         } else {
-            // This block runs before tapping (when fullscreen view is shown)
-            print(">>> Branch 3: hasTappedSplash is false. Returning empty list.")
-            return []
+            return [] // Return empty when splash screen is visible
         }
     }
 
-    // Fixed 2-column grid with proper spacing
-    let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
+    // --- Grid Layout Configuration ---
+    // Define 2 columns with REDUCED spacing between them
+    let columns: [GridItem] = [
+        // Set HORIZONTAL spacing between columns (e.g., 4 points)
+        GridItem(.flexible(), spacing: 5), // <-- REDUCED horizontal spacing
+        GridItem(.flexible())
     ]
+    // Define REDUCED VERTICAL spacing between rows (e.g., 4 points)
+    let verticalSpacing: CGFloat = 6 // <-- REDUCED vertical spacing
+    // Define outer padding around the grid (e.g., 4 points horizontal)
+    let gridOuterPaddingValue: CGFloat = 2
+    let gridOuterPadding: Edge.Set = .horizontal
+    // Define corner radius for grid items
+    let itemCornerRadius: CGFloat = 4 // Keep or adjust corner radius
+    // ---------------------------------
 
     var body: some View {
         ZStack {
+            // --- Fullscreen Featured Item (Splash View) ---
             if let item = featuredItem, !hasTappedSplash {
                 FeaturedYearFullScreenView(
                     item: item,
@@ -55,51 +52,57 @@ struct LoadedYearContentView: View {
                         hasTappedSplash = true
                     }
                 }
-                // Make sure we don't consume gestures that should go to the parent TabView
                 .gesture(
-                    DragGesture()
-                        .onEnded { _ in }
-                    , including: .subviews
+                    DragGesture().onEnded { _ in } , including: .subviews
                 )
                 .allowsHitTesting(true)
                 .transition(.opacity)
+
+            // --- Grid View Content ---
             } else {
                 ScrollView(.vertical) {
                     VStack(spacing: 0) {
+                        // --- Title ---
                         Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
                             .font(.largeTitle.bold())
                             .padding(.top)
+                            .padding(.bottom) // Keep padding below title
                             .opacity(hasTappedSplash ? 1.0 : 0.0)
                             .animation(.easeInOut(duration: 0.4).delay(0.1), value: hasTappedSplash)
 
-                        LazyVGrid(columns: columns, spacing: 2) {
+                        // --- Photo Grid ---
+                        LazyVGrid(
+                            columns: columns,           // Use the defined columns
+                            spacing: verticalSpacing    // Use the defined VERTICAL spacing
+                        ) {
                             ForEach(allGridItems) { item in
+                                // Make sure GridItemView uses .scaledToFit() internally
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
-                                .frame(height: UIScreen.main.bounds.width / 2 - 3)
-                                .clipShape(Rectangle())
+                                .clipShape(RoundedRectangle(cornerRadius: itemCornerRadius)) // Keep corner radius
                                 .animation(.easeIn(duration: 0.2).delay(Double.random(in: 0...0.2)), value: hasTappedSplash)
                                 .transition(.opacity)
                             }
                         }
-                        .padding(.horizontal, 2)
+                        // Apply outer padding to the grid
+                        .padding(gridOuterPadding, gridOuterPaddingValue) // Apply reduced outer padding
 
-                        // Show message on all grids, not just empty ones
+                        // --- Footer Text ---
                         Text("Make More Memories!")
                             .foregroundColor(.secondary)
                             .padding()
                             .opacity(hasTappedSplash ? 1.0 : 0.0)
                             .animation(.easeInOut(duration: 0.4).delay(0.3), value: hasTappedSplash)
-                        
+
                         Spacer()
                     }
-                    .padding(.top, 5)
                 }
                 .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.3), value: hasTappedSplash)
+        // --- Detail View Sheet ---
         .sheet(item: $selectedItemForDetail) { itemToDisplay in
             MediaDetailView(
                 viewModel: viewModel,
@@ -113,5 +116,5 @@ struct LoadedYearContentView: View {
     }
 }
 
-
-
+// Ensure your GridItemView.swift still uses .scaledToFit() for the Image
+// Ensure you have definitions for MediaItem, PhotoViewModel, FeaturedYearFullScreenView, MediaDetailView
