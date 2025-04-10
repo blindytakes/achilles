@@ -9,7 +9,7 @@ struct HandwritingAnimationModifier: ViewModifier {
     
     @State private var progress: CGFloat = 0
     @State private var opacity: CGFloat = 0
-    @State private var scale: CGFloat = 0.95
+    @State private var scale: CGFloat = 1.0
     
     func body(content: Content) -> some View {
         content
@@ -37,7 +37,6 @@ struct HandwritingAnimationModifier: ViewModifier {
                 // Reset then animate
                 progress = 0
                 opacity = 0
-                scale = 0.95
                 
                 // First fade in - immediate
                 withAnimation(.easeIn(duration: duration * 0.15)) {
@@ -50,17 +49,6 @@ struct HandwritingAnimationModifier: ViewModifier {
                         progress = 1.0
                     }
                     
-                    // Subtle flourish at the end
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay + duration * 0.8) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                            scale = 1.02
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                                scale = 1.0
-                            }
-                        }
-                    }
                 }
             }
     }
@@ -286,4 +274,5 @@ struct FeaturedYearFullScreenView: View {
         return baseDate + suffix + ", \(year)"
     }
 }
+
 

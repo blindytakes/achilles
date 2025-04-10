@@ -42,6 +42,8 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.backgroundColor = .clear
+        scrollView.delaysContentTouches = false
+        scrollView.canCancelContentTouches = true
 
         let hostedView = context.coordinator.hostingController.view!
         hostedView.translatesAutoresizingMaskIntoConstraints = false
@@ -74,8 +76,10 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         @Binding var zoomScale: CGFloat
         let dismissAction: () -> Void
 
-        private var isTrackingPanForSwipeAction = false
-        private var dragInitialPoint: CGPoint = .zero
+        // Used for basic zoom tracking
+        private var isZoomed: Bool = false
+        // For swipe down detection
+        private var startTouchPoint: CGPoint = .zero
 
         init(
             hostingController: UIHostingController<Content>,
@@ -92,17 +96,20 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         }
 
         func setupGestureRecognizers(for scrollView: UIScrollView) {
+            // Double tap for zoom
             let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
             doubleTap.numberOfTapsRequired = 2
             scrollView.addGestureRecognizer(doubleTap)
 
+            // Single tap for controls
             let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
             singleTap.require(toFail: doubleTap)
             scrollView.addGestureRecognizer(singleTap)
-
-            let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePanGesture(_:)))
-            pan.delegate = self
-            scrollView.addGestureRecognizer(pan)
+            
+            // Add a pan gesture recognizer for swipe down to dismiss
+            let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePanGesture(_:)))
+            panGesture.delegate = self
+            scrollView.addGestureRecognizer(panGesture)
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -112,6 +119,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             centerContent(scrollView)
             zoomScale = scrollView.zoomScale
+            isZoomed = scrollView.zoomScale > 1.01
         }
 
         func centerContent(_ scrollView: UIScrollView) {
@@ -144,121 +152,78 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
                 withAnimation { showInfoPanel = false }
             }
         }
-
+        
+        // Handle pan gesture for swipe down to dismiss
         @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
             guard let scrollView = gesture.view as? UIScrollView else { return }
-
-            // Don't handle gestures if we're zoomed in (let regular scrolling work)
+            
+            // Don't interfere if the scroll view is zoomed in
             if scrollView.zoomScale > 1.01 {
-                isTrackingPanForSwipeAction = false
                 return
             }
             
-            // Don't handle pans if the scroll view is scrolling horizontally
-            if abs(scrollView.contentOffset.x) > 0.1 {
-                isTrackingPanForSwipeAction = false
+            // Don't handle gestures when info panel is showing
+            if showInfoPanel {
                 return
             }
-
+            
             switch gesture.state {
             case .began:
-                let currentZoom = scrollView.zoomScale
-                let minZoom = scrollView.minimumZoomScale
-                print("✅ Coordinator: Pan gesture began. Zoom scale: \(currentZoom)")
-                if currentZoom <= minZoom * 1.01 {
-                    isTrackingPanForSwipeAction = true
-                    dragInitialPoint = gesture.location(in: scrollView.superview)
-                    print("--> Tracking pan for potential swipe action.")
-                } else {
-                    isTrackingPanForSwipeAction = false
-                    print("--> Ignoring pan for swipe action because view is zoomed.")
-                }
-
+                startTouchPoint = gesture.location(in: scrollView)
+                
             case .changed:
-                // If we're tracking and it becomes mostly horizontal, abandon tracking
-                if isTrackingPanForSwipeAction {
-                    let translation = gesture.translation(in: scrollView.superview)
-                    if abs(translation.x) > abs(translation.y) * 1.5 {
-                        isTrackingPanForSwipeAction = false
-                        print("--> Abandoning vertical tracking, gesture is horizontal")
+                let currentPoint = gesture.location(in: scrollView)
+                let verticalDistance = currentPoint.y - startTouchPoint.y
+                let horizontalDistance = currentPoint.x - startTouchPoint.x
+                
+                // Only provide feedback if this is primarily a vertical swipe down
+                if verticalDistance > 50 && abs(horizontalDistance) < abs(verticalDistance) * 0.8 {
+                    // Calculate an opacity value based on how far they've swiped
+                    let dismissProgress = min(1.0, verticalDistance / 300)
+                    
+                    // Apply a subtle dimming effect to indicate progress
+                    UIView.animate(withDuration: 0.1) {
+                        scrollView.alpha = max(0.7, 1.0 - dismissProgress * 0.3)
+                        
+                        // Apply a subtle scale effect
+                        scrollView.transform = CGAffineTransform(scaleX: 1.0 - dismissProgress * 0.05,
+                                                                y: 1.0 - dismissProgress * 0.05)
                     }
                 }
                 
-            case .ended:
-                if !isTrackingPanForSwipeAction {
-                    print("✅ Coordinator: Pan ended, but was not tracking for swipe action.")
-                    return
+            case .ended, .cancelled:
+                // Reset any visual effects first
+                UIView.animate(withDuration: 0.3) {
+                    scrollView.alpha = 1.0
+                    scrollView.transform = .identity
                 }
-
-                let translation = gesture.translation(in: scrollView.superview)
-                let velocity = gesture.velocity(in: scrollView.superview)
-
-                print("✅ Coordinator: Pan ended while tracking. Translation: \(translation), Velocity: \(velocity)")
-
-                // Only proceed with vertical gestures (ignore diagonal ones)
-                if abs(translation.x) > abs(translation.y) * 0.8 {
-                    print("--> Ignoring gesture that is not primarily vertical")
-                    isTrackingPanForSwipeAction = false
-                    return
-                }
-
-                // Show location panel on swipe up
-                let infoSwipeDistance: CGFloat = -65  // More deliberate swipe
-                let infoSwipeVelocity: CGFloat = -600 // Faster velocity required
-                if !showInfoPanel && (translation.y < infoSwipeDistance || velocity.y < infoSwipeVelocity) {
-                    print("--> Showing info panel via swipe up")
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-                        showInfoPanel = true
-                    }
-                    if !controlsHidden {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            controlsHidden = true
-                        }
-                    }
-                    
-                    isTrackingPanForSwipeAction = false
-                    return
-                }
-
-                // Dismiss on swipe down
-                let dismissSwipeDistance: CGFloat = 80
-                let dismissSwipeVelocity: CGFloat = 500
-                if translation.y > dismissSwipeDistance || velocity.y > dismissSwipeVelocity {
-                    print("--> Dismiss action triggered via swipe down")
+                
+                let currentPoint = gesture.location(in: scrollView)
+                let verticalDistance = currentPoint.y - startTouchPoint.y
+                let horizontalDistance = currentPoint.x - startTouchPoint.x
+                
+                // Only process if this is primarily a vertical swipe down
+                if verticalDistance > 100 && abs(horizontalDistance) < abs(verticalDistance) * 0.5 {
                     dismissAction()
-                    isTrackingPanForSwipeAction = false
-                    return
                 }
-
-                isTrackingPanForSwipeAction = false
-
-            case .cancelled, .failed:
-                if isTrackingPanForSwipeAction {
-                    print("✅ Coordinator: Pan gesture cancelled/failed")
-                }
-                isTrackingPanForSwipeAction = false
-
+                
             default:
+                // Reset any visual effects
+                UIView.animate(withDuration: 0.3) {
+                    scrollView.alpha = 1.0
+                    scrollView.transform = .identity
+                }
                 break
             }
         }
-
+        
+        // MARK: - UIGestureRecognizerDelegate
+        
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            // If the scroll view is zoomed in, don't recognize our swipe gestures
-            // so that regular scrolling can work properly
-            if let scrollView = gestureRecognizer.view as? UIScrollView, scrollView.zoomScale > 1.01 {
-                return false
-            }
-            
-            if gestureRecognizer is UIPanGestureRecognizer {
-                // Only allow simultaneous recognition when unzoomed
-                print("✅ Coordinator: shouldRecognizeSimultaneouslyWith called for Pan Gesture")
-                return true
-            }
-            
-            print("✅ Coordinator: shouldRecognizeSimultaneouslyWith called for other gesture -> false")
-            return false
+            // Allow the scroll view to handle its gestures normally
+            return true
         }
     }
 }
+
 

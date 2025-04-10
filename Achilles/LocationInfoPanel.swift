@@ -11,100 +11,122 @@ struct LocationInfoPanelView: View {
     @State private var showFullScreenMap = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Location text at the top
-            if let address = placemarkString {
-                Text(address)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .foregroundColor(.primary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else if mapAnnotationCoordinate != nil {
-                Text("Loading address...")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else if asset.location == nil {
-                Text("No Location Information")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-
-            // Map centered in the panel
-            if let coordinate = mapAnnotationCoordinate {
-                Map(position: $cameraPosition) {
-                    Marker("", coordinate: coordinate)
-                        .tint(Color.accentColor)
-                }
-                .mapStyle(.standard(elevation: .flat))
-                .frame(height: 200)
-                .frame(maxWidth: .infinity)
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                )
-                .overlay(
-                    ZStack {
-                        // Full-size tap target
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                showFullScreenMap = true
-                            }
-                        
-                        // Visual indicator - more subtle
-                        Image(systemName: "arrow.up.right.and.arrow.down.left")
-                            .font(.system(size: 18))
-                            .padding(6)
-                            .background(Color.white)
-                            .foregroundColor(.black)
-                            .cornerRadius(6)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        // Just the map with minimal overlay
+        GeometryReader { geometry in
+            ZStack {
+                if let coordinate = mapAnnotationCoordinate {
+                    // The map without any container
+                    Map(position: $cameraPosition) {
+                        Marker("", coordinate: coordinate)
+                            .tint(Color.accentColor)
                     }
-                )
-                .sheet(isPresented: $showFullScreenMap) {
-                    FullScreenMapView(
-                        coordinate: coordinate,
-                        locationName: placemarkString ?? "Photo Location",
-                        cameraPosition: cameraPosition
-                    )
-                }
-            } else if asset.location != nil {
-                ProgressView()
-                    .frame(height: 200)
-            } else {
-                VStack {
-                    Image(systemName: "location.slash.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(.secondary)
-                        .padding(.bottom, 8)
+                    .mapStyle(.standard(elevation: .flat))
+                    .clipShape(RoundedRectangle(cornerRadius: 24)) // Larger corner radius
+                    .shadow(color: .black.opacity(0.25), radius: 15, x: 0, y: 3)
                     
-                    Text("No Location Information")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
+                    // X button to dismiss the map
+                    .overlay(
+                        Button {
+                            NotificationCenter.default.post(
+                                name: Notification.Name("DismissMapPanel"),
+                                object: nil
+                            )
+                            let generator = UIImpactFeedbackGenerator(style: .light)
+                            generator.impactOccurred()
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black.opacity(0.8))
+                                    .frame(width: 40, height: 40)
+                                    .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
+                                
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding(12)
+                        .zIndex(10),
+                        alignment: .topTrailing
+                    )
+                    
+                    // Location text overlay with gradient - tightly fit to text
+                    .overlay(
+                        VStack {
+                            if let address = placemarkString {
+                                HStack {
+                                    Spacer()
+                                    Text(address)
+                                        .font(.system(size: 17, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(0.7), radius: 1, x: 0, y: 1)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.black.opacity(0.5))
+                                        )
+                                    Spacer()
+                                }
+                                .frame(maxWidth: geometry.size.width - 90)
+                                .padding(.top, 20)
+                            }
+                            
+                            Spacer()
+                        }
+                    )
+                    
+                    // Better expand button overlay
+                    .overlay(
+                        Button {
+                            showFullScreenMap = true
+                            let generator = UIImpactFeedbackGenerator(style: .light)
+                            generator.impactOccurred()
+                        } label: {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
+                                .font(.system(size: 32, weight: .regular))
+                                .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.6), radius: 3, x: 0, y: 1)
+                                .padding(8)
+                                .background(
+                                    Circle()
+                                        .fill(Color.black.opacity(0.2))
+                                        .blur(radius: 4)
+                                )
+                        }
+                        .padding(20),
+                        alignment: .bottomTrailing
+                    )
+                    .sheet(isPresented: $showFullScreenMap) {
+                        FullScreenMapView(
+                            coordinate: coordinate,
+                            locationName: placemarkString ?? "Photo Location",
+                            cameraPosition: cameraPosition,
+                            date: asset.creationDate
+                        )
+                    }
+                } else if asset.location != nil {
+                    // Loading state
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(Color.black.opacity(0.1))
+                            .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 3)
+                        
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.2)
+                    }
+                    .frame(height: 300)
+                } else {
+                    // No location info
+                    Color.clear
+                        .frame(height: 0)
                 }
-                .frame(height: 200)
-                .frame(maxWidth: .infinity)
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
             }
-
-            // Date information at the bottom
-            if let date = asset.creationDate {
-                Text(date.formatted(date: .long, time: .shortened))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-
-            Spacer(minLength: 5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity)
         .onAppear(perform: setupLocationData)
         .onChange(of: asset.localIdentifier) { _, _ in
             setupLocationData()
@@ -165,16 +187,17 @@ struct FullScreenMapView: View {
     let coordinate: CLLocationCoordinate2D
     let locationName: String
     let cameraPosition: MapCameraPosition
+    let date: Date?
     
     @Environment(\.dismiss) private var dismiss
-    @State private var mapStyle: MapStyle = .standard(elevation: .realistic)
     @State private var showHybrid = false
     @State private var customMapPosition: MapCameraPosition
     
-    init(coordinate: CLLocationCoordinate2D, locationName: String, cameraPosition: MapCameraPosition) {
+    init(coordinate: CLLocationCoordinate2D, locationName: String, cameraPosition: MapCameraPosition, date: Date? = nil) {
         self.coordinate = coordinate
         self.locationName = locationName
         self.cameraPosition = cameraPosition
+        self.date = date
         
         // Initialize with a closer zoom level
         let region = MKCoordinateRegion(
@@ -186,31 +209,32 @@ struct FullScreenMapView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Title and location display
-                Text(locationName)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.systemBackground))
-                
+            ZStack(alignment: .top) {
                 // Full screen map
                 Map(position: $customMapPosition) {
                     Marker(locationName, coordinate: coordinate)
                         .tint(Color.accentColor)
                 }
                 .mapStyle(showHybrid ? .hybrid(elevation: .realistic) : .standard(elevation: .flat))
-                .ignoresSafeArea(edges: [.horizontal])
-                .edgesIgnoringSafeArea(.bottom)
+                .ignoresSafeArea(edges: [.horizontal, .bottom])
                 
-                // Date info at bottom
-                Text(Date().formatted(date: .long, time: .shortened))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.systemBackground))
+                // Header - more translucent and elegant
+                VStack(spacing: 4) {
+                    Text(locationName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    
+                    if let date = date {
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .background(Material.thin)
+                .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -246,4 +270,5 @@ struct FullScreenMapView: View {
         ])
     }
 }
+
 

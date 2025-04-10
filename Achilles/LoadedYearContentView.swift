@@ -83,12 +83,14 @@ struct LoadedYearContentView: View {
                         }
                         .padding(.horizontal, 2)
 
-                        if gridItems.isEmpty {
-                            Text("Take More Photos!")
-                                .foregroundColor(.secondary)
-                                .padding()
-                            Spacer()
-                        }
+                        // Show message on all grids, not just empty ones
+                        Text("Make More Memories!")
+                            .foregroundColor(.secondary)
+                            .padding()
+                            .opacity(hasTappedSplash ? 1.0 : 0.0)
+                            .animation(.easeInOut(duration: 0.4).delay(0.3), value: hasTappedSplash)
+                        
+                        Spacer()
                     }
                     .padding(.top, 5)
                 }
@@ -108,5 +110,6 @@ struct LoadedYearContentView: View {
         }
     }
 }
+
 
 
