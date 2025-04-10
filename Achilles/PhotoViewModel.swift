@@ -1,6 +1,7 @@
 import SwiftUI
 import Photos
 import AVKit // For AVURLAsset
+import WidgetKit
 
 // --- Data Model (Assuming this remains the same) ---
 struct MediaItem: Identifiable, Hashable {
@@ -39,6 +40,7 @@ class PhotoViewModel: ObservableObject {
     // --- Initialization ---
     init() {
         checkAuthorization()
+        checkWidgetRefreshFlags() // Check if widget needs new photos
     }
 
     // --- 1. Check / Request Permissions ---
@@ -305,5 +307,177 @@ class PhotoViewModel: ObservableObject {
         return (startOfDay, endOfDay)
     }
 
+    // --- Check for widget refresh flags ---
+    private func checkWidgetRefreshFlags() {
+        Task {
+            guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.plzwork.Achilles") else {
+                return
+            }
+            
+            let fileManager = FileManager.default
+            
+            do {
+                // Look for any refresh_needed files
+                let contents = try fileManager.contentsOfDirectory(at: containerURL, includingPropertiesForKeys: nil)
+                let refreshFlags = contents.filter { $0.lastPathComponent.hasPrefix("refresh_needed_") && $0.pathExtension == "flag" }
+                
+                for flagURL in refreshFlags {
+                    // Extract date from filename (refresh_needed_YYYY-MM-DD.flag)
+                    let filename = flagURL.deletingPathExtension().lastPathComponent
+                    if let dateString = filename.components(separatedBy: "refresh_needed_").last,
+                       !dateString.isEmpty {
+                        
+                        print("Processing widget refresh request for date: \(dateString)")
+                        
+                        // Process this date - load photos for this day
+                        await updatePhotosForWidget(dateString: dateString)
+                        
+                        // Delete the flag file after processing
+                        try? fileManager.removeItem(at: flagURL)
+                    }
+                }
+                
+                // Also check UserDefaults
+                if let sharedDefaults = UserDefaults(suiteName: "group.plzwork.Achilles"),
+                   sharedDefaults.bool(forKey: "widget_needs_refresh"),
+                   let dateString = sharedDefaults.string(forKey: "widget_refresh_date") {
+                    
+                    print("Processing widget refresh from UserDefaults for date: \(dateString)")
+                    await updatePhotosForWidget(dateString: dateString)
+                    
+                    // Clear the flags
+                    sharedDefaults.set(false, forKey: "widget_needs_refresh")
+                }
+            } catch {
+                print("Error checking widget refresh flags: \(error)")
+            }
+        }
+    }
+    
+    // Update photos for the widget for a specific date
+    private func updatePhotosForWidget(dateString: String) async {
+        // Parse the date string
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: dateString) else {
+            print("Invalid date format for widget refresh: \(dateString)")
+            return
+        }
+        
+        // Find photos from years ago on this date
+        // This would use the same logic as your existing year-ago photo finder
+        // For each available year in the past:
+        for yearsAgo in 1...10 { // Check up to 10 years back
+            // Logic to find photos from 'yearsAgo' on the month/day of 'date'
+            if let item = await fetchFeaturedMediaForYearsAgo(yearsAgo, fromDate: date) {
+                // Save this to the container for the widget in a year-specific file
+                await saveFeaturedPhotoToContainer(item: item, yearsAgo: yearsAgo, dateString: dateString)
+            }
+        }
+        
+        // After updating, reload the widget
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+    
+    // Fetch a featured item for years ago from a specific date
+    private func fetchFeaturedMediaForYearsAgo(_ yearsAgo: Int, fromDate date: Date) async -> MediaItem? {
+        // This would be similar to your existing logic to find photos from years ago
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        
+        // Create a date from 'yearsAgo' years ago with same month/day
+        var pastComponents = components
+        pastComponents.year = (components.year ?? 0) - yearsAgo
+        
+        guard let pastDate = calendar.date(from: pastComponents) else {
+            return nil
+        }
+        
+        // Create start and end of that day
+        let startOfDay = calendar.startOfDay(for: pastDate)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+            return nil
+        }
+        
+        // Find photos within that day range
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        fetchOptions.predicate = NSPredicate(
+            format: "creationDate >= %@ AND creationDate < %@",
+            startOfDay as NSDate,
+            endOfDay as NSDate
+        )
+        
+        let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
+        if fetchResult.count > 0 {
+            // Return the first item
+            let asset = fetchResult.object(at: 0)
+            return MediaItem(id: asset.localIdentifier, asset: asset)
+        }
+        
+        return nil
+    }
+    
+    // Save a featured photo to the container for the widget
+    private func saveFeaturedPhotoToContainer(item: MediaItem, yearsAgo: Int, dateString: String) async {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.plzwork.Achilles") else {
+            return
+        }
+        
+        // Request the image at a size suitable for the widget
+        let targetSize = CGSize(width: 800, height: 800)
+        
+        // Request image for the asset
+        let imageManager = PHImageManager.default()
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .exact
+        options.isSynchronous = true
+        
+        var savedImage: UIImage?
+        imageManager.requestImage(
+            for: item.asset,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        ) { image, _ in
+            savedImage = image
+        }
+        
+        guard let image = savedImage, let data = image.jpegData(compressionQuality: 0.8) else {
+            return
+        }
+        
+        // Save the image for this year-ago period
+        let imageFileName = "featured_\(yearsAgo)_\(dateString).jpg"
+        let imageURL = containerURL.appendingPathComponent(imageFileName)
+        
+        do {
+            try data.write(to: imageURL)
+            
+            // Save the creation date timestamp for the widget
+            if let creationDate = item.asset.creationDate {
+                let timestamp = creationDate.timeIntervalSince1970
+                let dateFileName = "featured_\(yearsAgo)_\(dateString).txt"
+                let dateFileURL = containerURL.appendingPathComponent(dateFileName)
+                try "\(timestamp)".write(to: dateFileURL, atomically: true, encoding: .utf8)
+                
+                // Also update the main featured image for the widget
+                if yearsAgo == 1 {
+                    let mainImageURL = containerURL.appendingPathComponent("featured.jpg")
+                    try data.write(to: mainImageURL)
+                    
+                    let mainDateFileURL = containerURL.appendingPathComponent("featured_date.txt")
+                    try "\(timestamp)".write(to: mainDateFileURL, atomically: true, encoding: .utf8)
+                }
+                
+                print("✅ Saved widget photo for \(yearsAgo) years ago on \(dateString)")
+            }
+        } catch {
+            print("❌ Error saving widget photo: \(error)")
+        }
+    }
+
 } // End of class PhotoViewModel
+
 

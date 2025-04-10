@@ -81,6 +81,16 @@ struct LoadedYearContentView: View {
     // Define corner radius for grid items
     let itemCornerRadius: CGFloat = 0 // No rounded corners to maximize photo area
     // ---------------------------------
+    
+    // Animation properties for cascading effect
+    @State private var animatedItems: Set<String> = []
+    
+    // Function to calculate delay for each item
+    private func calculateDelay(for index: Int) -> Double {
+        // The delay increases based on the row position (every 2 items)
+        let rowIndex = index / 2
+        return Double(rowIndex) * 0.08 // Reverted from 0.12 back to 0.08
+    }
 
     var body: some View {
         ZStack {
@@ -95,6 +105,7 @@ struct LoadedYearContentView: View {
                         // Reset animation states when transitioning from splash screen
                         dateAppeared = false
                         dateBounce = false
+                        animatedItems.removeAll() // Reset animated items for cascading effect
                         
                         // Schedule animation sequence after splash screen disappears
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -180,7 +191,7 @@ struct LoadedYearContentView: View {
                             columns: columns,
                             spacing: verticalSpacing
                         ) {
-                            ForEach(allGridItems) { item in
+                            ForEach(Array(allGridItems.enumerated()), id: \.element.id) { index, item in
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
@@ -189,8 +200,15 @@ struct LoadedYearContentView: View {
                                 .frame(maxWidth: .infinity)
                                 .clipShape(Rectangle())
                                 .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1) // Subtle shadow for depth
-                                .animation(.easeIn(duration: 0.2).delay(Double.random(in: 0...0.2)), value: hasTappedSplash)
-                                .transition(.opacity)
+                                .offset(y: animatedItems.contains(item.id) ? 0 : -50)
+                                .opacity(animatedItems.contains(item.id) ? 1 : 0)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(calculateDelay(for: index)), value: animatedItems.contains(item.id))
+                                .onAppear {
+                                    // Trigger animation when item appears
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { // Reverted from 0.3 back to 0.2
+                                        animatedItems.insert(item.id)
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal, gridOuterPaddingValue) // Consistent horizontal padding
