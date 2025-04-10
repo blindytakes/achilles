@@ -38,8 +38,8 @@ struct LoadedYearContentView: View {
         }
     }
 
-    let columns: [GridItem] = [
-        GridItem(.flexible(), spacing: 2),
+    // Fixed 2-column grid with proper spacing
+    let columns = [
         GridItem(.flexible(), spacing: 2),
         GridItem(.flexible(), spacing: 2)
     ]
@@ -77,6 +77,8 @@ struct LoadedYearContentView: View {
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
+                                .frame(height: UIScreen.main.bounds.width / 2 - 3)
+                                .clipShape(Rectangle())
                                 .animation(.easeIn(duration: 0.2).delay(Double.random(in: 0...0.2)), value: hasTappedSplash)
                                 .transition(.opacity)
                             }
