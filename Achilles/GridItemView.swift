@@ -21,7 +21,7 @@ struct GridItemView: View {
             if let thumbnail = thumbnail {
                 Image(uiImage: thumbnail)
                     .resizable()
-                    .scaledToFit() // Show the entire photo
+                    .scaledToFill() // Fill the square frame completely
                     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                     .clipped() // Essential to prevent overflow/overlapping
                     .opacity(showImage ? 1 : 0)
@@ -103,4 +103,5 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
+
 

@@ -70,13 +70,13 @@ struct LoadedYearContentView: View {
     // --- Grid Layout Configuration ---
     // Define a fixed 2-column grid like Apple Photos on iPhone
     let columns: [GridItem] = [
-        GridItem(.flexible(), spacing: 4), // Increased spacing to ensure no overlap
+        GridItem(.flexible(), spacing: 6), // Reduced spacing between columns
         GridItem(.flexible())
     ]
     // Define VERTICAL spacing between rows
-    let verticalSpacing: CGFloat = 4 // Increased spacing to ensure no overlap
+    let verticalSpacing: CGFloat = 6 // Reduced spacing between rows
     // Define outer padding around the grid
-    let gridOuterPaddingValue: CGFloat = 2
+    let gridOuterPaddingValue: CGFloat = 6
     let gridOuterPadding: Edge.Set = .horizontal
     // Define corner radius for grid items
     let itemCornerRadius: CGFloat = 0 // No rounded corners to maximize photo area
@@ -126,7 +126,7 @@ struct LoadedYearContentView: View {
                 ScrollView(.vertical) {
                     VStack(spacing: 0) {
                         // --- Title with Date ---
-                        VStack(spacing: 8) {
+                        VStack(spacing: 3) {
                             Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
                                 .font(.largeTitle.bold())
                                 .padding(.top, 16)
@@ -137,7 +137,7 @@ struct LoadedYearContentView: View {
                                 .italic()
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [.primary.opacity(0.8), .primary.opacity(0.65)],
+                                        colors: [.primary, .primary.opacity(0.85)],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
@@ -184,8 +184,8 @@ struct LoadedYearContentView: View {
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
-                                // Use .fit for content mode to respect aspect ratio without overflow
-                                .aspectRatio(CGFloat(item.asset.pixelWidth) / CGFloat(item.asset.pixelHeight), contentMode: .fit)
+                                // Force square aspect ratio
+                                .aspectRatio(1, contentMode: .fill)
                                 .frame(maxWidth: .infinity)
                                 .clipShape(Rectangle())
                                 .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1) // Subtle shadow for depth
@@ -193,7 +193,7 @@ struct LoadedYearContentView: View {
                                 .transition(.opacity)
                             }
                         }
-                        .padding(.horizontal, 4) // Consistent horizontal padding
+                        .padding(.horizontal, gridOuterPaddingValue) // Consistent horizontal padding
                         
                         // --- Footer Text ---
                         Text("Make More Memories!")
@@ -226,4 +226,5 @@ struct LoadedYearContentView: View {
 
 // Ensure your GridItemView.swift still uses .scaledToFit() for the Image
 // Ensure you have definitions for MediaItem, PhotoViewModel, FeaturedYearFullScreenView, MediaDetailView
+
 
