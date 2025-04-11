@@ -558,7 +558,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Achilles/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Mementos;
+				INFOPLIST_KEY_CFBundleDisplayName = ThrowBack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to show photos and videos from previous years.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -592,7 +592,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Achilles/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Mementos;
+				INFOPLIST_KEY_CFBundleDisplayName = ThrowBack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to show photos and videos from previous years.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
