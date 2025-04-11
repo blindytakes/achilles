@@ -108,6 +108,10 @@ class PhotoViewModel: ObservableObject {
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
             if fetchResult.count > 0 {
                 foundYears.append(yearsAgoValue)
+                // Start pre-fetching for this year
+                Task {
+                    await preFetchPhotosForYear(yearsAgo: yearsAgoValue)
+                }
             }
         }
 
@@ -115,8 +119,33 @@ class PhotoViewModel: ObservableObject {
         await MainActor.run {
             self.availableYearsAgo = foundYears.sorted()
             self.initialYearScanComplete = true
-            // *** Initial Load Trigger REMOVED from here ***
-            // Let the YearPageView.onAppear handle the first load.
+        }
+    }
+
+    private func preFetchPhotosForYear(yearsAgo: Int) async {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = Date()
+        guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else {
+            return
+        }
+
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", dateRange.start as NSDate, dateRange.end as NSDate)
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        fetchOptions.fetchLimit = 50 // Limit to 50 photos for pre-fetching
+
+        let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
+        var assetsToCache: [PHAsset] = []
+        
+        fetchResult.enumerateObjects { (asset, _, _) in
+            assetsToCache.append(asset)
+        }
+
+        // Start caching the assets with a smaller target size for pre-fetching
+        if !assetsToCache.isEmpty {
+            let targetSize = CGSize(width: 200, height: 200) // Smaller size for pre-fetching
+            imageManager.startCachingImages(for: assetsToCache, targetSize: targetSize, contentMode: .aspectFit, options: nil)
+            print("Pre-fetched \(assetsToCache.count) thumbnails for \(yearsAgo) years ago")
         }
     }
 
@@ -229,22 +258,41 @@ class PhotoViewModel: ObservableObject {
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .highQualityFormat  // High quality for better display
+        options.deliveryMode = .highQualityFormat
         options.resizeMode = .exact
-        options.isSynchronous = false  // Async loading for better UI performance
+        options.isSynchronous = false
+        options.progressHandler = { progress, error, stop, info in
+            if let error = error {
+                print("Error loading image: \(error)")
+            }
+        }
         
-        // Use aspectFit to show the entire image without cropping
         imageManager.requestImage(for: asset,
                                 targetSize: targetSize,
                                 contentMode: .aspectFit,
                                 options: options) { image, info in
-            
-            // Check if this is a degraded image (preview while loading)
-            if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
-                // Still show degraded images initially
+            if let error = info?[PHImageErrorKey] as? Error {
+                print("Error loading image: \(error)")
+                // Retry with different options if failed
+                let retryOptions = PHImageRequestOptions()
+                retryOptions.isNetworkAccessAllowed = true
+                retryOptions.deliveryMode = .opportunistic
+                retryOptions.resizeMode = .fast
+                retryOptions.isSynchronous = false
+                
+                self.imageManager.requestImage(for: asset,
+                                            targetSize: targetSize,
+                                            contentMode: .aspectFit,
+                                            options: retryOptions) { retryImage, _ in
+                    DispatchQueue.main.async {
+                        completion(retryImage)
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion(image)
+                }
             }
-            
-            completion(image)
         }
     }
 
@@ -479,5 +527,6 @@ class PhotoViewModel: ObservableObject {
     }
 
 } // End of class PhotoViewModel
+
 
 
