@@ -160,14 +160,8 @@ class PhotoViewModel: ObservableObject {
             print("Already loading page for \(yearsAgo) years ago.")
             return
         }
-        // Optional: Uncomment return if you don't want explicit reload/retry on loaded state
-        // if case .loaded = pageStateByYear[yearsAgo] {
-        //    print("Page for \(yearsAgo) years ago already loaded.")
-        //    return
-        // }
 
         let loadTask = Task {
-            // Always switch to main actor for state updates
             await MainActor.run {
                 pageStateByYear[yearsAgo] = .loading
                 print("Loading page for \(yearsAgo) years ago...")
@@ -176,44 +170,54 @@ class PhotoViewModel: ObservableObject {
             let calendar = Calendar(identifier: .gregorian)
             let today = Date()
             guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else {
+                print("❌ Failed to calculate date range for \(yearsAgo) years ago")
                 await MainActor.run {
                     pageStateByYear[yearsAgo] = .error(message: "Failed to calculate date range.")
-                    activeLoadTasks[yearsAgo] = nil // Clear task before returning
+                    activeLoadTasks[yearsAgo] = nil
                 }
                 return
             }
+
+            print("📅 Date range for \(yearsAgo) years ago: \(dateRange.start) to \(dateRange.end)")
 
             let fetchOptions = PHFetchOptions()
             fetchOptions.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", dateRange.start as NSDate, dateRange.end as NSDate)
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
 
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
+            print("🔍 Found \(fetchResult.count) assets for \(yearsAgo) years ago")
+
             var fetchedItems: [MediaItem] = []
             if fetchResult.count > 0 {
-                fetchResult.enumerateObjects { (asset, _, _) in
+                fetchResult.enumerateObjects { (asset, index, stop) in
+                    print("📸 Processing asset \(index + 1)/\(fetchResult.count) for \(yearsAgo) years ago")
+                    print("📊 Asset ID: \(asset.localIdentifier)")
+                    print("📊 Creation date: \(String(describing: asset.creationDate))")
+                    print("📊 Media type: \(asset.mediaType.rawValue)")
+                    print("📊 Is iCloud asset: \(asset.sourceType == .typeCloudShared ? "Yes" : "No")")
+                    
                     fetchedItems.append(MediaItem(id: asset.localIdentifier, asset: asset))
                 }
             }
 
-            // Update state back on main actor
             await MainActor.run {
                 if fetchedItems.isEmpty {
-                    print("Page loaded for \(yearsAgo) years ago: Empty")
+                    print("⚠️ No items found for \(yearsAgo) years ago")
                     pageStateByYear[yearsAgo] = .empty
                     mediaByYear[yearsAgo] = []
                 } else {
-                    print("Page loaded for \(yearsAgo) years ago: \(fetchedItems.count) items")
+                    print("✅ Successfully loaded \(fetchedItems.count) items for \(yearsAgo) years ago")
                     mediaByYear[yearsAgo] = fetchedItems
                     let featured = fetchedItems.first
                     let gridItems = Array(fetchedItems.dropFirst())
                     pageStateByYear[yearsAgo] = .loaded(featured: featured, grid: gridItems)
                 }
-                activeLoadTasks[yearsAgo] = nil // Clear task on completion
+                activeLoadTasks[yearsAgo] = nil
             }
-        } // End of Task
+        }
 
         await MainActor.run {
-            activeLoadTasks[yearsAgo] = loadTask // Store task handle
+            activeLoadTasks[yearsAgo] = loadTask
         }
     }
 
@@ -258,12 +262,13 @@ class PhotoViewModel: ObservableObject {
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .highQualityFormat
+        options.deliveryMode = .opportunistic // Try opportunistic first for faster loading
         options.resizeMode = .exact
         options.isSynchronous = false
         options.progressHandler = { progress, error, stop, info in
             if let error = error {
-                print("Error loading image: \(error)")
+                print("❌ Error loading image: \(error.localizedDescription)")
+                print("📊 Progress: \(progress)")
             }
         }
         
@@ -272,23 +277,34 @@ class PhotoViewModel: ObservableObject {
                                 contentMode: .aspectFit,
                                 options: options) { image, info in
             if let error = info?[PHImageErrorKey] as? Error {
-                print("Error loading image: \(error)")
-                // Retry with different options if failed
+                print("❌ Error loading image: \(error.localizedDescription)")
+                print("📊 Asset ID: \(asset.localIdentifier)")
+                // Retry with high quality format if opportunistic failed
                 let retryOptions = PHImageRequestOptions()
                 retryOptions.isNetworkAccessAllowed = true
-                retryOptions.deliveryMode = .opportunistic
+                retryOptions.deliveryMode = .highQualityFormat
                 retryOptions.resizeMode = .fast
                 retryOptions.isSynchronous = false
                 
                 self.imageManager.requestImage(for: asset,
                                             targetSize: targetSize,
                                             contentMode: .aspectFit,
-                                            options: retryOptions) { retryImage, _ in
+                                            options: retryOptions) { retryImage, retryInfo in
+                    if retryImage == nil {
+                        print("⚠️ Retry failed for asset \(asset.localIdentifier)")
+                        if let retryError = retryInfo?[PHImageErrorKey] as? Error {
+                            print("❌ Retry error: \(retryError.localizedDescription)")
+                        }
+                    }
                     DispatchQueue.main.async {
                         completion(retryImage)
                     }
                 }
             } else {
+                if image == nil {
+                    print("⚠️ Image was nil for asset \(asset.localIdentifier)")
+                    print("📊 Info: \(String(describing: info))")
+                }
                 DispatchQueue.main.async {
                     completion(image)
                 }
@@ -527,6 +543,7 @@ class PhotoViewModel: ObservableObject {
     }
 
 } // End of class PhotoViewModel
+
 
 
 

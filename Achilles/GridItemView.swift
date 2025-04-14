@@ -66,10 +66,18 @@ struct GridItemView: View {
             }
         }
         .onAppear {
-            if thumbnail == nil {
-                loadThumbnail()
-            }
-        }
+    // Log first to confirm the view appeared
+    print("➡️ GridItemView ON APPEAR for Asset ID: \(item.id)")
+
+    // Check *once* if loading is needed
+    if thumbnail == nil {
+        print("➡️➡️ Thumbnail is nil, calling loadThumbnail() for Asset ID: \(item.id)")
+        loadThumbnail() // Call loadThumbnail() *only once*
+    } else {
+        // Log if the image was already loaded (e.g., view reappeared)
+        print("➡️➡️ Thumbnail already exists for Asset ID: \(item.id)")
+    }
+}
     }
 
     // Function to load the thumbnail
@@ -86,9 +94,12 @@ struct GridItemView: View {
             width: 300 * scale,  // Apple Photos uses higher resolution thumbnails
             height: 300 * scale
         )
+        print("➡️➡️➡️ Calling viewModel.requestImage for Asset ID: \(item.id)")
 
         // Use PHImageManager's requestImage with proper options
         viewModel.requestImage(for: item.asset, targetSize: targetSize) { image in
+            print("⬅️ GridItemView IMAGE RECEIVED for Asset ID: \(item.id). Image is \(image != nil ? "VALID" : "NIL")")
+
             DispatchQueue.main.async {
                 self.thumbnail = image
             }
@@ -103,5 +114,6 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
+
 
 
