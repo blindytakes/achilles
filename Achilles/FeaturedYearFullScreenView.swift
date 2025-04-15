@@ -130,7 +130,7 @@ struct FeaturedYearFullScreenView: View {
                             if showText {
                                 // Year label
                                 Text(yearLabel)
-                                    .font(.custom("Georgia-Bold", size: 56))
+                                    .font(.system(size: 56, weight: .bold))
                                     .foregroundColor(.white)
                                     .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
                                     .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)

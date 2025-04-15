@@ -263,7 +263,7 @@ class PhotoViewModel: ObservableObject {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .opportunistic // Try opportunistic first for faster loading
-        options.resizeMode = .exact
+        options.resizeMode = .fast
         options.isSynchronous = false
         options.progressHandler = { progress, error, stop, info in
             if let error = error {
@@ -492,25 +492,34 @@ class PhotoViewModel: ObservableObject {
         let targetSize = CGSize(width: 800, height: 800)
         
         // Request image for the asset
-        let imageManager = PHImageManager.default()
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
-        options.resizeMode = .exact
-        options.isSynchronous = true
-        
-        var savedImage: UIImage?
-        imageManager.requestImage(
-            for: item.asset,
-            targetSize: targetSize,
-            contentMode: .aspectFill,
-            options: options
-        ) { image, _ in
-            savedImage = image
-        }
-        
-        guard let image = savedImage, let data = image.jpegData(compressionQuality: 0.8) else {
-            return
-        }
+        // --- Replacement async code ---
+
+                // Request image for the asset asynchronously
+                let image: UIImage? = await withCheckedContinuation { continuation in
+                    let options = PHImageRequestOptions()
+                    options.deliveryMode = .highQualityFormat
+                    options.resizeMode = .exact // Keep exact for widget if needed, or change to .fast
+                    options.isNetworkAccessAllowed = true
+                    options.isSynchronous = false // <<< Ensure this is false
+
+                    PHImageManager.default().requestImage(
+                        for: item.asset,
+                        targetSize: targetSize, // targetSize is already defined above this block
+                        contentMode: .aspectFill, // Use .aspectFill to fill the widget space
+                        options: options
+                    ) { fetchedImage, _ in
+                        // Resume the async task, returning the fetched image (or nil)
+                        continuation.resume(returning: fetchedImage)
+                    }
+                }
+                // --- Now 'image' contains the result (or nil) ---
+
+                // Unwrap the optional image and get JPEG data
+                guard let validImage = image, let data = validImage.jpegData(compressionQuality: 0.8) else {
+                    print("❌ Failed to get image data for widget save - Asset: \(item.id)")
+                    return
+                }
+        // --- The rest of the function (saving data, etc.) continues below ---
         
         // Save the image for this year-ago period
         let imageFileName = "featured_\(yearsAgo)_\(dateString).jpg"
@@ -542,8 +551,7 @@ class PhotoViewModel: ObservableObject {
         }
     }
 
-} // End of class PhotoViewModel
-
+}
 
 
 

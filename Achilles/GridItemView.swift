@@ -91,8 +91,8 @@ struct GridItemView: View {
         // Apple Photos uses high-quality thumbnails scaled for the screen
         // Request a larger size than needed to ensure quality
         let targetSize = CGSize(
-            width: 300 * scale,  // Apple Photos uses higher resolution thumbnails
-            height: 300 * scale
+            width: 150 * scale,  // Apple Photos uses higher resolution thumbnails
+            height: 150 * scale
         )
         print("➡️➡️➡️ Calling viewModel.requestImage for Asset ID: \(item.id)")
 
