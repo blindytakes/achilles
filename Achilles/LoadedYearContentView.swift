@@ -7,7 +7,9 @@ struct LoadedYearContentView: View {
     let featuredItem: MediaItem?
     let gridItems: [MediaItem]
 
-    @State private var hasTappedSplash = false
+    private var hasTappedSplash: Bool {
+        viewModel.dismissedSplashForYearsAgo.contains(yearsAgo)
+    }
     @State private var selectedItemForDetail: MediaItem? = nil
     
     // Add animation states
@@ -101,7 +103,7 @@ struct LoadedYearContentView: View {
                     yearsAgo: yearsAgo
                 ) {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        hasTappedSplash = true
+                        viewModel.markSplashDismissed(for: yearsAgo)
                         // Reset animation states when transitioning from splash screen
                         dateAppeared = false
                         dateBounce = false

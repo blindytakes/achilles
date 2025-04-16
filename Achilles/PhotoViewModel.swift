@@ -28,6 +28,12 @@ class PhotoViewModel: ObservableObject {
     @Published var availableYearsAgo: [Int] = [] // Sorted list of years with content
     @Published var authorizationStatus: PHAuthorizationStatus = .notDetermined
     @Published var initialYearScanComplete: Bool = false // Tracks if availableYearsAgo is ready
+    @Published var dismissedSplashForYearsAgo: Set<Int> = []
+
+    func markSplashDismissed(for yearsAgo: Int) {
+        dismissedSplashForYearsAgo.insert(yearsAgo)
+    }
+
 
     // --- Internal Properties ---
     private var mediaByYear: [Int: [MediaItem]] = [:] // Cache for all items per year
