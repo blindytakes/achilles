@@ -82,26 +82,35 @@ struct GridItemView: View {
 
     // Function to load the thumbnail
     private func loadThumbnail() {
+        let assetIdentifier = item.asset.localIdentifier
+        
+        // 1. Check ViewModel cache first
+        if let cachedImage = viewModel.cachedImage(for: assetIdentifier) {
+            print("✅ GridItemView using cached thumbnail for Asset ID: \(assetIdentifier)")
+            // Update state directly if cached image found
+            DispatchQueue.main.async {
+                self.thumbnail = cachedImage
+            }
+            return // Don't proceed to request if already cached
+        }
+        
+        // 2. If not cached, proceed with the request
+        print("➡️➡️➡️ Thumbnail not in cache, calling viewModel.requestImage for Asset ID: \(assetIdentifier)")
         let scale = UIScreen.main.scale
-        
-        // Get asset's actual dimensions
-        let assetWidth = CGFloat(item.asset.pixelWidth)
-        let assetHeight = CGFloat(item.asset.pixelHeight)
-        
-        // Apple Photos uses high-quality thumbnails scaled for the screen
-        // Request a larger size than needed to ensure quality
         let targetSize = CGSize(
-            width: 150 * scale,  // Apple Photos uses higher resolution thumbnails
+            width: 150 * scale,
             height: 150 * scale
         )
-        print("➡️➡️➡️ Calling viewModel.requestImage for Asset ID: \(item.id)")
 
-        // Use PHImageManager's requestImage with proper options
+        // Use the existing requestImage function which handles caching on completion
         viewModel.requestImage(for: item.asset, targetSize: targetSize) { image in
-            print("⬅️ GridItemView IMAGE RECEIVED for Asset ID: \(item.id). Image is \(image != nil ? "VALID" : "NIL")")
-
+            print("⬅️ GridItemView IMAGE RECEIVED for Asset ID: \(assetIdentifier). Image is \(image != nil ? "VALID" : "NIL")")
             DispatchQueue.main.async {
-                self.thumbnail = image
+                // Only update if the image is valid (might be nil on error)
+                if let validImage = image {
+                     self.thumbnail = validImage
+                }
+                // If image is nil after request, the ProgressView should remain
             }
         }
     }
@@ -114,6 +123,7 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
+
 
 
 

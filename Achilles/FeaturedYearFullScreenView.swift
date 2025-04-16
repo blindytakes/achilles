@@ -1,5 +1,4 @@
 import SwiftUI
-import WidgetKit
 import Photos
 
 // Custom modifier for handwriting animation
@@ -67,7 +66,6 @@ struct FeaturedYearFullScreenView: View {
     
     // View state
     @State private var image: UIImage? = nil
-    @State private var opacity: Double = 0
     @State private var textOpacity: Double = 0
     @State private var showLoadingTransition: Bool = false
     @State private var showText = false
@@ -211,42 +209,37 @@ struct FeaturedYearFullScreenView: View {
         options.isSynchronous = false
         options.deliveryMode = .highQualityFormat
         options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true // Ensure network access is allowed
 
         manager.requestImage(
             for: item.asset,
             targetSize: UIScreen.main.bounds.size,
             contentMode: .aspectFill,
             options: options
-        ) { img, _ in
+        ) { img, info in // Capture info dictionary
+            // Check for errors or degradation
+            if let error = info?[PHImageErrorKey] as? Error {
+                 print("❌ Error loading featured image: \(error.localizedDescription)")
+                 // Optionally handle the error, maybe show a placeholder or retry
+                 return
+             }
+             let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+             if isDegraded {
+                 print("ℹ️ Received degraded featured image, waiting for full quality...")
+                 return // Wait for the non-degraded version
+             }
+            
             if let img = img {
-                withAnimation(.easeIn(duration: 0.5)) {
-                    self.image = img
-                    saveFeaturedPhotoToSharedContainer(image: img)
+                // Use Task to ensure UI update is on main thread
+                Task {
+                    await MainActor.run {
+                         withAnimation(.easeIn(duration: 0.5)) {
+                             self.image = img
+                         }
+                    }
                 }
-            }
-        }
-    }
-
-    private func saveFeaturedPhotoToSharedContainer(image: UIImage) {
-        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
-
-        if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.plzwork.Achilles") {
-            let fileURL = containerURL.appendingPathComponent("featured.jpg")
-
-            do {
-                try data.write(to: fileURL)
-                print("✅ Featured photo saved for widget.")
-
-                if let creationDate = item.asset.creationDate {
-                    let timestamp = creationDate.timeIntervalSince1970
-                    let dateFileURL = containerURL.appendingPathComponent("featured_date.txt")
-                    try? "\(timestamp)".write(to: dateFileURL, atomically: true, encoding: .utf8)
-                }
-
-                WidgetCenter.shared.reloadAllTimelines()
-
-            } catch {
-                print("❌ Error saving image to shared container: \(error)")
+            } else {
+                 print("⚠️ Featured image was nil (and not degraded/error)")
             }
         }
     }
@@ -274,5 +267,6 @@ struct FeaturedYearFullScreenView: View {
         return baseDate + suffix + ", \(year)"
     }
 }
+
 
 

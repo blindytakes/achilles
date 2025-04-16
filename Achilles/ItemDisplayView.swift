@@ -24,6 +24,7 @@ struct ItemDisplayView: View {
     @State private var zoomScale: CGFloat = 1.0
     @State private var dragOffset: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
+    @State private var currentRequestID: PHImageRequestID?
 
     var body: some View {
         GeometryReader { geometry in
@@ -115,9 +116,30 @@ struct ItemDisplayView: View {
                     showInfoPanel = false
                 }
             }
+            
+            // Add memory warning observer - dispatch to main actor
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didReceiveMemoryWarningNotification,
+                object: nil,
+                queue: .main
+            ) { [weak viewModel] _ in
+                // Dispatch the call to the main actor
+                DispatchQueue.main.async {
+                    viewModel?.clearImageCache()
+                }
+            }
         }
         .onDisappear {
-            // Remove observers when view disappears
+            // Cancel any ongoing image request
+            if let requestID = currentRequestID {
+                PHImageManager.default().cancelImageRequest(requestID)
+                currentRequestID = nil
+            }
+            
+            // Remove memory warning observer
+            NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+            
+            // Remove MapPanel observers
             NotificationCenter.default.removeObserver(self, name: Notification.Name("MapPanelDragChanged"), object: nil)
             NotificationCenter.default.removeObserver(self, name: Notification.Name("MapPanelDragEnded"), object: nil)
             NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
@@ -234,16 +256,105 @@ struct ItemDisplayView: View {
         }
     }
 
-    @MainActor
-    func loadImageOnlyIfNeeded() async {
-        guard item.asset.mediaType == .image, case .loading = viewState else { return }
-        let imageData = await viewModel.requestFullImageData(for: item.asset)
+    private func loadImageOnlyIfNeeded() async {
         guard case .loading = viewState else { return }
-
-        if let data = imageData, let uiImage = UIImage(data: data) {
-            self.viewState = .image(displayImage: uiImage)
-        } else {
-            self.viewState = .error("Could not load full image.")
+        
+        let assetIdentifier = item.asset.localIdentifier
+        let screenSize = UIScreen.main.bounds.size
+        let scale = UIScreen.main.scale
+        let targetSize = CGSize(width: screenSize.width * scale, height: screenSize.height * scale)
+        
+        // Check cache using ViewModel's helper method
+        if let cachedImage = viewModel.cachedImage(for: assetIdentifier) {
+            DispatchQueue.main.async {
+                self.viewState = .image(displayImage: cachedImage)
+            }
+            return
+        }
+        
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .fast
+        options.isSynchronous = false
+        
+        // Cancel any existing request
+        if let existingRequestID = currentRequestID {
+            PHImageManager.default().cancelImageRequest(existingRequestID)
+        }
+        
+        options.progressHandler = { progress, error, stop, info in
+            if let error = error {
+                print("❌ Error loading full-size image: \(error.localizedDescription)")
+                print("📊 Progress: \(progress)")
+                if progress < 1.0 {
+                    // Pass targetSize to retry function
+                    self.retryFullSizeImageRequest(targetSize: targetSize, assetIdentifier: assetIdentifier)
+                }
+            }
+        }
+        
+        currentRequestID = PHImageManager.default().requestImage(
+            for: item.asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { image, info in
+            self.currentRequestID = nil
+            
+            if let error = info?[PHImageErrorKey] as? Error {
+                print("❌ Error loading full-size image: \(error.localizedDescription)")
+                self.retryFullSizeImageRequest(targetSize: targetSize, assetIdentifier: assetIdentifier)
+                return
+            }
+            
+            guard let image = image else {
+                print("⚠️ Full-size image was nil for asset \(assetIdentifier)")
+                DispatchQueue.main.async {
+                    self.viewState = .error("Failed to load image")
+                }
+                return
+            }
+            
+            self.viewModel.cacheImage(image, for: assetIdentifier)
+            
+            DispatchQueue.main.async {
+                self.viewState = .image(displayImage: image)
+            }
+        }
+    }
+    
+    private func retryFullSizeImageRequest(targetSize: CGSize, assetIdentifier: String) {
+        let retryOptions = PHImageRequestOptions()
+        retryOptions.isNetworkAccessAllowed = true
+        retryOptions.deliveryMode = .highQualityFormat
+        retryOptions.resizeMode = .fast
+        retryOptions.isSynchronous = false
+        
+        // Cancel existing request before retrying
+        if let existingRequestID = currentRequestID {
+            PHImageManager.default().cancelImageRequest(existingRequestID)
+        }
+        
+        currentRequestID = PHImageManager.default().requestImage(
+            for: item.asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: retryOptions
+        ) { retryImage, retryInfo in
+            self.currentRequestID = nil
+            
+            if let retryImage = retryImage {
+                self.viewModel.cacheImage(retryImage, for: assetIdentifier)
+                DispatchQueue.main.async {
+                    self.viewState = .image(displayImage: retryImage)
+                }
+            } else {
+                print("⚠️ Retry failed for asset \(assetIdentifier)")
+                DispatchQueue.main.async {
+                    self.viewState = .error("Failed to load image after retry")
+                }
+            }
         }
     }
 }
@@ -298,6 +409,7 @@ func daySuffix(for date: Date) -> String {
         }
     }
 }
+
 
 
 

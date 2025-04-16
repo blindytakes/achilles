@@ -1,7 +1,6 @@
 import SwiftUI
 import Photos
 import AVKit // For AVURLAsset
-import WidgetKit
 
 // --- Data Model (Assuming this remains the same) ---
 struct MediaItem: Identifiable, Hashable {
@@ -43,10 +42,17 @@ class PhotoViewModel: ObservableObject {
 
     var thumbnailSize = CGSize(width: 250, height: 250) // Used by GridItemView
 
+    // Add new properties for caching
+    private var imageCache = NSCache<NSString, UIImage>()
+    private var activeRequests: [String: PHImageRequestID] = [:]
+    private let maxCacheSize = 50 // Maximum number of full-size images to cache
+
     // --- Initialization ---
     init() {
+        // Configure cache
+        imageCache.countLimit = maxCacheSize
+        imageCache.totalCostLimit = 1024 * 1024 * 100 // 100MB limit
         checkAuthorization()
-        checkWidgetRefreshFlags() // Check if widget needs new photos
     }
 
     // --- 1. Check / Request Permissions ---
@@ -266,56 +272,116 @@ class PhotoViewModel: ObservableObject {
 
     // --- 6. Image & Video Loading Functions (Unchanged) ---
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
+        let assetIdentifier = asset.localIdentifier
+        // Check cache first using the helper method
+        if let cachedImage = cachedImage(for: assetIdentifier) {
+            print("✅ Using cached image for asset: \(assetIdentifier)")
+            completion(cachedImage)
+            return
+        }
+        
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .opportunistic // Try opportunistic first for faster loading
+        options.deliveryMode = .opportunistic
         options.resizeMode = .fast
         options.isSynchronous = false
+        
+        // Cancel any existing request for this asset
+        if let existingRequestID = activeRequests[assetIdentifier] {
+            imageManager.cancelImageRequest(existingRequestID)
+        }
+        
         options.progressHandler = { progress, error, stop, info in
             if let error = error {
                 print("❌ Error loading image: \(error.localizedDescription)")
                 print("📊 Progress: \(progress)")
+                if progress < 1.0 {
+                    // Use weak self in retry closure
+                    self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
+                }
             }
         }
         
-        imageManager.requestImage(for: asset,
-                                targetSize: targetSize,
-                                contentMode: .aspectFit,
-                                options: options) { image, info in
+        let requestID = imageManager.requestImage(for: asset,
+                                                targetSize: targetSize,
+                                                contentMode: .aspectFit,
+                                                options: options) { [weak self] image, info in
+            guard let self = self else { return }
+            
+            // Remove from active requests
+            self.activeRequests.removeValue(forKey: assetIdentifier)
+            
             if let error = info?[PHImageErrorKey] as? Error {
                 print("❌ Error loading image: \(error.localizedDescription)")
-                print("📊 Asset ID: \(asset.localIdentifier)")
-                // Retry with high quality format if opportunistic failed
-                let retryOptions = PHImageRequestOptions()
-                retryOptions.isNetworkAccessAllowed = true
-                retryOptions.deliveryMode = .highQualityFormat
-                retryOptions.resizeMode = .fast
-                retryOptions.isSynchronous = false
-                
-                self.imageManager.requestImage(for: asset,
-                                            targetSize: targetSize,
-                                            contentMode: .aspectFit,
-                                            options: retryOptions) { retryImage, retryInfo in
-                    if retryImage == nil {
-                        print("⚠️ Retry failed for asset \(asset.localIdentifier)")
-                        if let retryError = retryInfo?[PHImageErrorKey] as? Error {
-                            print("❌ Retry error: \(retryError.localizedDescription)")
-                        }
-                    }
-                    DispatchQueue.main.async {
-                        completion(retryImage)
-                    }
-                }
-            } else {
-                if image == nil {
-                    print("⚠️ Image was nil for asset \(asset.localIdentifier)")
-                    print("📊 Info: \(String(describing: info))")
-                }
+                self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
+                return
+            }
+            
+            if let image = image {
+                // Cache the image using the helper method
+                self.cacheImage(image, for: assetIdentifier)
                 DispatchQueue.main.async {
                     completion(image)
                 }
+            } else {
+                print("⚠️ Image was nil for asset \(assetIdentifier)")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
             }
         }
+        
+        // Store the request ID
+        activeRequests[assetIdentifier] = requestID
+    }
+
+    private func retryImageRequest(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
+        let assetIdentifier = asset.localIdentifier
+        let retryOptions = PHImageRequestOptions()
+        retryOptions.isNetworkAccessAllowed = true
+        retryOptions.deliveryMode = .highQualityFormat
+        retryOptions.resizeMode = .fast
+        retryOptions.isSynchronous = false
+        
+        // Cancel existing retry request if any
+        if let existingRequestID = activeRequests[assetIdentifier] {
+            imageManager.cancelImageRequest(existingRequestID)
+        }
+        
+        let requestID = imageManager.requestImage(for: asset,
+                                                targetSize: targetSize,
+                                                contentMode: .aspectFit,
+                                                options: retryOptions) { [weak self] retryImage, retryInfo in
+            guard let self = self else { return }
+            
+            // Remove from active requests
+            self.activeRequests.removeValue(forKey: assetIdentifier)
+            
+            if let retryImage = retryImage {
+                // Cache the retried image using the helper method
+                self.cacheImage(retryImage, for: assetIdentifier)
+                DispatchQueue.main.async {
+                    completion(retryImage)
+                }
+            } else {
+                print("⚠️ Retry failed for asset \(assetIdentifier)")
+                if let retryError = retryInfo?[PHImageErrorKey] as? Error {
+                    print("❌ Retry error: \(retryError.localizedDescription)")
+                }
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+            }
+        }
+        
+        // Store the retry request ID
+        activeRequests[assetIdentifier] = requestID
+    }
+
+    // Keep internal or change to public if needed elsewhere
+    internal func clearImageCache() {
+        imageCache.removeAllObjects()
+        print("🧹 Cleared image cache due to memory pressure")
     }
 
     func requestFullImageData(for asset: PHAsset) async -> Data? {
@@ -377,187 +443,20 @@ class PhotoViewModel: ObservableObject {
         return (startOfDay, endOfDay)
     }
 
-    // --- Check for widget refresh flags ---
-    private func checkWidgetRefreshFlags() {
-        Task {
-            guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.plzwork.Achilles") else {
-                return
-            }
-            
-            let fileManager = FileManager.default
-            
-            do {
-                // Look for any refresh_needed files
-                let contents = try fileManager.contentsOfDirectory(at: containerURL, includingPropertiesForKeys: nil)
-                let refreshFlags = contents.filter { $0.lastPathComponent.hasPrefix("refresh_needed_") && $0.pathExtension == "flag" }
-                
-                for flagURL in refreshFlags {
-                    // Extract date from filename (refresh_needed_YYYY-MM-DD.flag)
-                    let filename = flagURL.deletingPathExtension().lastPathComponent
-                    if let dateString = filename.components(separatedBy: "refresh_needed_").last,
-                       !dateString.isEmpty {
-                        
-                        print("Processing widget refresh request for date: \(dateString)")
-                        
-                        // Process this date - load photos for this day
-                        await updatePhotosForWidget(dateString: dateString)
-                        
-                        // Delete the flag file after processing
-                        try? fileManager.removeItem(at: flagURL)
-                    }
-                }
-                
-                // Also check UserDefaults
-                if let sharedDefaults = UserDefaults(suiteName: "group.plzwork.Achilles"),
-                   sharedDefaults.bool(forKey: "widget_needs_refresh"),
-                   let dateString = sharedDefaults.string(forKey: "widget_refresh_date") {
-                    
-                    print("Processing widget refresh from UserDefaults for date: \(dateString)")
-                    await updatePhotosForWidget(dateString: dateString)
-                    
-                    // Clear the flags
-                    sharedDefaults.set(false, forKey: "widget_needs_refresh")
-                }
-            } catch {
-                print("Error checking widget refresh flags: \(error)")
-            }
-        }
+    // Internal method to check the cache
+    internal func cachedImage(for assetIdentifier: String) -> UIImage? {
+        return imageCache.object(forKey: assetIdentifier as NSString)
     }
     
-    // Update photos for the widget for a specific date
-    private func updatePhotosForWidget(dateString: String) async {
-        // Parse the date string
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dateString) else {
-            print("Invalid date format for widget refresh: \(dateString)")
-            return
-        }
-        
-        // Find photos from years ago on this date
-        // This would use the same logic as your existing year-ago photo finder
-        // For each available year in the past:
-        for yearsAgo in 1...10 { // Check up to 10 years back
-            // Logic to find photos from 'yearsAgo' on the month/day of 'date'
-            if let item = await fetchFeaturedMediaForYearsAgo(yearsAgo, fromDate: date) {
-                // Save this to the container for the widget in a year-specific file
-                await saveFeaturedPhotoToContainer(item: item, yearsAgo: yearsAgo, dateString: dateString)
-            }
-        }
-        
-        // After updating, reload the widget
-        WidgetCenter.shared.reloadAllTimelines()
-    }
-    
-    // Fetch a featured item for years ago from a specific date
-    private func fetchFeaturedMediaForYearsAgo(_ yearsAgo: Int, fromDate date: Date) async -> MediaItem? {
-        // This would be similar to your existing logic to find photos from years ago
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
-        
-        // Create a date from 'yearsAgo' years ago with same month/day
-        var pastComponents = components
-        pastComponents.year = (components.year ?? 0) - yearsAgo
-        
-        guard let pastDate = calendar.date(from: pastComponents) else {
-            return nil
-        }
-        
-        // Create start and end of that day
-        let startOfDay = calendar.startOfDay(for: pastDate)
-        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
-            return nil
-        }
-        
-        // Find photos within that day range
-        let fetchOptions = PHFetchOptions()
-        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        fetchOptions.predicate = NSPredicate(
-            format: "creationDate >= %@ AND creationDate < %@",
-            startOfDay as NSDate,
-            endOfDay as NSDate
-        )
-        
-        let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
-        if fetchResult.count > 0 {
-            // Return the first item
-            let asset = fetchResult.object(at: 0)
-            return MediaItem(id: asset.localIdentifier, asset: asset)
-        }
-        
-        return nil
-    }
-    
-    // Save a featured photo to the container for the widget
-    private func saveFeaturedPhotoToContainer(item: MediaItem, yearsAgo: Int, dateString: String) async {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.plzwork.Achilles") else {
-            return
-        }
-        
-        // Request the image at a size suitable for the widget
-        let targetSize = CGSize(width: 800, height: 800)
-        
-        // Request image for the asset
-        // --- Replacement async code ---
-
-                // Request image for the asset asynchronously
-                let image: UIImage? = await withCheckedContinuation { continuation in
-                    let options = PHImageRequestOptions()
-                    options.deliveryMode = .highQualityFormat
-                    options.resizeMode = .exact // Keep exact for widget if needed, or change to .fast
-                    options.isNetworkAccessAllowed = true
-                    options.isSynchronous = false // <<< Ensure this is false
-
-                    PHImageManager.default().requestImage(
-                        for: item.asset,
-                        targetSize: targetSize, // targetSize is already defined above this block
-                        contentMode: .aspectFill, // Use .aspectFill to fill the widget space
-                        options: options
-                    ) { fetchedImage, _ in
-                        // Resume the async task, returning the fetched image (or nil)
-                        continuation.resume(returning: fetchedImage)
-                    }
-                }
-                // --- Now 'image' contains the result (or nil) ---
-
-                // Unwrap the optional image and get JPEG data
-                guard let validImage = image, let data = validImage.jpegData(compressionQuality: 0.8) else {
-                    print("❌ Failed to get image data for widget save - Asset: \(item.id)")
-                    return
-                }
-        // --- The rest of the function (saving data, etc.) continues below ---
-        
-        // Save the image for this year-ago period
-        let imageFileName = "featured_\(yearsAgo)_\(dateString).jpg"
-        let imageURL = containerURL.appendingPathComponent(imageFileName)
-        
-        do {
-            try data.write(to: imageURL)
-            
-            // Save the creation date timestamp for the widget
-            if let creationDate = item.asset.creationDate {
-                let timestamp = creationDate.timeIntervalSince1970
-                let dateFileName = "featured_\(yearsAgo)_\(dateString).txt"
-                let dateFileURL = containerURL.appendingPathComponent(dateFileName)
-                try "\(timestamp)".write(to: dateFileURL, atomically: true, encoding: .utf8)
-                
-                // Also update the main featured image for the widget
-                if yearsAgo == 1 {
-                    let mainImageURL = containerURL.appendingPathComponent("featured.jpg")
-                    try data.write(to: mainImageURL)
-                    
-                    let mainDateFileURL = containerURL.appendingPathComponent("featured_date.txt")
-                    try "\(timestamp)".write(to: mainDateFileURL, atomically: true, encoding: .utf8)
-                }
-                
-                print("✅ Saved widget photo for \(yearsAgo) years ago on \(dateString)")
-            }
-        } catch {
-            print("❌ Error saving widget photo: \(error)")
-        }
+    // Internal method to store an image in the cache
+    internal func cacheImage(_ image: UIImage, for assetIdentifier: String) {
+        // Estimate cost based on image size (pixels * bytes per pixel)
+        let cost = Int(image.size.width * image.size.height * image.scale * 4) // Assuming 4 bytes per pixel (RGBA)
+        imageCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
     }
 
 }
+
 
 
 
