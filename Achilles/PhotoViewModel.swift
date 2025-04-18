@@ -28,6 +28,8 @@ class PhotoViewModel: ObservableObject {
     @Published var authorizationStatus: PHAuthorizationStatus = .notDetermined
     @Published var initialYearScanComplete: Bool = false // Tracks if availableYearsAgo is ready
     @Published var dismissedSplashForYearsAgo: Set<Int> = []
+    @Published var gridAnimationDone: Set<Int> = []
+
 
     func markSplashDismissed(for yearsAgo: Int) {
         dismissedSplashForYearsAgo.insert(yearsAgo)

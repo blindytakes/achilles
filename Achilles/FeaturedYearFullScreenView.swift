@@ -207,7 +207,7 @@ struct FeaturedYearFullScreenView: View {
         let manager = PHImageManager.default()
         let options = PHImageRequestOptions()
         options.isSynchronous = false
-        options.deliveryMode = .highQualityFormat
+        options.deliveryMode = .opportunistic
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = true // Ensure network access is allowed
 
@@ -230,15 +230,20 @@ struct FeaturedYearFullScreenView: View {
              }
             
             if let img = img {
-                // Use Task to ensure UI update is on main thread
                 Task {
                     await MainActor.run {
-                         withAnimation(.easeIn(duration: 0.5)) {
-                             self.image = img
-                         }
+                        if isDegraded {
+                            self.image = img // Show low-res preview
+                        } else {
+                            withAnimation(.easeIn(duration: 0.4)) {
+                                self.image = img // Full-res, fade in
+                            }
+                        }
                     }
                 }
-            } else {
+            }
+
+            else {
                  print("⚠️ Featured image was nil (and not degraded/error)")
             }
         }

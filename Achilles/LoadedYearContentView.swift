@@ -7,6 +7,10 @@ struct LoadedYearContentView: View {
     let featuredItem: MediaItem?
     let gridItems: [MediaItem]
 
+    private var shouldAnimateGrid: Bool {
+        !viewModel.gridAnimationDone.contains(yearsAgo)
+    }
+    
     private var hasTappedSplash: Bool {
         viewModel.dismissedSplashForYearsAgo.contains(yearsAgo)
     }
@@ -206,11 +210,41 @@ struct LoadedYearContentView: View {
                                 .opacity(animatedItems.contains(item.id) ? 1 : 0)
                                 .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(calculateDelay(for: index)), value: animatedItems.contains(item.id))
                                 .onAppear {
-                                    // Trigger animation when item appears
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { // Reverted from 0.3 back to 0.2
+                                    // Print at the very start
+                                    print("onAppear: yearsAgo=\(yearsAgo), item=\(item.id), index=\(index), shouldAnimateGrid=\(shouldAnimateGrid)")
+
+                                    guard shouldAnimateGrid else {
+                                        // Print if skipping animation
+                                        print("--> Skipping animation for yearsAgo=\(yearsAgo), inserting item \(item.id) immediately.")
                                         animatedItems.insert(item.id)
+                                        return
+                                    }
+
+                                    // Print if starting animation
+                                    print("--> Starting animation for yearsAgo=\(yearsAgo), item=\(item.id), index=\(index)")
+                                    let delay = calculateDelay(for: index)
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                        // Print when item appears after delay
+                                        print("--> Delayed insert for yearsAgo=\(yearsAgo), item=\(item.id), index=\(index)")
+                                        animatedItems.insert(item.id)
+
+                                        // *** CRITICAL DEBUG AREA ***
+                                        let isLastItem = (index == allGridItems.count - 1)
+                                        print("--> Checking if last item for yearsAgo=\(yearsAgo): index=\(index), count=\(allGridItems.count), isLast=\(isLastItem)")
+
+                                        if isLastItem {
+                                            print("--> Condition MET for last item yearsAgo=\(yearsAgo)! Scheduling insertion into gridAnimationDone.")
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { // The 0.3s delay before marking done
+                                                print("--> EXECUTING insert for yearsAgo=\(yearsAgo) into gridAnimationDone.")
+                                                viewModel.gridAnimationDone.insert(yearsAgo)
+                                                // Optionally print the set content AFTER insertion
+                                                print("--> gridAnimationDone now contains: \(viewModel.gridAnimationDone)")
+                                            }
+                                        }
+                                        // *** END CRITICAL DEBUG AREA ***
                                     }
                                 }
+
                             }
                         }
                         .padding(.horizontal, gridOuterPaddingValue) // Consistent horizontal padding
@@ -229,7 +263,6 @@ struct LoadedYearContentView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: hasTappedSplash)
         // --- Detail View Sheet ---
         .sheet(item: $selectedItemForDetail) { itemToDisplay in
             MediaDetailView(
