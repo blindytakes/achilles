@@ -201,8 +201,6 @@ struct FeaturedYearFullScreenView: View {
         }
     }
 
-    // MARK: - Helper Functions
-    
     private func requestImage() {
         let manager = PHImageManager.default()
         let options = PHImageRequestOptions()
@@ -212,41 +210,14 @@ struct FeaturedYearFullScreenView: View {
         options.isNetworkAccessAllowed = true
         options.version = .current
         
-        // Calculate optimal size based on screen dimensions and device capabilities
-        let screenSize = UIScreen.main.bounds.size
-        let scale = UIScreen.main.scale
-        
-        // Get the original asset dimensions
-        let assetWidth = CGFloat(item.asset.pixelWidth)
-        let assetHeight = CGFloat(item.asset.pixelHeight)
-        
-        // Calculate the optimal target size
-        let targetSize: CGSize
-        if assetWidth > 0 && assetHeight > 0 {
-            // If we know the original dimensions, calculate the optimal size
-            let screenPixels = screenSize.width * scale
-            let scaleFactor = min(screenPixels / assetWidth, screenPixels / assetHeight)
-            targetSize = CGSize(
-                width: assetWidth * scaleFactor,
-                height: assetHeight * scaleFactor
-            )
-            print("📏 Original asset size: \(assetWidth)x\(assetHeight)")
-            print("📏 Calculated target size: \(targetSize.width)x\(targetSize.height)")
-        } else {
-            // Fallback to screen size if we don't know original dimensions
-            targetSize = CGSize(
-                width: screenSize.width * scale,
-                height: screenSize.height * scale
-            )
-            print("📏 Using fallback target size: \(targetSize.width)x\(targetSize.height)")
-        }
+        let targetSize = PHImageManagerMaximumSize
+        print("📏 Requesting FULL RESOLUTION image")
 
         options.progressHandler = { progress, error, stop, info in
             if let error = error {
                 print("❌ Error loading featured image: \(error.localizedDescription)")
                 print("📊 Progress: \(progress)")
                 if progress < 1.0 {
-                    // Retry with maximum quality if download fails
                     self.retryWithMaximumQuality()
                 }
             }
@@ -258,26 +229,16 @@ struct FeaturedYearFullScreenView: View {
             contentMode: .aspectFill,
             options: options
         ) { img, info in
-            // Check for errors or degradation
             if let error = info?[PHImageErrorKey] as? Error {
                 print("❌ Error loading featured image: \(error.localizedDescription)")
                 self.retryWithMaximumQuality()
                 return
             }
-            
-            // Check if the image was degraded
-            if let isDegraded = info?[PHImageResultIsDegradedKey] as? NSNumber, isDegraded.boolValue {
-                print("⚠️ Received degraded image, retrying with maximum quality")
-                self.retryWithMaximumQuality()
-                return
-            }
-            
+
             if let img = img {
                 Task {
                     await MainActor.run {
-                        // Clear previous image to free memory
                         self.image = nil
-                        
                         withAnimation(.easeIn(duration: 0.4)) {
                             self.image = img
                         }
@@ -289,6 +250,7 @@ struct FeaturedYearFullScreenView: View {
             }
         }
     }
+
     
     private func retryWithMaximumQuality() {
         let manager = PHImageManager.default()
