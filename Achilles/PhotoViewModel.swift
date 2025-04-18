@@ -46,14 +46,19 @@ class PhotoViewModel: ObservableObject {
 
     // Add new properties for caching
     private var imageCache = NSCache<NSString, UIImage>()
+    private var highResCache = NSCache<NSString, UIImage>()
     private var activeRequests: [String: PHImageRequestID] = [:]
     private let maxCacheSize = 50 // Maximum number of full-size images to cache
+    private let maxHighResCacheSize = 10 // Maximum number of high-res images to cache
 
     // --- Initialization ---
     init() {
-        // Configure cache
+        // Configure caches
         imageCache.countLimit = maxCacheSize
-        imageCache.totalCostLimit = 1024 * 1024 * 100 // 100MB limit
+        imageCache.totalCostLimit = 1024 * 1024 * 100 // 100MB limit for thumbnails
+        
+        highResCache.countLimit = maxHighResCacheSize
+        highResCache.totalCostLimit = 1024 * 1024 * 500 // 500MB limit for high-res images
         checkAuthorization()
     }
 
@@ -275,18 +280,21 @@ class PhotoViewModel: ObservableObject {
     // --- 6. Image & Video Loading Functions (Unchanged) ---
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
         let assetIdentifier = asset.localIdentifier
-        // Check cache first using the helper method
-        if let cachedImage = cachedImage(for: assetIdentifier) {
-            print("✅ Using cached image for asset: \(assetIdentifier)")
+        let isHighRes = targetSize == PHImageManagerMaximumSize
+        
+        // Check appropriate cache first
+        if let cachedImage = cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
+            print("✅ Using cached \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
             completion(cachedImage)
             return
         }
         
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .opportunistic
-        options.resizeMode = .fast
+        options.deliveryMode = isHighRes ? .highQualityFormat : .opportunistic
+        options.resizeMode = isHighRes ? .none : .fast
         options.isSynchronous = false
+        options.version = .current
         
         // Cancel any existing request for this asset
         if let existingRequestID = activeRequests[assetIdentifier] {
@@ -298,7 +306,6 @@ class PhotoViewModel: ObservableObject {
                 print("❌ Error loading image: \(error.localizedDescription)")
                 print("📊 Progress: \(progress)")
                 if progress < 1.0 {
-                    // Use weak self in retry closure
                     self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
                 }
             }
@@ -308,20 +315,19 @@ class PhotoViewModel: ObservableObject {
                                                 targetSize: targetSize,
                                                 contentMode: .aspectFit,
                                                 options: options) { [weak self] image, info in
-            guard let self = self else { return }
             
             // Remove from active requests
-            self.activeRequests.removeValue(forKey: assetIdentifier)
+            self?.activeRequests.removeValue(forKey: assetIdentifier)
             
             if let error = info?[PHImageErrorKey] as? Error {
                 print("❌ Error loading image: \(error.localizedDescription)")
-                self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
+                self?.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
                 return
             }
             
             if let image = image {
-                // Cache the image using the helper method
-                self.cacheImage(image, for: assetIdentifier)
+                // Cache the image using the appropriate cache
+                self?.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
                 DispatchQueue.main.async {
                     completion(image)
                 }
@@ -342,8 +348,9 @@ class PhotoViewModel: ObservableObject {
         let retryOptions = PHImageRequestOptions()
         retryOptions.isNetworkAccessAllowed = true
         retryOptions.deliveryMode = .highQualityFormat
-        retryOptions.resizeMode = .fast
+        retryOptions.resizeMode = .none
         retryOptions.isSynchronous = false
+        retryOptions.version = .current
         
         // Cancel existing retry request if any
         if let existingRequestID = activeRequests[assetIdentifier] {
@@ -446,18 +453,41 @@ class PhotoViewModel: ObservableObject {
     }
 
     // Internal method to check the cache
-    internal func cachedImage(for assetIdentifier: String) -> UIImage? {
-        return imageCache.object(forKey: assetIdentifier as NSString)
+    internal func cachedImage(for assetIdentifier: String, isHighRes: Bool = false) -> UIImage? {
+        if isHighRes {
+            if let cached = highResCache.object(forKey: assetIdentifier as NSString) {
+                print("✅ Using cached high-res image for asset: \(assetIdentifier)")
+                return cached
+            }
+        } else {
+            if let cached = imageCache.object(forKey: assetIdentifier as NSString) {
+                print("✅ Using cached thumbnail for asset: \(assetIdentifier)")
+                return cached
+            }
+        }
+        return nil
     }
     
     // Internal method to store an image in the cache
-    internal func cacheImage(_ image: UIImage, for assetIdentifier: String) {
+    internal func cacheImage(_ image: UIImage, for assetIdentifier: String, isHighRes: Bool = false) {
         // Estimate cost based on image size (pixels * bytes per pixel)
         let cost = Int(image.size.width * image.size.height * image.scale * 4) // Assuming 4 bytes per pixel (RGBA)
-        imageCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
+        
+        if isHighRes {
+            // Clear some space if needed
+            if highResCache.totalCostLimit < cost {
+                highResCache.removeAllObjects()
+            }
+            highResCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
+            print("📦 Cached high-res image for asset: \(assetIdentifier), size: \(image.size), cost: \(cost)")
+        } else {
+            imageCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
+            print("📦 Cached thumbnail for asset: \(assetIdentifier), size: \(image.size), cost: \(cost)")
+        }
     }
 
 }
+
 
 
 

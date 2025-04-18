@@ -98,8 +98,8 @@ struct GridItemView: View {
         print("➡️➡️➡️ Thumbnail not in cache, calling viewModel.requestImage for Asset ID: \(assetIdentifier)")
         let scale = UIScreen.main.scale
         let targetSize = CGSize(
-            width: 150 * scale,
-            height: 150 * scale
+            width: 300 * scale, // Increased from 150 to 300 for better quality
+            height: 300 * scale
         )
 
         // Use the existing requestImage function which handles caching on completion
@@ -123,6 +123,7 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
+
 
 
 

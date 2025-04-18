@@ -36,7 +36,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
         scrollView.delegate = context.coordinator
-        scrollView.maximumZoomScale = 4.0
+        scrollView.maximumZoomScale = 8.0
         scrollView.minimumZoomScale = 1.0
         scrollView.bouncesZoom = true
         scrollView.showsHorizontalScrollIndicator = false
@@ -44,11 +44,29 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         scrollView.backgroundColor = .clear
         scrollView.delaysContentTouches = false
         scrollView.canCancelContentTouches = true
+        
+        // Enhanced layer settings for scroll view
+        scrollView.layer.allowsEdgeAntialiasing = true
+        scrollView.layer.minificationFilter = .trilinear
+        scrollView.layer.magnificationFilter = .trilinear
+        scrollView.layer.shouldRasterize = true
+        scrollView.layer.rasterizationScale = UIScreen.main.scale
+        scrollView.layer.drawsAsynchronously = true
 
         let hostedView = context.coordinator.hostingController.view!
         hostedView.translatesAutoresizingMaskIntoConstraints = false
         hostedView.backgroundColor = .clear
         hostedView.isUserInteractionEnabled = true
+        
+        // Enhanced layer settings for hosted view
+        hostedView.layer.allowsEdgeAntialiasing = true
+        hostedView.layer.minificationFilter = .trilinear
+        hostedView.layer.magnificationFilter = .trilinear
+        hostedView.layer.shouldRasterize = true
+        hostedView.layer.rasterizationScale = UIScreen.main.scale
+        hostedView.layer.drawsAsynchronously = true
+        hostedView.layer.contentsScale = UIScreen.main.scale
+        
         scrollView.addSubview(hostedView)
 
         NSLayoutConstraint.activate([
@@ -135,7 +153,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
             guard let scrollView = gesture.view as? UIScrollView else { return }
-            let scale = scrollView.zoomScale > 1.01 ? scrollView.minimumZoomScale : 2.5
+            let scale = scrollView.zoomScale > 1.01 ? scrollView.minimumZoomScale : 3.0
             let point = gesture.location(in: scrollView)
             let zoomRect = CGRect(
                 x: point.x - scrollView.bounds.size.width / (2 * scale),
@@ -225,5 +243,6 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         }
     }
 }
+
 
 

@@ -225,6 +225,8 @@ struct ItemDisplayView: View {
                 ) {
                     Image(uiImage: displayImage)
                         .resizable()
+                        .interpolation(.high)
+                        .antialiased(true)
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black)
@@ -260,9 +262,6 @@ struct ItemDisplayView: View {
         guard case .loading = viewState else { return }
         
         let assetIdentifier = item.asset.localIdentifier
-        let screenSize = UIScreen.main.bounds.size
-        let scale = UIScreen.main.scale
-        let targetSize = CGSize(width: screenSize.width * scale, height: screenSize.height * scale)
         
         // Check cache using ViewModel's helper method
         if let cachedImage = viewModel.cachedImage(for: assetIdentifier) {
@@ -275,40 +274,34 @@ struct ItemDisplayView: View {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
-        options.resizeMode = .fast
+        options.resizeMode = .none
         options.isSynchronous = false
-        
-        // Cancel any existing request
-        if let existingRequestID = currentRequestID {
-            PHImageManager.default().cancelImageRequest(existingRequestID)
-        }
-        
+        options.version = .current
         options.progressHandler = { progress, error, stop, info in
             if let error = error {
                 print("❌ Error loading full-size image: \(error.localizedDescription)")
                 print("📊 Progress: \(progress)")
                 if progress < 1.0 {
-                    // Pass targetSize to retry function
-                    self.retryFullSizeImageRequest(targetSize: targetSize, assetIdentifier: assetIdentifier)
+                    self.retryFullSizeImageRequest(targetSize: PHImageManagerMaximumSize, assetIdentifier: assetIdentifier)
                 }
             }
         }
         
-        currentRequestID = PHImageManager.default().requestImage(
+        // Request the highest quality version of the image
+        currentRequestID = PHImageManager.default().requestImageDataAndOrientation(
             for: item.asset,
-            targetSize: targetSize,
-            contentMode: .aspectFit,
             options: options
-        ) { image, info in
+        ) { data, _, _, info in
             self.currentRequestID = nil
             
             if let error = info?[PHImageErrorKey] as? Error {
                 print("❌ Error loading full-size image: \(error.localizedDescription)")
-                self.retryFullSizeImageRequest(targetSize: targetSize, assetIdentifier: assetIdentifier)
+                self.retryFullSizeImageRequest(targetSize: PHImageManagerMaximumSize, assetIdentifier: assetIdentifier)
                 return
             }
             
-            guard let image = image else {
+            guard let data = data,
+                  let image = UIImage(data: data) else {
                 print("⚠️ Full-size image was nil for asset \(assetIdentifier)")
                 DispatchQueue.main.async {
                     self.viewState = .error("Failed to load image")
@@ -316,6 +309,7 @@ struct ItemDisplayView: View {
                 return
             }
             
+            // Cache the high-quality image
             self.viewModel.cacheImage(image, for: assetIdentifier)
             
             DispatchQueue.main.async {
@@ -328,23 +322,23 @@ struct ItemDisplayView: View {
         let retryOptions = PHImageRequestOptions()
         retryOptions.isNetworkAccessAllowed = true
         retryOptions.deliveryMode = .highQualityFormat
-        retryOptions.resizeMode = .fast
+        retryOptions.resizeMode = .none
         retryOptions.isSynchronous = false
+        retryOptions.version = .current
         
         // Cancel existing request before retrying
         if let existingRequestID = currentRequestID {
             PHImageManager.default().cancelImageRequest(existingRequestID)
         }
         
-        currentRequestID = PHImageManager.default().requestImage(
+        currentRequestID = PHImageManager.default().requestImageDataAndOrientation(
             for: item.asset,
-            targetSize: targetSize,
-            contentMode: .aspectFit,
             options: retryOptions
-        ) { retryImage, retryInfo in
+        ) { data, _, _, retryInfo in
             self.currentRequestID = nil
             
-            if let retryImage = retryImage {
+            if let data = data,
+               let retryImage = UIImage(data: data) {
                 self.viewModel.cacheImage(retryImage, for: assetIdentifier)
                 DispatchQueue.main.async {
                     self.viewState = .image(displayImage: retryImage)
@@ -409,6 +403,7 @@ func daySuffix(for date: Date) -> String {
         }
     }
 }
+
 
 
 
