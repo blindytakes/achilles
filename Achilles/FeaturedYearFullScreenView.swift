@@ -9,6 +9,7 @@ struct HandwritingAnimationModifier: ViewModifier {
     @State private var progress: CGFloat = 0
     @State private var opacity: CGFloat = 0
     @State private var scale: CGFloat = 1.0
+    
 
     
     func body(content: Content) -> some View {
@@ -64,6 +65,9 @@ struct FeaturedYearFullScreenView: View {
     let item: MediaItem
     let yearsAgo: Int
     let onTap: () -> Void
+    
+    @StateObject private var motion = ParallaxMotionManager()
+
     
     // View state
     @State private var image: UIImage? = nil
@@ -143,6 +147,7 @@ struct FeaturedYearFullScreenView: View {
                                 // Year label
                                 Text(yearLabel)
                                     .font(.system(size: 56, weight: .bold))
+                                    .offset(x: motion.xOffset * 0.3, y: motion.yOffset * 0.3)
                                     .foregroundColor(.white)
                                     .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
                                     .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
@@ -157,7 +162,7 @@ struct FeaturedYearFullScreenView: View {
                                         .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)     // more lift
                                         .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)    // subtle contrast edge
 
-                                        .offset(y: -10)
+                                        .offset(x: motion.xOffset * 0.5, y: -10 + motion.yOffset * 0.5)
                                         .padding(.horizontal, 20)
                                         .handwritingAnimation(duration: 2.0, delay: 0.3)
                                         .id("date-\(item.id)")
