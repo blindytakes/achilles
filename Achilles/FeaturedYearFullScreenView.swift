@@ -153,13 +153,14 @@ struct FeaturedYearFullScreenView: View {
                                     Text(formattedDate(from: date))
                                         .font(.custom("SnellRoundhand-Bold", size: 50))
                                         .foregroundColor(.white)
-                                        .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
-                                        .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
-                                        .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 0)
+                                        .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)       // slightly thicker edge
+                                        .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)     // more lift
+                                        .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)    // subtle contrast edge
+
                                         .offset(y: -10)
                                         .padding(.horizontal, 20)
                                         .handwritingAnimation(duration: 2.0, delay: 0.3)
-                                        .id("date-\(item.id)") // Ensure animation resets when item changes
+                                        .id("date-\(item.id)")
                                 }
                             }
                         }
