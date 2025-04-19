@@ -9,6 +9,7 @@ struct HandwritingAnimationModifier: ViewModifier {
     @State private var progress: CGFloat = 0
     @State private var opacity: CGFloat = 0
     @State private var scale: CGFloat = 1.0
+
     
     func body(content: Content) -> some View {
         content
@@ -71,6 +72,8 @@ struct FeaturedYearFullScreenView: View {
     @State private var showText = false
     @State private var triggerAnimation = false
     @State private var dateAnimationProgress: CGFloat = 0
+    @State private var imageBrightness: Double = -0.1
+    @State private var imageScale: CGFloat = 1.05
 
     private var yearLabel: String {
         yearsAgo == 1 ? "1 Year Ago" : "\(yearsAgo) Years Ago"
@@ -93,6 +96,8 @@ struct FeaturedYearFullScreenView: View {
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: geometry.size.width, height: geometry.size.height)
                                 .clipped()
+                                .brightness(imageBrightness)
+                                .scaleEffect(imageScale)
                                 .overlay(
                                     LinearGradient(
                                         gradient: Gradient(colors: [
@@ -113,7 +118,16 @@ struct FeaturedYearFullScreenView: View {
                                 }
                                 .onAppear {
                                     handleImageAppear()
+                                    
+                                    // Animate image effects
+                                    withAnimation(.easeInOut(duration: 1.5).delay(0.2)) {
+                                        imageBrightness = 0.08
+                                    }
+                                    withAnimation(.easeOut(duration: 5.0)) {
+                                        imageScale = 1.0
+                                    }
                                 }
+
                                 .contentShape(Rectangle())
                         } else {
                             // Loading placeholder
