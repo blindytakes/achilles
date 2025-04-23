@@ -132,9 +132,7 @@ struct LoadedYearContentView: View {
                         }
                     }
                 }
-                .gesture(
-                    DragGesture().onEnded { _ in } , including: .subviews
-                )
+                
                 .allowsHitTesting(true)
                 .transition(.opacity)
 

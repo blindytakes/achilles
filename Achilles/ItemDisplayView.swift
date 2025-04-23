@@ -22,7 +22,6 @@ struct ItemDisplayView: View {
     @State private var viewState: DetailViewState = .loading
     @State private var controlsHidden: Bool = false
     @State private var zoomScale: CGFloat = 1.0
-    @State private var dragOffset: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
     @State private var currentRequestID: PHImageRequestID?
 
@@ -47,7 +46,7 @@ struct ItemDisplayView: View {
                     LocationInfoPanelView(asset: item.asset)
                         .frame(width: geometry.size.width - 12)
                         .frame(maxHeight: min(geometry.size.height * 0.65, 400))
-                        .position(x: geometry.size.width / 2, y: geometry.size.height * 0.45 + dragOffset)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height * 0.45)
                         .transition(.opacity)
                         .zIndex(2)
                 }
@@ -66,45 +65,8 @@ struct ItemDisplayView: View {
             
             // Reset panel state when item changes
             showInfoPanel = false
-            dragOffset = 0
         }
         .onAppear {
-            // Listen for map panel drag notifications
-            NotificationCenter.default.addObserver(
-                forName: Notification.Name("MapPanelDragChanged"),
-                object: nil,
-                queue: .main
-            ) { notification in
-                if let userInfo = notification.userInfo,
-                   let translation = userInfo["translation"] as? CGSize {
-                    // Only allow downward dragging (ignore upward)
-                    let dragAmount = -translation.height
-                    if dragAmount <= 0 {
-                        dragOffset = max(-150, dragAmount * 0.8)
-                    }
-                }
-            }
-            
-            NotificationCenter.default.addObserver(
-                forName: Notification.Name("MapPanelDragEnded"),
-                object: nil,
-                queue: .main
-            ) { notification in
-                if let userInfo = notification.userInfo,
-                   let predictedEndTranslation = userInfo["predictedEndTranslation"] as? CGSize {
-                    let velocity = -predictedEndTranslation.height / max(1, abs(predictedEndTranslation.height))
-                    
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                        // If significant downward swipe or velocity, hide panel
-                        if dragOffset < -20 || velocity < -0.3 {
-                            showInfoPanel = false
-                        }
-                        
-                        // Reset drag offset
-                        dragOffset = 0
-                    }
-                }
-            }
             
             // Listen for dismiss button taps
             NotificationCenter.default.addObserver(
@@ -140,8 +102,6 @@ struct ItemDisplayView: View {
             NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
             
             // Remove MapPanel observers
-            NotificationCenter.default.removeObserver(self, name: Notification.Name("MapPanelDragChanged"), object: nil)
-            NotificationCenter.default.removeObserver(self, name: Notification.Name("MapPanelDragEnded"), object: nil)
             NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
         }
     }
@@ -403,9 +363,4 @@ func daySuffix(for date: Date) -> String {
         }
     }
 }
-
-
-
-
-
 
