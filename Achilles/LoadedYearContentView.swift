@@ -273,7 +273,7 @@ struct LoadedYearContentView: View {
                         // --- Footer Text ---
                         Text("Make More Memories!")
                             .font(.callout)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.primary)
                             .padding()
                             .opacity(hasTappedSplash ? 1.0 : 0.0)
                             .animation(.easeInOut(duration: 0.4).delay(0.3), value: hasTappedSplash)
