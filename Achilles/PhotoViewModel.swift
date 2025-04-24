@@ -30,14 +30,20 @@ class PhotoViewModel: ObservableObject {
     @Published var dismissedSplashForYearsAgo: Set<Int> = []
     @Published var gridAnimationDone: Set<Int> = []
     @Published var gridDateAnimationsCompleted: Set<Int> = [] // Use yearsAgo as the key
-    @Published var featuredTextAnimationsCompleted: Set<String> = []
+    @Published var featuredTextAnimationsCompleted: Set<Int> = [] // Track which years have had their featured text animation
 
+    // Add methods to handle animation state
+    func shouldAnimate(yearsAgo: Int) -> Bool {
+        !featuredTextAnimationsCompleted.contains(yearsAgo)
+    }
     
+    func markAnimated(yearsAgo: Int) {
+        featuredTextAnimationsCompleted.insert(yearsAgo)
+    }
     
     func markSplashDismissed(for yearsAgo: Int) {
         dismissedSplashForYearsAgo.insert(yearsAgo)
     }
-
 
     // --- Internal Properties ---
     private var mediaByYear: [Int: [MediaItem]] = [:] // Cache for all items per year
@@ -490,6 +496,7 @@ class PhotoViewModel: ObservableObject {
     }
 
 }
+
 
 
 

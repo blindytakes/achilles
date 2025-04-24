@@ -104,34 +104,36 @@ struct LoadedYearContentView: View {
             if let item = featuredItem, !hasTappedSplash {
                 FeaturedYearFullScreenView(
                     item: item,
-                    yearsAgo: yearsAgo
-                ) {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        viewModel.markSplashDismissed(for: yearsAgo)
-                        // Reset animation states when transitioning from splash screen
-                        dateAppeared = false
-                        dateBounce = false
-                        animatedItems.removeAll() // Reset animated items for cascading effect
-                        
-                        // Schedule animation sequence after splash screen disappears
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            withAnimation {
-                                dateAppeared = true
-                            }
-                            // Add a little bounce effect
+                    yearsAgo: yearsAgo,
+                    onTap: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            viewModel.markSplashDismissed(for: yearsAgo)
+                            // Reset animation states when transitioning from splash screen
+                            dateAppeared = false
+                            dateBounce = false
+                            animatedItems.removeAll() // Reset animated items for cascading effect
+                            
+                            // Schedule animation sequence after splash screen disappears
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                                 withAnimation {
-                                    dateBounce = true
+                                    dateAppeared = true
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                // Add a little bounce effect
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                                     withAnimation {
-                                        dateBounce = false
+                                        dateBounce = true
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        withAnimation {
+                                            dateBounce = false
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                }
+                    },
+                    viewModel: viewModel
+                )
                 
                 .allowsHitTesting(true)
                 .transition(.opacity)
@@ -298,5 +300,6 @@ struct LoadedYearContentView: View {
 
 // Ensure your GridItemView.swift still uses .scaledToFit() for the Image
 // Ensure you have definitions for MediaItem, PhotoViewModel, FeaturedYearFullScreenView, MediaDetailView
+
 
 

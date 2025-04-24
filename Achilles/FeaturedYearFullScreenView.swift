@@ -3,19 +3,20 @@ import Photos
 
 // Custom modifier for handwriting animation
 struct HandwritingAnimationModifier: ViewModifier {
+    let active: Bool
     let duration: Double
     let delay: Double
+    let yearsAgo: Int
+    @ObservedObject var viewModel: PhotoViewModel
     
     @State private var progress: CGFloat = 0
     @State private var opacity: CGFloat = 0
     @State private var scale: CGFloat = 1.0
     
-
-    
     func body(content: Content) -> some View {
         content
-            .opacity(opacity)
-            .scaleEffect(scale)
+            .opacity(active ? opacity : 1)
+            .scaleEffect(active ? scale : 1)
             .mask(
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -35,29 +36,41 @@ struct HandwritingAnimationModifier: ViewModifier {
                 }
             )
             .onAppear {
+                guard active else { return }
+                print("✨ HandwritingAnimationModifier.onAppear for year \(yearsAgo) - Active: \(active)")
                 // Reset then animate
                 progress = 0
                 opacity = 0
                 
+                let fadeInDuration = duration * 0.15
+                let writeOutDelay = delay * 0.5
+                let writeOutDuration = duration
+                let totalDuration = writeOutDelay + writeOutDuration // Approximate total time
+                
                 // First fade in - immediate
-                withAnimation(.easeIn(duration: duration * 0.15)) {
+                withAnimation(.easeIn(duration: fadeInDuration)) {
                     opacity = 1.0
                 }
                 
                 // Then write out the text - minimal delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay * 0.5) {
-                    withAnimation(.easeOut(duration: duration)) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + writeOutDelay) {
+                    withAnimation(.easeOut(duration: writeOutDuration)) {
                         progress = 1.0
                     }
                     
+                    // Mark as completed AFTER the animation duration
+                    DispatchQueue.main.asyncAfter(deadline: .now() + writeOutDuration) {
+                        print("⏰ Marking animation completed via modifier for year: \(yearsAgo)")
+                        viewModel.markAnimated(yearsAgo: yearsAgo)
+                    }
                 }
             }
     }
 }
 
 extension View {
-    func handwritingAnimation(duration: Double = 1.5, delay: Double = 0.2) -> some View {
-        self.modifier(HandwritingAnimationModifier(duration: duration, delay: delay))
+    func handwritingAnimation(active: Bool, duration: Double = 1.5, delay: Double = 0.2, yearsAgo: Int, viewModel: PhotoViewModel) -> some View {
+        self.modifier(HandwritingAnimationModifier(active: active, duration: duration, delay: delay, yearsAgo: yearsAgo, viewModel: viewModel))
     }
 }
 
@@ -67,15 +80,12 @@ struct FeaturedYearFullScreenView: View {
     let onTap: () -> Void
     
     @StateObject private var motion = ParallaxMotionManager()
+    @ObservedObject var viewModel: PhotoViewModel
 
-    
     // View state
     @State private var image: UIImage? = nil
-    @State private var textOpacity: Double = 0
     @State private var showLoadingTransition: Bool = false
-    @State private var showText = false
     @State private var triggerAnimation = false
-    @State private var dateAnimationProgress: CGFloat = 0
     @State private var imageBrightness: Double = -0.1
     @State private var imageScale: CGFloat = 1.05
 
@@ -121,8 +131,6 @@ struct FeaturedYearFullScreenView: View {
                                     }
                                 }
                                 .onAppear {
-                                    handleImageAppear()
-                                    
                                     // Animate image effects
                                     withAnimation(.easeInOut(duration: 1.5).delay(0.2)) {
                                         imageBrightness = 0.08
@@ -131,7 +139,6 @@ struct FeaturedYearFullScreenView: View {
                                         imageScale = 1.0
                                     }
                                 }
-
                                 .contentShape(Rectangle())
                         } else {
                             // Loading placeholder
@@ -143,29 +150,37 @@ struct FeaturedYearFullScreenView: View {
                         
                         // MARK: - Year text overlay
                         VStack(spacing: 16) {
-                            if showText {
-                                // Year label
-                                Text(yearLabel)
-                                    .font(.system(size: 56, weight: .bold))
-                                    .offset(x: motion.xOffset * 0.3, y: motion.yOffset * 0.3)
-                                    .foregroundColor(.white)
-                                    .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
-                                    .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
-                                    .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 0)
-                                
-                                // Date label with animation
-                                if let date = item.asset.creationDate, triggerAnimation {
+                            // Year label
+                            Text(yearLabel)
+                                .font(.system(size: 56, weight: .bold))
+                                .offset(x: motion.xOffset * 0.3, y: motion.yOffset * 0.3)
+                                .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
+                                .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
+                                .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 0)
+                            
+                            // Date label with animation
+                            if let date = item.asset.creationDate {
+                                if viewModel.shouldAnimate(yearsAgo: yearsAgo) {
                                     Text(formattedDate(from: date))
                                         .font(.custom("SnellRoundhand-Bold", size: 50))
                                         .foregroundColor(.white)
-                                        .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)       // slightly thicker edge
-                                        .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)     // more lift
-                                        .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)    // subtle contrast edge
-
+                                        .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)
+                                        .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)
+                                        .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)
                                         .offset(x: motion.xOffset * 0.5, y: -10 + motion.yOffset * 0.5)
                                         .padding(.horizontal, 20)
-                                        .handwritingAnimation(duration: 2.0, delay: 0.3)
-                                        .id("date-\(item.id)")
+                                        .handwritingAnimation(active: true, duration: 2.0, delay: 0.3, yearsAgo: yearsAgo, viewModel: viewModel)
+                                        .id("year-\(yearsAgo)")
+                                } else {
+                                    Text(formattedDate(from: date))
+                                        .font(.custom("SnellRoundhand-Bold", size: 50))
+                                        .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)
+                                        .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)
+                                        .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)
+                                        .offset(x: motion.xOffset * 0.5, y: -10 + motion.yOffset * 0.5)
+                                        .padding(.horizontal, 20)
                                 }
                             }
                         }
@@ -175,52 +190,13 @@ struct FeaturedYearFullScreenView: View {
             }
         }
         .onAppear {
-            handleAppear()
+            requestImage()
         }
         .onDisappear {
-            handleDisappear()
-        }
-        .onChange(of: item) { oldValue, newValue in
-            handleItemChange(oldValue, newValue)
+            showLoadingTransition = false
         }
     }
     
-    // MARK: - Event Handlers
-    
-    private func handleAppear() {
-        requestImage()
-        showText = false
-        triggerAnimation = false
-        showLoadingTransition = false
-    }
-    
-    private func handleDisappear() {
-        showText = false
-        triggerAnimation = false
-    }
-    
-    private func handleItemChange(_ oldItem: MediaItem, _ newItem: MediaItem) {
-        // Reset state
-        showText = false
-        triggerAnimation = false
-        
-        // Start new animations immediately
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            showText = true
-            triggerAnimation = true
-        }
-    }
-    
-    private func handleImageAppear() {
-        // Start both animations almost immediately
-        showText = true
-        
-        // Trigger the date animation with minimal delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            triggerAnimation = true
-        }
-    }
-
     private func requestImage() {
         let manager = PHImageManager.default()
         let options = PHImageRequestOptions()
@@ -271,7 +247,6 @@ struct FeaturedYearFullScreenView: View {
         }
     }
 
-    
     private func retryWithMaximumQuality() {
         let manager = PHImageManager.default()
         let retryOptions = PHImageRequestOptions()
@@ -326,6 +301,7 @@ struct FeaturedYearFullScreenView: View {
         return baseDate + suffix + ", \(year)"
     }
 }
+
 
 
 

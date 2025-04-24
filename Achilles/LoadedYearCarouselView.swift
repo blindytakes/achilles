@@ -5,6 +5,7 @@ import Photos
 struct LoadedYearCarouselView: View {
     let allItemsByYear: [Int: [MediaItem]]
     let onSelectYear: (Int) -> Void
+    @ObservedObject var viewModel: PhotoViewModel
 
     private var sortedYears: [Int] {
         allItemsByYear.keys.sorted()
@@ -14,9 +15,14 @@ struct LoadedYearCarouselView: View {
         TabView {
             ForEach(sortedYears, id: \.self) { year in
                 if let items = allItemsByYear[year], let featured = pickFeaturedItem(from: items) {
-                    FeaturedYearFullScreenView(item: featured, yearsAgo: year) {
-                        onSelectYear(year)
-                    }
+                    FeaturedYearFullScreenView(
+                        item: featured,
+                        yearsAgo: year,
+                        onTap: {
+                            onSelectYear(year)
+                        },
+                        viewModel: viewModel
+                    )
                     .tag(year)
                     .overlay(
                         RoundedRectangle(cornerRadius: 0)
@@ -43,4 +49,5 @@ struct LoadedYearCarouselView: View {
         return items.first
     }
 }
+
 
