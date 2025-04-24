@@ -29,8 +29,11 @@ class PhotoViewModel: ObservableObject {
     @Published var initialYearScanComplete: Bool = false // Tracks if availableYearsAgo is ready
     @Published var dismissedSplashForYearsAgo: Set<Int> = []
     @Published var gridAnimationDone: Set<Int> = []
+    @Published var gridDateAnimationsCompleted: Set<Int> = [] // Use yearsAgo as the key
+    @Published var featuredTextAnimationsCompleted: Set<String> = []
 
-
+    
+    
     func markSplashDismissed(for yearsAgo: Int) {
         dismissedSplashForYearsAgo.insert(yearsAgo)
     }

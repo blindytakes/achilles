@@ -163,27 +163,48 @@ struct LoadedYearContentView: View {
                                 .rotationEffect(dateAppeared ? .zero : .degrees(-3))
                                 .animation(.spring(response: 0.5, dampingFraction: 0.7), value: dateAppeared)
                                 .animation(.spring(response: 0.25, dampingFraction: 0.6), value: dateBounce)
+                            
                                 .onAppear {
-                                    if hasTappedSplash {
-                                        // Delayed sequence of animations when date appears
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            withAnimation {
-                                                dateAppeared = true
-                                            }
-                                            // Add a little bounce effect
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                                withAnimation {
-                                                    dateBounce = true
-                                                }
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                                    withAnimation {
-                                                        dateBounce = false
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                 // Ensure we only attempt animation after splash is dismissed
+                                 guard hasTappedSplash else { return }
+
+                                 // Check if animation for THIS yearsAgo has already run
+                                 if !viewModel.gridDateAnimationsCompleted.contains(yearsAgo) {
+                                     // --- Animation Needed ---
+                                     print("▶️ Grid Date Animation needed for \(yearsAgo)")
+
+                                     // Mark as completed in the ViewModel IMMEDIATELY
+                                     // So if .onAppear somehow fires again quickly, it won't re-trigger
+                                     viewModel.gridDateAnimationsCompleted.insert(yearsAgo)
+
+                                     // Schedule the animation sequence using DispatchQueue
+                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { // Initial delay for appearance
+                                         // Animate the appearance (scale/rotation)
+                                         withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                                             dateAppeared = true
+                                         }
+
+                                         // Schedule the bounce sequence
+                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { // Delay before bounce starts
+                                             withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+                                                 dateBounce = true
+                                             }
+                                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { // Delay before bounce ends
+                                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+                                                     dateBounce = false
+                                                 }
+                                             }
+                                         }
+                                     }
+                                 } else {
+                                     // --- Animation Already Done ---
+                                     print("⏸️ Grid Date Animation already done for \(yearsAgo)")
+                                     // Set the final appearance state directly, without animations
+                                     // Ensures text is visible if user swipes back quickly
+                                     dateAppeared = true
+                                     dateBounce = false // Ensure bounce state is non-bounced
+                                 }
+                             }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, 20) // Increased padding between date and grid
