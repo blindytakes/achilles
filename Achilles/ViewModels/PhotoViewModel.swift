@@ -1,6 +1,7 @@
 import SwiftUI
 import Photos
-import AVKit // For AVURLAsset
+import AVKit
+import UIKit
 
 
 // --- State Definition for Each Page/Year ---
@@ -16,7 +17,11 @@ enum PageState {
 // --- ViewModel ---
 @MainActor // Ensure UI updates happen on the main threadlets
 class PhotoViewModel: ObservableObject {
+    private let service: PhotoLibraryServiceProtocol
+    private let selector: FeaturedSelectorServiceProtocol
 
+    
+    
     // --- Published Properties for UI ---
     @Published var pageStateByYear: [Int: PageState] = [:] // State for each year (keyed by yearsAgo)
     @Published var availableYearsAgo: [Int] = [] // Sorted list of years with content
@@ -41,7 +46,6 @@ class PhotoViewModel: ObservableObject {
     }
 
     // --- Internal Properties ---
-    private var mediaByYear: [Int: [MediaItem]] = [:] // Cache for all items per year
     private let imageManager = PHCachingImageManager()
     private var activeLoadTasks: [Int: Task<Void, Never>] = [:] // Track loading tasks per year
     private let maxYearsToScan = 20 // How far back to look for available years initially
@@ -55,16 +59,22 @@ class PhotoViewModel: ObservableObject {
     private let maxCacheSize = 50 // Maximum number of full-size images to cache
     private let maxHighResCacheSize = 10 // Maximum number of high-res images to cache
 
-    // --- Initialization ---
-    init() {
-        // Configure caches
-        imageCache.countLimit = maxCacheSize
-        imageCache.totalCostLimit = 1024 * 1024 * 100 // 100MB limit for thumbnails
-        
-        highResCache.countLimit = maxHighResCacheSize
-        highResCache.totalCostLimit = 1024 * 1024 * 500 // 500MB limit for high-res images
-        checkAuthorization()
-    }
+    init(
+            service: PhotoLibraryServiceProtocol = PhotoLibraryService(),
+            selector: FeaturedSelectorServiceProtocol = FeaturedSelectorService()
+        ) {
+            self.service = service
+            self.selector = selector
+
+            // Configure your caches
+            imageCache.countLimit = maxCacheSize
+            imageCache.totalCostLimit = 1024 * 1024 * 100  // 100 MB
+            highResCache.countLimit = maxHighResCacheSize
+            highResCache.totalCostLimit = 1024 * 1024 * 500  // 500 MB
+
+            // Now that everything’s set up, request permissions
+            checkAuthorization()
+        }
 
     // --- 1. Check / Request Permissions ---
     func checkAuthorization() {
@@ -172,77 +182,49 @@ class PhotoViewModel: ObservableObject {
         }
     }
 
-    // --- 3. Load Content for a Specific Year's Page ---
     func loadPage(yearsAgo: Int) async {
-        guard authorizationStatus == .authorized || authorizationStatus == .limited else {
-            print("Cannot load page \(yearsAgo) without photo library access.")
-            return
-        }
-
-        if activeLoadTasks[yearsAgo] != nil {
-            print("Already loading page for \(yearsAgo) years ago.")
-            return
-        }
-
-        let loadTask = Task {
-            await MainActor.run {
-                pageStateByYear[yearsAgo] = .loading
-                print("Loading page for \(yearsAgo) years ago...")
-            }
-
-            let calendar = Calendar(identifier: .gregorian)
-            let today = Date()
-            guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else {
-                print("❌ Failed to calculate date range for \(yearsAgo) years ago")
-                await MainActor.run {
-                    pageStateByYear[yearsAgo] = .error(message: "Failed to calculate date range.")
-                    activeLoadTasks[yearsAgo] = nil
-                }
-                return
-            }
-
-            print("📅 Date range for \(yearsAgo) years ago: \(dateRange.start) to \(dateRange.end)")
-
-            let fetchOptions = PHFetchOptions()
-            fetchOptions.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", dateRange.start as NSDate, dateRange.end as NSDate)
-            fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-
-            let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
-            print("🔍 Found \(fetchResult.count) assets for \(yearsAgo) years ago")
-
-            var fetchedItems: [MediaItem] = []
-            if fetchResult.count > 0 {
-                fetchResult.enumerateObjects { (asset, index, stop) in
-                    print("📸 Processing asset \(index + 1)/\(fetchResult.count) for \(yearsAgo) years ago")
-                    print("📊 Asset ID: \(asset.localIdentifier)")
-                    print("📊 Creation date: \(String(describing: asset.creationDate))")
-                    print("📊 Media type: \(asset.mediaType.rawValue)")
-                    print("📊 Is iCloud asset: \(asset.sourceType == .typeCloudShared ? "Yes" : "No")")
-                    
-                    fetchedItems.append(MediaItem(id: asset.localIdentifier, asset: asset))
-                }
-            }
-
-            await MainActor.run {
-                if fetchedItems.isEmpty {
-                    print("⚠️ No items found for \(yearsAgo) years ago")
-                    pageStateByYear[yearsAgo] = .empty
-                    mediaByYear[yearsAgo] = []
-                } else {
-                    print("✅ Successfully loaded \(fetchedItems.count) items for \(yearsAgo) years ago")
-                    mediaByYear[yearsAgo] = fetchedItems
-                    let featured = fetchedItems.first
-                    let gridItems = Array(fetchedItems.dropFirst())
-                    pageStateByYear[yearsAgo] = .loaded(featured: featured, grid: gridItems)
-                }
-                activeLoadTasks[yearsAgo] = nil
-            }
-        }
+        // 1) Guard access & avoid duplicate loads
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else { return }
+        if activeLoadTasks[yearsAgo] != nil { return }
 
         await MainActor.run {
-            activeLoadTasks[yearsAgo] = loadTask
+        activeLoadTasks[yearsAgo] = Task { /* placeholder so we know it’s loading */ }
+        }
+        
+        // 2) Mark the page as loading
+        await MainActor.run {
+            pageStateByYear[yearsAgo] = .loading
+        }
+
+        // 3) Compute the target date
+        let targetDate = Calendar.current.date(
+            byAdding: .year,
+            value: -yearsAgo,
+            to: Date()
+        )!
+
+        // 4) Kick off the service call
+        service.fetchItems(for: targetDate) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch result {
+                case .success(let items):
+                    if items.isEmpty {
+                        self.pageStateByYear[yearsAgo] = .empty
+                    } else {
+                        let featured = self.selector.pickFeaturedItem(from: items)
+                        let grid = Array(items.dropFirst())
+                        self.pageStateByYear[yearsAgo] = .loaded(featured: featured, grid: grid)
+                    }
+                case .failure(let err):
+                    self.pageStateByYear[yearsAgo] = .error(message: err.localizedDescription)
+                }
+                // 5) Clear the “active load” marker
+                self.activeLoadTasks[yearsAgo] = nil
+            }
         }
     }
+
 
     // --- 4. Trigger Pre-fetching for Adjacent Years ---
     func triggerPrefetch(around centerYearsAgo: Int) {
@@ -491,6 +473,7 @@ class PhotoViewModel: ObservableObject {
     }
 
 }
+
 
 
 
