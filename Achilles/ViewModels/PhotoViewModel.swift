@@ -4,16 +4,6 @@ import AVKit
 import UIKit
 
 
-// --- State Definition for Each Page/Year ---
-enum PageState {
-    case idle
-    case loading
-    case loaded(featured: MediaItem?, grid: [MediaItem]) // Holds prepared data
-    case empty
-    case error(message: String)
-    // Note: No Equatable conformance needed with the updated check below
-}
-
 // --- ViewModel ---
 @MainActor // Ensure UI updates happen on the main threadlets
 class PhotoViewModel: ObservableObject {
