@@ -20,43 +20,18 @@ struct LoadedYearContentView: View {
     @State private var dateAppeared = false
     @State private var dateBounce = false
     
-    // Add computed property to get the formatted date
+
     private var formattedDate: String {
         let calendar = Calendar.current
         let today = Date()
         var components = calendar.dateComponents([.year, .month, .day], from: today)
         components.year = (components.year ?? 0) - yearsAgo
-        
+
         guard let pastDate = calendar.date(from: components) else {
             return ""
         }
-        
-        return getFormattedDateWithOrdinal(from: pastDate)
-    }
-    
-    // Helper to format date with ordinal suffix
-    private func getFormattedDateWithOrdinal(from date: Date) -> String {
-        let calendar = Calendar.current
-        let day = calendar.component(.day, from: date)
-        
-        // Get ordinal suffix for the day
-        let suffix: String
-        switch day {
-        case 1, 21, 31: suffix = "st"
-        case 2, 22: suffix = "nd"
-        case 3, 23: suffix = "rd"
-        default: suffix = "th"
-        }
-        
-        // Create the formatted date with ordinal
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMMM d"
-        let baseDate = dateFormatter.string(from: date)
-        
-        // Add year separately
-        let year = calendar.component(.year, from: date)
-        
-        return "\(baseDate)\(suffix), \(year)"
+        // Use the new extension method directly:
+        return pastDate.formatMonthDayOrdinalAndYear()
     }
 
     // Computed property to determine the items shown in the grid

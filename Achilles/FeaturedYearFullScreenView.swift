@@ -45,7 +45,6 @@ struct HandwritingAnimationModifier: ViewModifier {
                 let fadeInDuration = duration * 0.15
                 let writeOutDelay = delay * 0.5
                 let writeOutDuration = duration
-                let totalDuration = writeOutDelay + writeOutDuration // Approximate total time
                 
                 // First fade in - immediate
                 withAnimation(.easeIn(duration: fadeInDuration)) {
@@ -162,7 +161,7 @@ struct FeaturedYearFullScreenView: View {
                             // Date label with animation
                             if let date = item.asset.creationDate {
                                 if viewModel.shouldAnimate(yearsAgo: yearsAgo) {
-                                    Text(formattedDate(from: date))
+                                    Text(date.formatMonthDayOrdinalAndYear())
                                         .font(.custom("SnellRoundhand-Bold", size: 50))
                                         .foregroundColor(.white)
                                         .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)
@@ -173,7 +172,7 @@ struct FeaturedYearFullScreenView: View {
                                         .handwritingAnimation(active: true, duration: 2.0, delay: 0.3, yearsAgo: yearsAgo, viewModel: viewModel)
                                         .id("year-\(yearsAgo)")
                                 } else {
-                                    Text(formattedDate(from: date))
+                                    Text(date.formatMonthDayOrdinalAndYear())
                                         .font(.custom("SnellRoundhand-Bold", size: 50))
                                         .foregroundColor(.white)
                                         .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)
@@ -278,31 +277,7 @@ struct FeaturedYearFullScreenView: View {
         }
     }
 
-    private func formattedDate(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d"
-        let baseDate = formatter.string(from: date)
-
-        let calendar = Calendar.current
-        let day = calendar.component(.day, from: date)
-        let suffix: String
-        switch day {
-        case 11, 12, 13: suffix = "th"
-        default:
-            switch day % 10 {
-            case 1: suffix = "st"
-            case 2: suffix = "nd"
-            case 3: suffix = "rd"
-            default: suffix = "th"
-            }
-        }
-
-        let year = calendar.component(.year, from: date)
-        return baseDate + suffix + ", \(year)"
-    }
 }
-
-
 
 
 
