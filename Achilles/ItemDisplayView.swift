@@ -25,7 +25,6 @@ struct ItemDisplayView: View {
     @State private var controlsHidden: Bool = false
     @State private var zoomScale: CGFloat = 1.0 // Used by ZoomableScrollView
     @Environment(\.dismiss) private var dismiss
-    @State private var currentRequestID: PHImageRequestID?
 
     // MARK: - Constants
     // Layout & Frame
@@ -91,7 +90,7 @@ struct ItemDisplayView: View {
                 }
 
                 // Location info panel overlay (only if location exists and panel is shown)
-                if showInfoPanel, let location = item.asset.location { // Ensure location exists
+                if showInfoPanel, item.asset.location != nil {
                     LocationInfoPanelView(asset: item.asset)
                         // Size and position the panel relative to the screen
                         .frame(width: geometry.size.width - locationPanelHorizontalMargin * 2) // Use margin constant
@@ -105,7 +104,7 @@ struct ItemDisplayView: View {
             .id(item.id) // Force redraw when item changes
             .ignoresSafeArea(.all, edges: .all) // Extend to screen edges
         }
-        .task { await loadImageOnlyIfNeeded() } // Load image when view appears/task starts
+        .task { loadImageOnlyIfNeeded() } // Load image when view appears/task starts
         .onChange(of: item.id) { _, newItemId in // Use correct onChange signature if needed
             // Reset view state when the item changes
              if item.asset.mediaType == .image {
@@ -128,7 +127,6 @@ struct ItemDisplayView: View {
         }
         .onDisappear {
              // Cancel any ongoing image requests and remove observers
-             cancelImageRequest()
              removeNotificationObservers()
         }
     }
@@ -255,108 +253,32 @@ struct ItemDisplayView: View {
         }
     }
 
-    // MARK: - Image Loading Logic
-    private func loadImageOnlyIfNeeded() async {
-        // Only proceed if the view state is currently loading
+    private func loadImageOnlyIfNeeded() {
+        // Only proceed if the view state is currently loading and it's an image
         guard case .loading = viewState, item.asset.mediaType == .image else { return }
 
         let assetIdentifier = item.asset.localIdentifier
+        print("➡️ ItemDisplayView requesting full-size image for \(assetIdentifier) via ViewModel")
 
-        // Check cache first
-        if let cachedImage = viewModel.cachedImage(for: assetIdentifier, isHighRes: true) { // Check high-res cache
-            // Update state on main thread
-             DispatchQueue.main.async {
-                 self.viewState = .image(displayImage: cachedImage)
-             }
-            return
-        }
-
-        // Setup request options for high quality
-        let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = true
-        options.deliveryMode = .highQualityFormat
-        options.resizeMode = .none // We want full size
-        options.isSynchronous = false // Run asynchronously
-        options.version = .current
-
-        // Cancel any previous request for this view instance
-        cancelImageRequest()
-
-        // Progress handler (optional but good for large iCloud downloads)
-        options.progressHandler = { progress, error, stop, info in
-             if let error = error {
-                 print("❌ Error loading full-size image: \(error.localizedDescription)")
-             } else {
-                 // print("📊 Full-size image progress: \(progress)") // Can be noisy
-             }
-         }
-
-        print("⬆️ Requesting full-size image data for \(assetIdentifier)")
-        // Request image data
-        currentRequestID = PHImageManager.default().requestImageDataAndOrientation(
-            for: item.asset,
-            options: options
-        ) { data, _, _, info in
-            // Check if request was cancelled
-            let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
-            // Check if we got degraded image first (optional)
-            _ = info?[PHImageResultIsDegradedKey] as? Bool ?? false
-
-            // Clear request ID once completed or cancelled
-             DispatchQueue.main.async { // Ensure thread safety for currentRequestID
-                 if self.currentRequestID == info?[PHImageResultRequestIDKey] as? PHImageRequestID {
-                     self.currentRequestID = nil
-                 }
-             }
-
-            if isCancelled {
-                print("🚫 Image request cancelled for \(assetIdentifier)")
-                return
-            }
-
-            // Handle potential error
-            if let error = info?[PHImageErrorKey] as? Error {
-                print("❌ Error loading full-size image: \(error.localizedDescription)")
-                // Don't automatically retry here, let user trigger via UI if needed
-                DispatchQueue.main.async {
-                    self.viewState = .error(error.localizedDescription)
+        // Use the new ViewModel method
+        viewModel.requestFullSizeImage(for: item.asset) { image in
+            // We need to dispatch back to the main thread to update the UI state
+            DispatchQueue.main.async {
+                // Ensure view is still relevant
+                guard self.item.asset.localIdentifier == assetIdentifier else {
+                    print("⬅️ ItemDisplayView received image for \(assetIdentifier), but view is no longer relevant.")
+                    return
                 }
-                return
+
+                if let validImage = image {
+                    print("⬅️ ItemDisplayView received VALID full-size image for \(assetIdentifier)")
+                    self.viewState = .image(displayImage: validImage)
+                } else {
+                    print("⬅️ ItemDisplayView received NIL full-size image for \(assetIdentifier)")
+                    self.viewState = .error("Failed to load image") // Or use a specific error
+                }
             }
-
-            // Process data if available
-            guard let data = data, let image = UIImage(data: data) else {
-                print("⚠️ Full-size image data invalid for asset \(assetIdentifier)")
-                 DispatchQueue.main.async {
-                     self.viewState = .error("Failed to load image data")
-                 }
-                return
-            }
-
-            // Cache the successfully loaded high-quality image
-            // Use isHighRes: true for the detail view cache
-            self.viewModel.cacheImage(image, for: assetIdentifier, isHighRes: true)
-
-            // Update view state on main thread
-             DispatchQueue.main.async {
-                 // Only update if still relevant (e.g., user hasn't swiped away quickly)
-                 if self.item.asset.localIdentifier == assetIdentifier {
-                      self.viewState = .image(displayImage: image)
-                 }
-             }
         }
-    }
-
-    // Simplified retry - maybe remove if error state provides enough info
-    // Or enhance error state with a retry button that calls loadImageOnlyIfNeeded again
-    // private func retryFullSizeImageRequest(...) { ... } // Removed for now
-
-    private func cancelImageRequest() {
-         if let requestID = currentRequestID {
-             print("🚫 Cancelling previous image request \(requestID)")
-             PHImageManager.default().cancelImageRequest(requestID)
-             currentRequestID = nil
-         }
     }
 
     // MARK: - Notification Handling
@@ -370,7 +292,6 @@ struct ItemDisplayView: View {
                 showInfoPanel = false
             }
         }
-
 
          NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
@@ -431,5 +352,3 @@ struct VideoPlayerPlaceholderView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-
-// Removed daySuffix function - now handled by Date extension

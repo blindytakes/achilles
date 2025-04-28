@@ -18,14 +18,6 @@ class PhotoViewModel: ObservableObject {
         static let prefetchThumbnailSize = CGSize(width: 200, height: 200)
         // Note: PHImageManagerMaximumSize is a system constant, no need to redefine
 
-        // Caching
-        static let imageCacheCountLimit: Int = 50
-        static let imageCacheMaxCostMB: Int = 100 // In Megabytes
-        static let highResCacheCountLimit: Int = 10
-        static let highResCacheMaxCostMB: Int = 500 // In Megabytes
-        static let bytesPerMegabyte: Int = 1024 * 1024
-        static let assumedBytesPerPixel: Int = 4 // For RGBA cost estimation
-
         // Date Calculations
         static let daysToAddForDateRangeEnd: Int = 1
 
@@ -37,6 +29,8 @@ class PhotoViewModel: ObservableObject {
     private let service: PhotoLibraryServiceProtocol
     private let selector: FeaturedSelectorServiceProtocol
     private let imageManager = PHCachingImageManager()
+    private let imageCacheService: ImageCacheServiceProtocol // Depend on the protocol
+
 
     // MARK: - Published Properties for UI
     @Published var pageStateByYear: [Int: PageState] = [:] // State for each year (keyed by yearsAgo)
@@ -54,8 +48,6 @@ class PhotoViewModel: ObservableObject {
     var thumbnailSize = Constants.defaultThumbnailSize // Use constant - Used by GridItemView
 
     // Caching Properties
-    private var imageCache = NSCache<NSString, UIImage>()
-    private var highResCache = NSCache<NSString, UIImage>()
     private var activeRequests: [String: PHImageRequestID] = [:]
 
     // How far back to look for available years initially
@@ -65,17 +57,13 @@ class PhotoViewModel: ObservableObject {
     // MARK: - Initialization
     init(
         service: PhotoLibraryServiceProtocol = PhotoLibraryService(),
-        selector: FeaturedSelectorServiceProtocol = FeaturedSelectorService()
-    ) {
+        selector: FeaturedSelectorServiceProtocol = FeaturedSelectorService(),
+             // Add the cache service, providing a default for convenience
+        imageCacheService: ImageCacheServiceProtocol = ImageCacheService()
+    ){
         self.service = service
         self.selector = selector
-
-        // Configure caches using constants
-        imageCache.countLimit = Constants.imageCacheCountLimit
-        imageCache.totalCostLimit = Constants.imageCacheMaxCostMB * Constants.bytesPerMegabyte
-        highResCache.countLimit = Constants.highResCacheCountLimit
-        highResCache.totalCostLimit = Constants.highResCacheMaxCostMB * Constants.bytesPerMegabyte
-
+        self.imageCacheService = imageCacheService
         // Request permissions after setup
         checkAuthorization()
     }
@@ -322,10 +310,10 @@ class PhotoViewModel: ObservableObject {
         let isHighRes = targetSize == PHImageManagerMaximumSize
 
         // Check appropriate cache first
-        if let cachedImage = cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
-            print("✅ Using cached \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
-            completion(cachedImage)
-            return
+        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
+             print("✅ Using cached \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
+             completion(cachedImage)
+             return
         }
 
         print("⬆️ Requesting \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
@@ -391,10 +379,9 @@ class PhotoViewModel: ObservableObject {
             if let image = image {
                 print("✅ Image loaded successfully for \(assetIdentifier)")
                 // Cache the loaded image
-                self.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
-                // Call completion handler (ensure it's on main thread if needed by UI)
-                DispatchQueue.main.async { completion(image) }
-            } else {
+                self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
+                    DispatchQueue.main.async { completion(image) }
+                } else {
                 // Image is nil, but no error? Should ideally not happen with non-sync requests
                 // unless cancelled before delivery or error occurred but wasn't caught above.
                 print("⚠️ Image was nil, but no error reported for asset \(assetIdentifier)")
@@ -451,9 +438,10 @@ class PhotoViewModel: ObservableObject {
             // Process retry image
             if let retryImage = retryImage {
                 print("✅✅ Retry successful for asset \(assetIdentifier)")
-                self.cacheImage(retryImage, for: assetIdentifier, isHighRes: isHighRes)
-                DispatchQueue.main.async { completion(retryImage) }
-            } else {
+
+                self.imageCacheService.cacheImage(retryImage, for: assetIdentifier, isHighRes: isHighRes)
+                    DispatchQueue.main.async { completion(retryImage) }
+                } else {
                 print("⚠️⚠️ Retry resulted in nil image for asset \(assetIdentifier)")
                 DispatchQueue.main.async { completion(nil) }
             }
@@ -473,12 +461,10 @@ class PhotoViewModel: ObservableObject {
     }
 
     // Method to clear thumbnail cache (e.g., on memory warning)
-    internal func clearImageCache() {
-        print("🧹 Clearing image caches...")
-        imageCache.removeAllObjects()
-        highResCache.removeAllObjects() // Clear high-res cache too
-        print("🧹 Image caches cleared.")
-    }
+        internal func clearImageCache() {
+            // Delegate to the service
+            imageCacheService.clearCache()
+        }
 
     // Fetch full image data (used for sharing)
     func requestFullImageData(for asset: PHAsset) async -> Data? {
@@ -540,7 +526,77 @@ class PhotoViewModel: ObservableObject {
         print("⚠️ Placeholder: Would present limited library picker here.")
         // Implementation requires UIKit interaction, likely via a Coordinator or UIViewControllerRepresentable
     }
+    // Add this function inside PhotoViewModel.swift
 
+    func requestFullSizeImage(for asset: PHAsset, completion: @escaping (UIImage?) -> Void) {
+        let assetIdentifier = asset.localIdentifier
+        let isHighRes = true // Always true for this request
+
+        // 1. Check cache via service
+        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
+            print("✅ [VM] Using cached full-size image for asset: \(assetIdentifier)")
+            completion(cachedImage)
+            return
+        }
+
+        // 2. If not cached, request using imageManager
+        print("⬆️ [VM] Requesting full-size image data for \(assetIdentifier)")
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .none
+        options.isSynchronous = false
+        options.version = .current
+
+        // Progress handler (optional)
+        options.progressHandler = { progress, error, stop, info in
+             // Handle progress or error during download if needed
+             // print("📊 [VM] Full-size image progress: \(progress)")
+        }
+
+        // Cancel any existing request for this specific asset identifier (optional but good)
+        // Note: This assumes you want ONE active request per asset ID managed by the VM
+        // cancelActiveRequest(for: assetIdentifier) // Consider if needed here
+
+        let requestID = imageManager.requestImageDataAndOrientation(
+            for: asset,
+            options: options
+        ) { [weak self] data, _, _, info in
+            guard let self = self else { return }
+
+            let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
+            if isCancelled {
+                 print("🚫 [VM] Full-size request cancelled for \(assetIdentifier).")
+                 completion(nil)
+                 return
+            }
+
+            if let error = info?[PHImageErrorKey] as? Error {
+                print("❌ [VM] Error loading full-size image: \(error.localizedDescription)")
+                // Handle error - maybe don't cache, call completion with nil
+                completion(nil)
+                return
+            }
+
+            guard let data = data, let image = UIImage(data: data) else {
+                print("⚠️ [VM] Full-size image data invalid for asset \(assetIdentifier)")
+                completion(nil)
+                return
+            }
+
+            // 3. Cache the result via service
+            print("✅ [VM] Full-size image loaded successfully for \(assetIdentifier)")
+            self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
+
+            // 4. Call completion handler
+            completion(image) // Already on a background thread, let caller dispatch if needed
+
+            // Clear active request ID if managing them here
+            // self.activeRequests.removeValue(forKey: assetIdentifier)
+        }
+        // Store request ID if managing cancellations here
+        // self.activeRequests[assetIdentifier] = requestID
+    }
     // MARK: - Private Helper Functions
     // Calculate date range for a specific "years ago" value
     private func calculateDateRange(yearsAgo: Int, calendar: Calendar, today: Date) -> (start: Date, end: Date)? {
@@ -560,42 +616,4 @@ class PhotoViewModel: ObservableObject {
         }
         return (startOfDay, endOfDay)
     }
-
-    // Check appropriate cache for an image
-    // Changed to public as ItemDisplayView uses it now
-    public func cachedImage(for assetIdentifier: String, isHighRes: Bool = false) -> UIImage? {
-        let cache = isHighRes ? highResCache : imageCache
-        let cacheName = isHighRes ? "high-res" : "thumbnail"
-
-        if let cached = cache.object(forKey: assetIdentifier as NSString) {
-            print("✅ Using cached \(cacheName) image for asset: \(assetIdentifier)")
-            return cached
-        }
-        return nil
     }
-
-    // Store an image in the appropriate cache with cost calculation
-    // Changed to public as ItemDisplayView uses it now
-    public func cacheImage(_ image: UIImage, for assetIdentifier: String, isHighRes: Bool = false) {
-        // Estimate cost based on image dimensions, scale, and assumed bytes per pixel
-        let cost = Int(image.size.width * image.size.height * image.scale * CGFloat(Constants.assumedBytesPerPixel)) // Use constant
-
-        if isHighRes {
-            // Basic checks before adding to cache (NSCache handles actual limits)
-            if highResCache.totalCostLimit > 0 && highResCache.totalCostLimit < cost {
-                 print("⚠️ High-res cache limit potentially exceeded by new image cost (\(cost) vs limit \(highResCache.totalCostLimit)). Cache might be cleared.")
-            }
-            highResCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
-            print("📦 Cached high-res image for asset: \(assetIdentifier), size: \(image.size), cost: \(cost)")
-        } else {
-             if imageCache.totalCostLimit > 0 && imageCache.totalCostLimit < cost {
-                 print("⚠️ Thumbnail cache limit potentially exceeded by new image cost (\(cost) vs limit \(imageCache.totalCostLimit)). Cache might be cleared.")
-             }
-            imageCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
-            print("📦 Cached thumbnail for asset: \(assetIdentifier), size: \(image.size), cost: \(cost)")
-        }
-    }
-
-} // End of class PhotoViewModel
-
-// Removed flawed NSCache currentCount extension
