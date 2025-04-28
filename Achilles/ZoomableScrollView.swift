@@ -1,14 +1,48 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Zoomable ScrollView
+// MARK: - Constants (Defined at File Level)
+// Moved outside the generic struct context and made fileprivate
+fileprivate struct Constants {
+    // Zooming
+    static let maximumZoomScale: CGFloat = 8.0
+    static let minimumZoomScale: CGFloat = 1.0
+    static let zoomSlightlyAboveMinimum: CGFloat = 1.01 // Threshold to consider zoomed
+    static let doubleTapZoomScale: CGFloat = 3.0
+    static let zoomRectCalculationFactor: CGFloat = 2.0
+
+    // Pan Gesture (Swipe Down Dismiss)
+    static let panMinVerticalDistanceStartFeedback: CGFloat = 50.0
+    static let panHorizontalDominanceFactor: CGFloat = 0.8 // horizontal < vertical * factor
+    static let panDismissProgressMax: CGFloat = 1.0
+    static let panDismissProgressDistanceDivider: CGFloat = 300.0
+    static let panFeedbackAnimationDuration: Double = 0.1
+    static let panFeedbackMinAlpha: CGFloat = 0.7
+    static let panFeedbackAlphaFactor: CGFloat = 0.3
+    static let panFeedbackScaleFactor: CGFloat = 0.05
+    static let panResetAnimationDuration: Double = 0.3
+    static let panMinVerticalDistanceForDismiss: CGFloat = 100.0
+    static let panDismissHorizontalDominanceFactor: CGFloat = 0.5
+
+    // Taps
+    static let doubleTapRequiredTaps: Int = 2
+
+    // Centering
+    static let centerContentDivisionFactor: CGFloat = 2.0
+    static let minContentInset: CGFloat = 0.0
+}
+
+
+// MARK: - Zoomable ScrollView Representable
 struct ZoomableScrollView<Content: View>: UIViewRepresentable {
+    // MARK: Properties
     let content: Content
     @Binding var showInfoPanel: Bool
     @Binding var controlsHidden: Bool
     @Binding var zoomScale: CGFloat
     let dismissAction: () -> Void
 
+    // MARK: Init
     init(
         showInfoPanel: Binding<Bool>,
         controlsHidden: Binding<Bool>,
@@ -23,6 +57,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         self.content = content()
     }
 
+    // MARK: UIViewRepresentable Methods
     func makeCoordinator() -> Coordinator {
         Coordinator(
             hostingController: UIHostingController(rootView: content),
@@ -36,16 +71,17 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
         scrollView.delegate = context.coordinator
-        scrollView.maximumZoomScale = 8.0
-        scrollView.minimumZoomScale = 1.0
+        // Access constants directly via the struct name now
+        scrollView.maximumZoomScale = Constants.maximumZoomScale
+        scrollView.minimumZoomScale = Constants.minimumZoomScale
         scrollView.bouncesZoom = true
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.backgroundColor = .clear
         scrollView.delaysContentTouches = false
         scrollView.canCancelContentTouches = true
-        
-        // Enhanced layer settings for scroll view
+
+        // Layer enhancements
         scrollView.layer.allowsEdgeAntialiasing = true
         scrollView.layer.minificationFilter = .trilinear
         scrollView.layer.magnificationFilter = .trilinear
@@ -53,22 +89,24 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         scrollView.layer.rasterizationScale = UIScreen.main.scale
         scrollView.layer.drawsAsynchronously = true
 
+        // Setup hosting controller view
         let hostedView = context.coordinator.hostingController.view!
         hostedView.translatesAutoresizingMaskIntoConstraints = false
         hostedView.backgroundColor = .clear
         hostedView.isUserInteractionEnabled = true
-        
-        // Enhanced layer settings for hosted view
+
+        // Layer enhancements for hosted view
         hostedView.layer.allowsEdgeAntialiasing = true
         hostedView.layer.minificationFilter = .trilinear
         hostedView.layer.magnificationFilter = .trilinear
         hostedView.layer.shouldRasterize = true
         hostedView.layer.rasterizationScale = UIScreen.main.scale
-        hostedView.layer.drawsAsynchronously = true
         hostedView.layer.contentsScale = UIScreen.main.scale
-        
+        hostedView.layer.drawsAsynchronously = true
+
         scrollView.addSubview(hostedView)
 
+        // Constraints
         NSLayoutConstraint.activate([
             hostedView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             hostedView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
@@ -78,27 +116,33 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             hostedView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
         ])
 
+        // Setup gestures via coordinator
         context.coordinator.setupGestureRecognizers(for: scrollView)
         return scrollView
     }
 
     func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // Update the root view if content changes
         context.coordinator.hostingController.rootView = content
         context.coordinator.hostingController.view.setNeedsLayout()
     }
 
+
+    // MARK: - Coordinator Class
+    // Constants struct is NO LONGER nested here
     class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+
+        // MARK: Properties
         var hostingController: UIHostingController<Content>
         @Binding var showInfoPanel: Bool
         @Binding var controlsHidden: Bool
         @Binding var zoomScale: CGFloat
         let dismissAction: () -> Void
 
-        // Used for basic zoom tracking
         private var isZoomed: Bool = false
-        // For swipe down detection
         private var startTouchPoint: CGPoint = .zero
 
+        // MARK: Init
         init(
             hostingController: UIHostingController<Content>,
             showInfoPanel: Binding<Bool>,
@@ -113,23 +157,25 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             self.dismissAction = dismissAction
         }
 
+        // MARK: Gesture Setup
         func setupGestureRecognizers(for scrollView: UIScrollView) {
             // Double tap for zoom
             let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
-            doubleTap.numberOfTapsRequired = 2
+            doubleTap.numberOfTapsRequired = Constants.doubleTapRequiredTaps // Use constant
             scrollView.addGestureRecognizer(doubleTap)
 
             // Single tap for controls
             let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
             singleTap.require(toFail: doubleTap)
             scrollView.addGestureRecognizer(singleTap)
-            
-            // Add a pan gesture recognizer for swipe down to dismiss
+
+            // Pan gesture for swipe down to dismiss
             let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePanGesture(_:)))
             panGesture.delegate = self
             scrollView.addGestureRecognizer(panGesture)
         }
 
+        // MARK: UIScrollViewDelegate Methods
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             hostingController.view
         }
@@ -137,112 +183,117 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             centerContent(scrollView)
             zoomScale = scrollView.zoomScale
-            isZoomed = scrollView.zoomScale > 1.01
+            // Access constants directly
+            isZoomed = scrollView.zoomScale > Constants.zoomSlightlyAboveMinimum
         }
 
+        // MARK: Helper Methods
         func centerContent(_ scrollView: UIScrollView) {
             guard let hostedView = hostingController.view else { return }
-            let scrollSize = scrollView.bounds.size
-            let contentSize = hostedView.frame.size
+            let scrollBoundsSize = scrollView.bounds.size
+            let hostedContentSize = hostedView.frame.size
 
-            let verticalInset = max(0, (scrollSize.height - contentSize.height) / 2)
-            let horizontalInset = max(0, (scrollSize.width - contentSize.width) / 2)
+            // Access constants directly
+            let verticalInset = max(Constants.minContentInset, (scrollBoundsSize.height - hostedContentSize.height) / Constants.centerContentDivisionFactor)
+            let horizontalInset = max(Constants.minContentInset, (scrollBoundsSize.width - hostedContentSize.width) / Constants.centerContentDivisionFactor)
 
             scrollView.contentInset = UIEdgeInsets(top: verticalInset, left: horizontalInset, bottom: verticalInset, right: horizontalInset)
         }
 
+        // MARK: Gesture Handlers
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
-            guard let scrollView = gesture.view as? UIScrollView else { return }
-            let scale = scrollView.zoomScale > 1.01 ? scrollView.minimumZoomScale : 3.0
-            let point = gesture.location(in: scrollView)
-            let zoomRect = CGRect(
-                x: point.x - scrollView.bounds.size.width / (2 * scale),
-                y: point.y - scrollView.bounds.size.height / (2 * scale),
-                width: scrollView.bounds.size.width / scale,
-                height: scrollView.bounds.size.height / scale
-            )
-            scrollView.zoom(to: zoomRect, animated: true)
-        }
+             guard let scrollView = gesture.view as? UIScrollView else { return }
+             // Access constants directly
+             let targetScale = scrollView.zoomScale > Constants.zoomSlightlyAboveMinimum ? Constants.minimumZoomScale : Constants.doubleTapZoomScale // Use Constants.minimumZoomScale
+             let zoomPoint = gesture.location(in: scrollView)
 
-        @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
-            withAnimation { controlsHidden.toggle() }
-            if !controlsHidden && showInfoPanel {
-                withAnimation { showInfoPanel = false }
-            }
-        }
-        
-        // Handle pan gesture for swipe down to dismiss
-        @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
-            guard let scrollView = gesture.view as? UIScrollView else { return }
-            
-            // Don't interfere if the scroll view is zoomed in
-            if scrollView.zoomScale > 1.01 {
-                return
-            }
-            
-            // Don't handle gestures when info panel is showing
-            if showInfoPanel {
-                return
-            }
-            
-            switch gesture.state {
-            case .began:
-                startTouchPoint = gesture.location(in: scrollView)
-                
-            case .changed:
-                let currentPoint = gesture.location(in: scrollView)
-                let verticalDistance = currentPoint.y - startTouchPoint.y
-                let horizontalDistance = currentPoint.x - startTouchPoint.x
-                
-                // Only provide feedback if this is primarily a vertical swipe down
-                if verticalDistance > 50 && abs(horizontalDistance) < abs(verticalDistance) * 0.8 {
-                    // Calculate an opacity value based on how far they've swiped
-                    let dismissProgress = min(1.0, verticalDistance / 300)
-                    
-                    // Apply a subtle dimming effect to indicate progress
-                    UIView.animate(withDuration: 0.1) {
-                        scrollView.alpha = max(0.7, 1.0 - dismissProgress * 0.3)
-                        
-                        // Apply a subtle scale effect
-                        scrollView.transform = CGAffineTransform(scaleX: 1.0 - dismissProgress * 0.05,
-                                                                y: 1.0 - dismissProgress * 0.05)
-                    }
-                }
-                
-            case .ended, .cancelled:
-                // Reset any visual effects first
-                UIView.animate(withDuration: 0.3) {
-                    scrollView.alpha = 1.0
-                    scrollView.transform = .identity
-                }
-                
-                let currentPoint = gesture.location(in: scrollView)
-                let verticalDistance = currentPoint.y - startTouchPoint.y
-                let horizontalDistance = currentPoint.x - startTouchPoint.x
-                
-                // Only process if this is primarily a vertical swipe down
-                if verticalDistance > 100 && abs(horizontalDistance) < abs(verticalDistance) * 0.5 {
-                    dismissAction()
-                }
-                
-            default:
-                // Reset any visual effects
-                UIView.animate(withDuration: 0.3) {
-                    scrollView.alpha = 1.0
-                    scrollView.transform = .identity
-                }
-                break
-            }
-        }
-        
-        // MARK: - UIGestureRecognizerDelegate
-        
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            // Allow the scroll view to handle its gestures normally
-            return true
-        }
+             let zoomRectWidth = scrollView.bounds.size.width / targetScale
+             let zoomRectHeight = scrollView.bounds.size.height / targetScale
+             // Access constants directly
+             let zoomRectX = zoomPoint.x - zoomRectWidth / Constants.zoomRectCalculationFactor
+             let zoomRectY = zoomPoint.y - zoomRectHeight / Constants.zoomRectCalculationFactor
+
+             let zoomRect = CGRect(x: zoomRectX, y: zoomRectY, width: zoomRectWidth, height: zoomRectHeight)
+             scrollView.zoom(to: zoomRect, animated: true)
+         }
+
+         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+             withAnimation { controlsHidden.toggle() }
+             if !controlsHidden && showInfoPanel {
+                  withAnimation { showInfoPanel = false }
+              }
+         }
+
+         @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
+             guard let scrollView = gesture.view as? UIScrollView else { return }
+
+             // Access constants directly
+             if scrollView.zoomScale > Constants.zoomSlightlyAboveMinimum || showInfoPanel {
+                 if gesture.state == .changed || gesture.state == .began {
+                     UIView.animate(withDuration: Constants.panResetAnimationDuration) { // Use constant
+                          scrollView.alpha = 1.0
+                          scrollView.transform = .identity
+                      }
+                 }
+                 return
+             }
+
+             switch gesture.state {
+             case .began:
+                 startTouchPoint = gesture.location(in: scrollView)
+
+             case .changed:
+                 let currentPoint = gesture.location(in: scrollView)
+                 let verticalDistance = currentPoint.y - startTouchPoint.y
+                 let horizontalDistance = currentPoint.x - startTouchPoint.x
+
+                 // Access constants directly
+                 if verticalDistance > Constants.panMinVerticalDistanceStartFeedback &&
+                    abs(horizontalDistance) < abs(verticalDistance) * Constants.panHorizontalDominanceFactor {
+
+                     // Access constants directly
+                     let dismissProgress = min(Constants.panDismissProgressMax, verticalDistance / Constants.panDismissProgressDistanceDivider)
+
+                     UIView.animate(withDuration: Constants.panFeedbackAnimationDuration) { // Use constant
+                         scrollView.alpha = max(Constants.panFeedbackMinAlpha, 1.0 - dismissProgress * Constants.panFeedbackAlphaFactor) // Use constants
+                         let scaleValue = 1.0 - dismissProgress * Constants.panFeedbackScaleFactor // Use constant
+                         scrollView.transform = CGAffineTransform(scaleX: scaleValue, y: scaleValue)
+                     }
+                 } else {
+                      UIView.animate(withDuration: Constants.panFeedbackAnimationDuration) { // Use constant
+                          scrollView.alpha = 1.0
+                          scrollView.transform = .identity
+                      }
+                  }
+
+             case .ended, .cancelled:
+                 UIView.animate(withDuration: Constants.panResetAnimationDuration) { // Use constant
+                     scrollView.alpha = 1.0
+                     scrollView.transform = .identity
+                 }
+
+                 let currentPoint = gesture.location(in: scrollView)
+                 let verticalDistance = currentPoint.y - startTouchPoint.y
+                 let horizontalDistance = currentPoint.x - startTouchPoint.x
+
+                 // Access constants directly
+                 if verticalDistance > Constants.panMinVerticalDistanceForDismiss &&
+                    abs(horizontalDistance) < abs(verticalDistance) * Constants.panDismissHorizontalDominanceFactor {
+                     dismissAction()
+                 }
+
+             default:
+                 UIView.animate(withDuration: Constants.panResetAnimationDuration) { // Use constant
+                      scrollView.alpha = 1.0
+                      scrollView.transform = .identity
+                  }
+                 break
+             }
+         }
+
+         // MARK: UIGestureRecognizerDelegate
+         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+             return true
+         }
     }
 }
-
-
-
