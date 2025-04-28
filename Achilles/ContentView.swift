@@ -80,90 +80,76 @@ struct PagedYearsView: View {
     @Binding var selectedYearsAgo: Int?
 
     // For custom drag gesture state
-    @State private var isAnimating = false // Tracks if swipe animation is active
-    @State private var dragOffset: CGFloat = 0 // Current horizontal drag offset
+    @State private var isAnimating = false
+    @State private var dragOffset: CGFloat = 0
 
     // MARK: - Constants
+    // Constants remain the same as before
     private struct Constants {
-        // Animation
         static let transitionDuration: Double = 0.3
         static let animationResetDelay: Double = 0.3
-
-        // Drag Gesture Logic
-        static let horizontalDragActivationFactor: CGFloat = 1.2 // How much wider than tall drag must be
-        static let significantDragThreshold: CGFloat = 40.0     // Min pixel drag to trigger change
-        static let significantVelocityThreshold: CGFloat = 1.0  // Min velocity to trigger change
-        static let swipeDirectionThresholdFactor: CGFloat = 0.5 // Horizontal drag must be > 0.5 * vertical drag
-        static let minDragVelocityDivider: CGFloat = 1.0        // Avoid division by zero
-
-        // Page Indexing
-        static let forwardSwipeDirection: Int = 1 // Index increases (older year)
-        static let backwardSwipeDirection: Int = -1 // Index decreases (newer year)
+        static let horizontalDragActivationFactor: CGFloat = 1.2
+        static let significantDragThreshold: CGFloat = 40.0
+        static let significantVelocityThreshold: CGFloat = 1.0
+        static let swipeDirectionThresholdFactor: CGFloat = 0.5
+        static let minDragVelocityDivider: CGFloat = 1.0
+        static let forwardSwipeDirection: Int = 1
+        static let backwardSwipeDirection: Int = -1
         static let minPageIndex: Int = 0
     }
 
+    // REMOVED isSplashActiveForSelectedPage computed property - no longer needed
+
+    // MARK: - Body
     var body: some View {
         TabView(selection: $selectedYearsAgo) {
             ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
                 YearPageView(viewModel: viewModel, yearsAgo: yearsAgo)
-                    .tag(Optional(yearsAgo)) // Tag must match selection type (Int?)
+                    .tag(Optional(yearsAgo))
             }
         }
         .tabViewStyle(
-            PageTabViewStyle(indexDisplayMode: .never) // Hide default page dots
+            PageTabViewStyle(indexDisplayMode: .never)
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity) // Ensure it fills space
-        .animation(.easeInOut(duration: Constants.transitionDuration), value: selectedYearsAgo) // Animate page changes
-        // Custom Drag Gesture for Horizontal Swipe Navigation
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: Constants.transitionDuration), value: selectedYearsAgo)
+        // --- MODIFIED ---
+        // Remove conditional logic and always hide the navigation bar
+        .navigationBarTitleDisplayMode(.inline) // Keep this if desired, but title won't show
+        .navigationTitle("") // Set title to empty as it's hidden
+        .toolbar(.hidden, for: .navigationBar) // Always hide
+        // --- END MODIFIED ---
         .gesture(
             DragGesture()
                 .onChanged { value in
-                    // Only track drag if horizontal movement dominates
                     if abs(value.translation.width) > abs(value.translation.height) * Constants.horizontalDragActivationFactor {
-                        // Avoid interfering with potential vertical gestures within YearPageView
-                        // isAnimating = true // Maybe set only onEnded?
-                        dragOffset = value.translation.width // Track offset for visual feedback (optional)
+                        dragOffset = value.translation.width
                     }
                 }
                 .onEnded { value in
-                    // Calculate velocity and check for significant drag distance
-                     // Avoid division by zero or small numbers
                     let dragWidth = max(Constants.minDragVelocityDivider, abs(value.translation.width))
                     let velocity = value.predictedEndTranslation.width / dragWidth
                     let isSignificantDrag = abs(value.translation.width) > Constants.significantDragThreshold
                     let isSignificantVelocity = abs(velocity) > Constants.significantVelocityThreshold
                     let isHorizontalDragDominant = abs(value.translation.width) > abs(value.translation.height) * Constants.swipeDirectionThresholdFactor
 
-                    // Only proceed if swipe meets criteria
                     if (isSignificantDrag || isSignificantVelocity) && isHorizontalDragDominant {
-
-                        // Determine direction: positive width means swipe left (go forward in years)
                         let direction = value.translation.width < 0 ? Constants.forwardSwipeDirection : Constants.backwardSwipeDirection
-
-                        // Find current index and calculate target index
                         if let currentYearsAgo = selectedYearsAgo,
                            let currentIndex = viewModel.availableYearsAgo.firstIndex(of: currentYearsAgo) {
-
                             let targetIndex = currentIndex + direction
-
-                            // Check if target index is valid
                             if targetIndex >= Constants.minPageIndex && targetIndex < viewModel.availableYearsAgo.count {
-                                // Animate the change to the new year
                                 withAnimation(.easeInOut(duration: Constants.transitionDuration)) {
                                     selectedYearsAgo = viewModel.availableYearsAgo[targetIndex]
                                 }
                             }
                         }
                     }
-
-                    // Reset drag state after a short delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + Constants.animationResetDelay) {
-                        // isAnimating = false // Reset if used
                         dragOffset = 0
                     }
                 }
         )
-        // Trigger prefetching when the selected page changes
         .onChange(of: selectedYearsAgo) { _, newValue in
             if let currentYearsAgo = newValue {
                 print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")

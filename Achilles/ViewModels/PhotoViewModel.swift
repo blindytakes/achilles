@@ -47,6 +47,7 @@ class PhotoViewModel: ObservableObject {
     @Published var gridAnimationDone: Set<Int> = []
     @Published var gridDateAnimationsCompleted: Set<Int> = [] // Use yearsAgo as the key
     @Published var featuredTextAnimationsCompleted: Set<Int> = [] // Track which years have had their featured text animation
+    @Published var featuredImageAnimationsCompleted: Set<Int> = [] // Track image effects animation
 
     // MARK: - Internal Properties
     private var activeLoadTasks: [Int: Task<Void, Never>] = [:] // Track loading tasks per year
@@ -58,7 +59,6 @@ class PhotoViewModel: ObservableObject {
     private var activeRequests: [String: PHImageRequestID] = [:]
 
     // How far back to look for available years initially
-    // Keep this separate property as it was already defined, or use Constants.maxYearsToScanInitial
     private let maxYearsToScan = Constants.maxYearsToScanInitial
 
 
@@ -81,17 +81,29 @@ class PhotoViewModel: ObservableObject {
     }
 
     // MARK: - Animation State Handling
+    // --- Methods for Text Animation State ---
     func shouldAnimate(yearsAgo: Int) -> Bool {
         !featuredTextAnimationsCompleted.contains(yearsAgo)
     }
-
     func markAnimated(yearsAgo: Int) {
         featuredTextAnimationsCompleted.insert(yearsAgo)
+        print("✍️ Marked TEXT animation done for \(yearsAgo)")
     }
 
+    // --- Methods for Image Animation State ---
+    func shouldAnimateImageEffects(yearsAgo: Int) -> Bool {
+        !featuredImageAnimationsCompleted.contains(yearsAgo)
+    }
+    func markImageEffectsAnimated(yearsAgo: Int) {
+        featuredImageAnimationsCompleted.insert(yearsAgo)
+        print("🖼️ Marked IMAGE effects animation done for \(yearsAgo)")
+    }
+
+    // --- Method for Splash Dismissal ---
     func markSplashDismissed(for yearsAgo: Int) {
         dismissedSplashForYearsAgo.insert(yearsAgo)
     }
+
 
     // MARK: - Authorization Handling
     func checkAuthorization() {
@@ -353,7 +365,11 @@ class PhotoViewModel: ObservableObject {
         ) { [weak self] image, info in
             // Ensure self exists, clear active request
             guard let self = self else { return }
-            self.activeRequests.removeValue(forKey: assetIdentifier)
+             // Safely remove request ID only if it matches the completed one
+             if self.activeRequests[assetIdentifier] == info?[PHImageResultRequestIDKey] as? PHImageRequestID {
+                  self.activeRequests.removeValue(forKey: assetIdentifier)
+             }
+
 
              // Check for explicit cancellation
              let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
@@ -367,7 +383,6 @@ class PhotoViewModel: ObservableObject {
             if let error = info?[PHImageErrorKey] as? Error {
                 print("❌ Image loading error (completion): \(error.localizedDescription) for \(assetIdentifier)")
                  // Don't retry automatically from completion, maybe rely on progress handler retry
-                 // self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
                 completion(nil)
                 return
             }
@@ -381,7 +396,7 @@ class PhotoViewModel: ObservableObject {
                 DispatchQueue.main.async { completion(image) }
             } else {
                 // Image is nil, but no error? Should ideally not happen with non-sync requests
-                // unless cancelled before delivery.
+                // unless cancelled before delivery or error occurred but wasn't caught above.
                 print("⚠️ Image was nil, but no error reported for asset \(assetIdentifier)")
                  DispatchQueue.main.async { completion(nil) }
             }
@@ -413,7 +428,10 @@ class PhotoViewModel: ObservableObject {
             for: asset, targetSize: targetSize, contentMode: .aspectFit, options: retryOptions
         ) { [weak self] retryImage, retryInfo in
             guard let self = self else { return }
-            self.activeRequests.removeValue(forKey: assetIdentifier)
+            // Safely remove request ID only if it matches the completed one
+            if self.activeRequests[assetIdentifier] == retryInfo?[PHImageResultRequestIDKey] as? PHImageRequestID {
+                 self.activeRequests.removeValue(forKey: assetIdentifier)
+            }
 
             // Check for cancellation
             let isCancelled = retryInfo?[PHImageCancelledKey] as? Bool ?? false
@@ -544,7 +562,8 @@ class PhotoViewModel: ObservableObject {
     }
 
     // Check appropriate cache for an image
-    internal func cachedImage(for assetIdentifier: String, isHighRes: Bool = false) -> UIImage? {
+    // Changed to public as ItemDisplayView uses it now
+    public func cachedImage(for assetIdentifier: String, isHighRes: Bool = false) -> UIImage? {
         let cache = isHighRes ? highResCache : imageCache
         let cacheName = isHighRes ? "high-res" : "thumbnail"
 
@@ -556,42 +575,27 @@ class PhotoViewModel: ObservableObject {
     }
 
     // Store an image in the appropriate cache with cost calculation
-    internal func cacheImage(_ image: UIImage, for assetIdentifier: String, isHighRes: Bool = false) {
+    // Changed to public as ItemDisplayView uses it now
+    public func cacheImage(_ image: UIImage, for assetIdentifier: String, isHighRes: Bool = false) {
         // Estimate cost based on image dimensions, scale, and assumed bytes per pixel
         let cost = Int(image.size.width * image.size.height * image.scale * CGFloat(Constants.assumedBytesPerPixel)) // Use constant
 
         if isHighRes {
-            // Simple eviction if adding new image would exceed limit (basic strategy)
-            // Consider more sophisticated LRU if needed
+            // Basic checks before adding to cache (NSCache handles actual limits)
             if highResCache.totalCostLimit > 0 && highResCache.totalCostLimit < cost {
-                 print("⚠️ High-res cache limit potentially exceeded by new image cost. Clearing cache.")
-                 highResCache.removeAllObjects()
-             } else if highResCache.countLimit > 0 && highResCache.countLimit <= highResCache.currentCount {
-                 // Basic count limit check (NSCache handles this internally but good to be aware)
-                  print("⚠️ High-res cache count limit reached. Eviction may occur.")
-              }
+                 print("⚠️ High-res cache limit potentially exceeded by new image cost (\(cost) vs limit \(highResCache.totalCostLimit)). Cache might be cleared.")
+            }
             highResCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
             print("📦 Cached high-res image for asset: \(assetIdentifier), size: \(image.size), cost: \(cost)")
         } else {
              if imageCache.totalCostLimit > 0 && imageCache.totalCostLimit < cost {
-                 print("⚠️ Thumbnail cache limit potentially exceeded by new image cost. Clearing cache.")
-                 imageCache.removeAllObjects()
-             } else if imageCache.countLimit > 0 && imageCache.countLimit <= imageCache.currentCount {
-                  print("⚠️ Thumbnail cache count limit reached. Eviction may occur.")
-              }
+                 print("⚠️ Thumbnail cache limit potentially exceeded by new image cost (\(cost) vs limit \(imageCache.totalCostLimit)). Cache might be cleared.")
+             }
             imageCache.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
             print("📦 Cached thumbnail for asset: \(assetIdentifier), size: \(image.size), cost: \(cost)")
         }
     }
-}
 
-// Helper extension to get current count (NSCache doesn't expose this directly)
-// Note: This is an approximation and might not be perfectly accurate.
-extension NSCache where KeyType == NSString, ObjectType == UIImage {
-    var currentCount: Int {
-        // This is tricky as NSCache doesn't provide a direct count.
-        // We could try iterating keys if needed, but it's not efficient or guaranteed.
-        // For basic checks above, relying on countLimit is often sufficient.
-        return 0 // Placeholder - direct count not reliably available
-    }
-}
+} // End of class PhotoViewModel
+
+// Removed flawed NSCache currentCount extension

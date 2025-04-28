@@ -188,15 +188,32 @@ struct FeaturedYearFullScreenView: View {
                                         showLoadingTransition = true
                                     }
                                 }
-                                .onAppear {
-                                    // Animate image effects
-                                    withAnimation(.easeInOut(duration: imageAppearEffectDuration).delay(imageAppearEffectDelay)) { // Use constants
-                                        imageBrightness = targetImageBrightness // Use constant
-                                    }
-                                    withAnimation(.easeOut(duration: imageScaleDuration)) { // Use constant
-                                        imageScale = targetImageScale // Use constant
-                                    }
+                            // Inside the body -> GeometryReader -> ZStack -> if let image = image { ... }
+                            .onAppear {
+                                // 1️⃣ Check using the NEW method for image effects
+                                guard viewModel.shouldAnimateImageEffects(yearsAgo: yearsAgo) else {
+                                    // Snap to final state if image effects already done
+                                    imageBrightness = targetImageBrightness
+                                    imageScale      = targetImageScale
+                                    print("🖼️ Image effects already done for \(yearsAgo), skipping animation.") // Add print
+                                    return
                                 }
+
+                                // 2️⃣ Mark the IMAGE effects animation as done using the NEW method
+                                viewModel.markImageEffectsAnimated(yearsAgo: yearsAgo)
+
+                                // 3️⃣ Perform the image effects animations
+                                print("🖼️ Performing IMAGE effects animation for \(yearsAgo).") // Add print
+                                withAnimation(
+                                    .easeInOut(duration: imageAppearEffectDuration)
+                                    .delay(imageAppearEffectDelay)
+                                ) {
+                                    imageBrightness = targetImageBrightness
+                                }
+                                withAnimation(.easeOut(duration: imageScaleDuration)) {
+                                    imageScale = targetImageScale
+                                }
+                            }
                                 .contentShape(Rectangle())
                         } else {
                             // Loading placeholder
