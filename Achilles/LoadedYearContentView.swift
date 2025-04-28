@@ -19,6 +19,53 @@ struct LoadedYearContentView: View {
     // Add animation states
     @State private var dateAppeared = false
     @State private var dateBounce = false
+    // MARK: - Constants
+
+       // Layout
+       private let mainVStackSpacing: CGFloat = 0
+       private let titleVStackSpacing: CGFloat = 3
+       private let titleTopPadding: CGFloat = 16
+       private let titleBottomPadding: CGFloat = 20
+       private let gridColumnSpacing: CGFloat = 6 // Matches spacing in columns definition
+       private let gridRowSpacing: CGFloat = 6 // Vertical spacing for LazyVGrid
+       private let gridHorizontalPadding: CGFloat = 6 // Outer horizontal padding for LazyVGrid
+       private let footerVerticalPadding: CGFloat = 16 // Replaces default .padding()
+
+       // Animation Timings
+       private let splashTransitionDelay: Double = 0.4
+       private let dateAppearSpringResponse: Double = 0.5
+       private let dateAppearSpringDamping: Double = 0.7
+       private let dateAppearDelay: Double = 0.3 // Delay after splash dismiss
+       private let dateBounceDelay: Double = 0.4 // Delay after date appear
+       private let dateBounceSpringResponse: Double = 0.25
+       private let dateBounceSpringDamping: Double = 0.6
+       private let dateBounceEndDelay: Double = 0.1 // Delay before bounce settles
+       private let gridItemSpringResponse: Double = 0.6
+       private let gridItemSpringDamping: Double = 0.7
+       private let gridItemAnimationBaseDelay: Double = 0.08
+       private let gridAnimationMarkDoneDelay: Double = 0.3 // Delay before marking animation set done
+       private let contentFadeInDuration: Double = 0.4
+       private let contentFadeInDelay: Double = 0.1
+       private let footerFadeInDelay: Double = 0.3
+       private let splashDismissSpringDamping: Double = 0.8 // Specific damping for splash dismiss animation
+
+       // Style & Visuals
+       private let gridItemAspectRatio: CGFloat = 1.0
+       private let gridItemShadowOpacity: Double = 0.1
+       private let gridItemShadowRadius: CGFloat = 2
+       private let gridItemShadowYOffset: CGFloat = 1
+       private let gridItemAppearOffset: CGFloat = -50
+       private let dateAppearRotation: Double = -3
+       private let dateBounceScale: CGFloat = 1.05
+       private let dateNonBounceScale: CGFloat = 1.0
+       private let dateAppearScale: CGFloat = 0.8
+       private let visibleOpacity: Double = 1.0
+       private let hiddenOpacity: Double = 0.0
+       private let dateTextShadowOpacity: Double = 0.2
+       private let dateTextShadowRadius: CGFloat = 1
+       private let dateTextShadowXOffset: CGFloat = 0.5
+       private let dateTextShadowYOffset: CGFloat = 0.5
+
     
 
     private var formattedDate: String {
@@ -36,7 +83,6 @@ struct LoadedYearContentView: View {
 
     // Computed property to determine the items shown in the grid
     var allGridItems: [MediaItem] {
-        // Print statements removed for brevity, assuming logic is correct now
         if hasTappedSplash {
             if let featured = featuredItem {
                 return [featured] + gridItems
@@ -49,15 +95,12 @@ struct LoadedYearContentView: View {
     }
 
     // --- Grid Layout Configuration ---
-    // Define a fixed 2-column grid like Apple Photos on iPhone
-    let columns: [GridItem] = [
-        GridItem(.flexible(), spacing: 6), // Reduced spacing between columns
-        GridItem(.flexible())
-    ]
-    // Define VERTICAL spacing between rows
-    let verticalSpacing: CGFloat = 6 // Reduced spacing between rows
-    // Define outer padding around the grid
-    let gridOuterPaddingValue: CGFloat = 6
+    private var columns: [GridItem] {
+        [
+            GridItem(.flexible(), spacing: gridColumnSpacing),
+            GridItem(.flexible(), spacing: gridColumnSpacing)
+        ]
+    }
     let gridOuterPadding: Edge.Set = .horizontal
     // Define corner radius for grid items
     let itemCornerRadius: CGFloat = 0 // No rounded corners to maximize photo area
@@ -70,7 +113,7 @@ struct LoadedYearContentView: View {
     private func calculateDelay(for index: Int) -> Double {
         // The delay increases based on the row position (every 2 items)
         let rowIndex = index / 2
-        return Double(rowIndex) * 0.08 // Reverted from 0.12 back to 0.08
+        return Double(rowIndex) * gridItemAnimationBaseDelay
     }
 
     var body: some View {
@@ -81,7 +124,8 @@ struct LoadedYearContentView: View {
                     item: item,
                     yearsAgo: yearsAgo,
                     onTap: {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        
+                        withAnimation(.spring(response: dateAppearSpringResponse, dampingFraction: splashDismissSpringDamping)) {
                             viewModel.markSplashDismissed(for: yearsAgo)
                             // Reset animation states when transitioning from splash screen
                             dateAppeared = false
@@ -89,16 +133,16 @@ struct LoadedYearContentView: View {
                             animatedItems.removeAll() // Reset animated items for cascading effect
                             
                             // Schedule animation sequence after splash screen disappears
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + splashTransitionDelay) {
                                 withAnimation {
                                     dateAppeared = true
                                 }
                                 // Add a little bounce effect
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceDelay) {
                                     withAnimation {
                                         dateBounce = true
                                     }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceEndDelay) {
                                         withAnimation {
                                             dateBounce = false
                                         }
@@ -116,12 +160,11 @@ struct LoadedYearContentView: View {
             // --- Grid View Content ---
             } else {
                 ScrollView(.vertical) {
-                    VStack(spacing: 0) {
-                        // --- Title with Date ---
-                        VStack(spacing: 3) {
+                    VStack(spacing: mainVStackSpacing) {
+                        VStack(spacing: titleVStackSpacing) {
                             Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
                                 .font(.largeTitle.bold())
-                                .padding(.top, 16)
+                                .padding(.top, titleTopPadding)
                             
                             Text(formattedDate)
                                 .font(.title2)
@@ -135,11 +178,15 @@ struct LoadedYearContentView: View {
                                     )
                                 )
                                 .fontDesign(.serif)
-                                .shadow(color: .black.opacity(0.2), radius: 1, x: 0.5, y: 0.5)
-                                .scaleEffect(dateAppeared ? (dateBounce ? 1.05 : 1.0) : 0.8)
-                                .rotationEffect(dateAppeared ? .zero : .degrees(-3))
-                                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: dateAppeared)
-                                .animation(.spring(response: 0.25, dampingFraction: 0.6), value: dateBounce)
+                                .shadow(color: .black.opacity(dateTextShadowOpacity), radius: dateTextShadowRadius, x: dateTextShadowXOffset, y: dateTextShadowYOffset)
+                                .scaleEffect(
+                                  dateAppeared
+                                    ? (dateBounce ? dateBounceScale : dateNonBounceScale)
+                                    : dateAppearScale
+                                )
+                                .rotationEffect(dateAppeared ? .zero : .degrees(dateAppearRotation))
+                                .animation(.spring(response: dateAppearSpringResponse, dampingFraction: dateAppearSpringDamping), value: dateAppeared)
+                                .animation(.spring(response: dateBounceSpringResponse, dampingFraction: dateBounceSpringDamping), value: dateBounce)
                             
                                 .onAppear {
                                  // Ensure we only attempt animation after splash is dismissed
@@ -155,19 +202,18 @@ struct LoadedYearContentView: View {
                                      viewModel.gridDateAnimationsCompleted.insert(yearsAgo)
 
                                      // Schedule the animation sequence using DispatchQueue
-                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { // Initial delay for appearance
-                                         // Animate the appearance (scale/rotation)
-                                         withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                                     DispatchQueue.main.asyncAfter(deadline: .now() + dateAppearDelay) {
+                                         withAnimation(.spring(response: dateAppearSpringResponse, dampingFraction: dateAppearSpringDamping)) {
                                              dateAppeared = true
                                          }
 
                                          // Schedule the bounce sequence
-                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { // Delay before bounce starts
-                                             withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+                                         DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceDelay) {
+                                             withAnimation(.spring(response: dateBounceSpringResponse, dampingFraction: dateBounceSpringDamping)) {
                                                  dateBounce = true
                                              }
-                                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { // Delay before bounce ends
-                                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+                                             DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceEndDelay) {
+                                                 withAnimation(.spring(response: dateBounceSpringResponse, dampingFraction: dateBounceSpringDamping)) {
                                                      dateBounce = false
                                                  }
                                              }
@@ -184,27 +230,27 @@ struct LoadedYearContentView: View {
                              }
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.bottom, 20) // Increased padding between date and grid
-                        .opacity(hasTappedSplash ? 1.0 : 0.0)
-                        .animation(.easeInOut(duration: 0.4).delay(0.1), value: hasTappedSplash)
+                        .padding(.bottom, titleBottomPadding)
+                        .opacity(hasTappedSplash ? visibleOpacity : hiddenOpacity)
+                        .animation(.easeInOut(duration: contentFadeInDuration).delay(contentFadeInDelay), value: hasTappedSplash)
 
                         // --- Photo Grid ---
                         LazyVGrid(
                             columns: columns,
-                            spacing: verticalSpacing
-                        ) {
+                            spacing: gridRowSpacing)
+                        {
                             ForEach(Array(allGridItems.enumerated()), id: \.element.id) { index, item in
                                 GridItemView(viewModel: viewModel, item: item) {
                                     selectedItemForDetail = item
                                 }
                                 // Force square aspect ratio
-                                .aspectRatio(1, contentMode: .fill)
+                                .aspectRatio(gridItemAspectRatio, contentMode: .fill)
                                 .frame(maxWidth: .infinity)
                                 .clipShape(Rectangle())
-                                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1) // Subtle shadow for depth
-                                .offset(y: animatedItems.contains(item.id) ? 0 : -50)
-                                .opacity(animatedItems.contains(item.id) ? 1 : 0)
-                                .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(calculateDelay(for: index)), value: animatedItems.contains(item.id))
+                                .shadow(color: .black.opacity(gridItemShadowOpacity), radius: gridItemShadowRadius, x: 0, y: gridItemShadowYOffset) // Subtle shadow for depth
+                                .offset(y: animatedItems.contains(item.id) ? 0 : gridItemAppearOffset)
+                                .opacity(animatedItems.contains(item.id) ? visibleOpacity : hiddenOpacity)
+                                .animation(.spring(response: gridItemSpringResponse, dampingFraction: gridItemSpringDamping).delay(calculateDelay(for: index)), value: animatedItems.contains(item.id))
                                 .onAppear {
                                     // Print at the very start
                                     print("onAppear: yearsAgo=\(yearsAgo), item=\(item.id), index=\(index), shouldAnimateGrid=\(shouldAnimateGrid)")
@@ -230,7 +276,7 @@ struct LoadedYearContentView: View {
 
                                         if isLastItem {
                                             print("--> Condition MET for last item yearsAgo=\(yearsAgo)! Scheduling insertion into gridAnimationDone.")
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { // The 0.3s delay before marking done
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + gridAnimationMarkDoneDelay) {
                                                 print("--> EXECUTING insert for yearsAgo=\(yearsAgo) into gridAnimationDone.")
                                                 viewModel.gridAnimationDone.insert(yearsAgo)
                                                 // Optionally print the set content AFTER insertion
@@ -243,15 +289,15 @@ struct LoadedYearContentView: View {
 
                             }
                         }
-                        .padding(.horizontal, gridOuterPaddingValue) // Consistent horizontal padding
+                        .padding(.horizontal, gridHorizontalPadding)
                         
                         // --- Footer Text ---
                         Text("Make More Memories!")
                             .font(.callout)
                             .foregroundColor(.primary)
-                            .padding()
-                            .opacity(hasTappedSplash ? 1.0 : 0.0)
-                            .animation(.easeInOut(duration: 0.4).delay(0.3), value: hasTappedSplash)
+                            .padding(footerVerticalPadding)
+                            .opacity(hasTappedSplash ? visibleOpacity : hiddenOpacity)
+                            .animation(.easeInOut(duration: contentFadeInDuration).delay(footerFadeInDelay), value: hasTappedSplash)
 
                         Spacer()
                     }
@@ -272,9 +318,5 @@ struct LoadedYearContentView: View {
         }
     }
 }
-
-// Ensure your GridItemView.swift still uses .scaledToFit() for the Image
-// Ensure you have definitions for MediaItem, PhotoViewModel, FeaturedYearFullScreenView, MediaDetailView
-
 
 
