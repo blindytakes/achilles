@@ -1,41 +1,38 @@
+// Throwbaks/Achilles/Views/FeaturedYearFullScreenView.swift
+
 import SwiftUI
 import Photos
 
-// Custom modifier for handwriting animation
+// Custom modifier for handwriting animation (Keep existing modifier code)
+// ... (HandwritingAnimationModifier and extension remain the same) ...
 struct HandwritingAnimationModifier: ViewModifier {
     let active: Bool
-    let duration: Double // Total duration for the animation effect
-    let delay: Double    // Initial delay before starting
+    let duration: Double
+    let delay: Double
     let yearsAgo: Int
     @ObservedObject var viewModel: PhotoViewModel
-
-    @State private var progress: CGFloat = 0 // 0.0 to 1.0 for mask reveal
-    @State private var opacity: CGFloat = 0  // 0.0 to 1.0 for fade-in
-    @State private var scale: CGFloat = 1.0  // Used for potential future scaling effects
-
-    // MARK: - Constants (Internal to Modifier)
-    private let fadeInDurationFactor: Double = 0.15 // Fade-in takes 15% of total duration
-    private let writeOutDelayFactor: Double = 0.5  // Write-out starts after 50% of initial delay
-    private let gradientWidthFactor: CGFloat = 0.15 // Width of the mask gradient edge
+    @State private var progress: CGFloat = 0
+    @State private var opacity: CGFloat = 0
+    @State private var scale: CGFloat = 1.0
+    private let fadeInDurationFactor: Double = 0.15
+    private let writeOutDelayFactor: Double = 0.5
+    private let gradientWidthFactor: CGFloat = 0.15
 
     func body(content: Content) -> some View {
         content
-            .opacity(active ? opacity : 1.0) // Use 1.0 for clarity
-            .scaleEffect(active ? scale : 1.0) // Use 1.0 for clarity
+            .opacity(active ? opacity : 1.0)
+            .scaleEffect(active ? scale : 1.0)
             .mask(
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        // Gradient edge for smoother mask reveal
                         Rectangle()
                             .fill(LinearGradient(
                                 gradient: Gradient(colors: [.black, .clear]),
                                 startPoint: .trailing,
                                 endPoint: .leading
                             ))
-                            .frame(width: geo.size.width * gradientWidthFactor) // Use constant
-                            .offset(x: progress * geo.size.width - geo.size.width * gradientWidthFactor) // Use constant
-
-                        // Main mask rectangle
+                            .frame(width: geo.size.width * gradientWidthFactor)
+                            .offset(x: progress * geo.size.width - geo.size.width * gradientWidthFactor)
                         Rectangle()
                             .fill(Color.black)
                             .frame(width: progress * geo.size.width, height: geo.size.height)
@@ -44,33 +41,19 @@ struct HandwritingAnimationModifier: ViewModifier {
             )
             .onAppear {
                 guard active else { return }
-                // Reset state before animating
                 progress = 0
                 opacity = 0
-                scale = 1.0 // Ensure scale starts at 1
-
-                // Calculate internal timings based on factors and passed-in values
+                scale = 1.0
                 let fadeInDuration = duration * fadeInDurationFactor
                 let writeOutDelay = delay * writeOutDelayFactor
-                let writeOutDuration = duration // Main write-out animation uses the full duration passed in
-
-                // 1. Fade In
-                withAnimation(.easeIn(duration: fadeInDuration)) {
-                    opacity = 1.0
-                }
-
-                // 2. Write Out (reveal mask) after delay
+                let writeOutDuration = duration
+                withAnimation(.easeIn(duration: fadeInDuration)) { opacity = 1.0 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + writeOutDelay) {
-                    withAnimation(.easeOut(duration: writeOutDuration)) {
-                        progress = 1.0
-                    }
-
-                    // 3. Mark completion *after* the write-out animation finishes
+                    withAnimation(.easeOut(duration: writeOutDuration)) { progress = 1.0 }
                     DispatchQueue.main.asyncAfter(deadline: .now() + writeOutDuration) {
-                        // Check if still active in case state changed rapidly
                         if active {
-                             print("⏰ Marking animation completed via modifier for year: \(yearsAgo)")
-                             viewModel.markAnimated(yearsAgo: yearsAgo)
+                            print("⏰ Marking animation completed via modifier for year: \(yearsAgo)")
+                            viewModel.markAnimated(yearsAgo: yearsAgo)
                         }
                     }
                 }
@@ -78,10 +61,8 @@ struct HandwritingAnimationModifier: ViewModifier {
     }
 }
 
-// Extension to apply the handwriting modifier easily
 extension View {
     func handwritingAnimation(active: Bool, duration: Double = 1.5, delay: Double = 0.2, yearsAgo: Int, viewModel: PhotoViewModel) -> some View {
-        // Pass default values here if desired, or rely on caller specifying them
         self.modifier(HandwritingAnimationModifier(active: active, duration: duration, delay: delay, yearsAgo: yearsAgo, viewModel: viewModel))
     }
 }
@@ -93,56 +74,56 @@ struct FeaturedYearFullScreenView: View {
     let item: MediaItem
     let yearsAgo: Int
     let onTap: () -> Void
+    let preloadedImage: UIImage?
 
     @StateObject private var motion = ParallaxMotionManager()
     @ObservedObject var viewModel: PhotoViewModel
 
     // View state
-    @State private var image: UIImage? = nil
+    @State private var image: UIImage?
+    @State private var isLoadingImage: Bool = false
     @State private var showLoadingTransition: Bool = false
-    @State private var imageBrightness: Double = -0.1 // Initialize with constant value below
-    @State private var imageScale: CGFloat = 1.05    // Initialize with constant value below
+    @State private var imageBrightness: Double = -0.1
+    @State private var imageScale: CGFloat = 1.05
+    // <<< NEW: Task tracking for image loading initiated by this view >>>
+    @State private var imageLoadTask: Task<Void, Never>? = nil
 
     // MARK: - Constants
-    // Layout & Style
+    // ... (Keep existing constants) ...
     private let yearLabelFontSize: CGFloat = 56
     private let dateLabelFontSize: CGFloat = 50
-    private let dateLabelHorizontalPadding: CGFloat = 20
-    private let textOverlayTopPaddingFactor: CGFloat = 0.55
-    private let yearLabelParallaxFactor: CGFloat = 0.3
-    private let dateLabelParallaxFactor: CGFloat = 0.5
-    private let dateLabelVerticalOffset: CGFloat = -10
-    private let textOverlaySpacing: CGFloat = 16 // Spacing between Year and Date Text
+    private let dateFontName: String = "SnellRoundhand-Bold"
+    private let imageLoadFadeDuration: Double = 0.4
+    private let handwritingAnimationDuration: Double = 2.0
+    private let handwritingAnimationDelay: Double = 0.3
     private let initialImageBrightness: Double = -0.1
     private let targetImageBrightness: Double = 0.08
     private let initialImageScale: CGFloat = 1.05
     private let targetImageScale: CGFloat = 1.0
-    private let textShadowOpacityHigh: Double = 0.7
-    private let textShadowRadiusHigh: CGFloat = 4
-    private let textShadowYOffsetHigh: CGFloat = 2
-    private let textShadowOpacityMedium: Double = 0.3
-    private let textShadowRadiusMedium: CGFloat = 2
-    private let textShadowOpacityLow: Double = 0.4
-    private let textShadowRadiusLow: CGFloat = 6
-    private let dateTextShadowOpacityHigh: Double = 1.0
-    private let dateTextShadowRadiusHigh: CGFloat = 2
-    private let dateTextShadowOpacityMedium: Double = 0.65
-    private let dateTextShadowRadiusMedium: CGFloat = 6
-    private let dateTextShadowYOffsetMedium: CGFloat = 2
-    private let dateTextHighlightOpacity: Double = 0.3
-    private let dateTextHighlightRadius: CGFloat = 1.8
-    private let backgroundGradientOpacityMedium: Double = 0.3
-    private let backgroundGradientOpacityHigh: Double = 0.7
-    private let dateFontName: String = "SnellRoundhand-Bold"
-
-    // Animation Timings
     private let imageTransitionDuration: Double = 0.3
     private let imageAppearEffectDuration: Double = 1.5
     private let imageAppearEffectDelay: Double = 0.2
     private let imageScaleDuration: Double = 5.0
-    private let imageLoadFadeDuration: Double = 0.4
-    private let handwritingAnimationDuration: Double = 2.0
-    private let handwritingAnimationDelay: Double = 0.3
+
+
+    // MARK: - Initialization
+    init(
+        item: MediaItem,
+        yearsAgo: Int,
+        onTap: @escaping () -> Void,
+        viewModel: PhotoViewModel,
+        preloadedImage: UIImage? = nil
+    ) {
+        self.item = item
+        self.yearsAgo = yearsAgo
+        self.onTap = onTap
+        self.viewModel = viewModel
+        self.preloadedImage = preloadedImage
+        // Initialize state based on preloaded image
+        self._image = State(initialValue: preloadedImage)
+        self._isLoadingImage = State(initialValue: preloadedImage == nil)
+    }
+
 
     // MARK: - Computed Properties
     private var yearLabel: String {
@@ -154,16 +135,17 @@ struct FeaturedYearFullScreenView: View {
         ZStack {
             // MARK: - Main content branch
             if showLoadingTransition, let currentImage = image {
-                // MARK: - Transition view case
+                // Transition view case
                 LoadingTransitionView(image: currentImage, onComplete: onTap)
-                    .transition(.opacity) // Ensure transition view also fades
+                    .transition(.opacity)
             } else {
-                // MARK: - Regular view case
+                // Regular view case
                 GeometryReader { geometry in
                     ZStack(alignment: .top) {
-                        // MARK: - Background image
-                        if let image = image {
-                            Image(uiImage: image)
+                        // Background image
+                        if let displayImage = image {
+                            Image(uiImage: displayImage)
+                                // ... (existing image modifiers) ...
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -175,8 +157,8 @@ struct FeaturedYearFullScreenView: View {
                                         gradient: Gradient(colors: [
                                             .clear,
                                             .clear,
-                                            .black.opacity(backgroundGradientOpacityMedium), // Use constant
-                                            .black.opacity(backgroundGradientOpacityHigh)  // Use constant
+                                            .black.opacity(0.3), // Use constant
+                                            .black.opacity(0.7)  // Use constant
                                         ]),
                                         startPoint: .top,
                                         endPoint: .bottom
@@ -184,176 +166,140 @@ struct FeaturedYearFullScreenView: View {
                                 )
                                 .ignoresSafeArea()
                                 .onTapGesture {
-                                    withAnimation(.easeInOut(duration: imageTransitionDuration)) { // Use constant
+                                    withAnimation(.easeInOut(duration: imageTransitionDuration)) {
                                         showLoadingTransition = true
                                     }
                                 }
-                            // Inside the body -> GeometryReader -> ZStack -> if let image = image { ... }
-                            .onAppear {
-                                // 1️⃣ Check using the NEW method for image effects
-                                guard viewModel.shouldAnimateImageEffects(yearsAgo: yearsAgo) else {
-                                    // Snap to final state if image effects already done
-                                    imageBrightness = targetImageBrightness
-                                    imageScale      = targetImageScale
-                                    print("🖼️ Image effects already done for \(yearsAgo), skipping animation.") // Add print
-                                    return
+                                .onAppear { // Image Effects Animation
+                                    guard viewModel.shouldAnimateImageEffects(yearsAgo: yearsAgo) else {
+                                        imageBrightness = targetImageBrightness
+                                        imageScale = targetImageScale
+                                        print("🖼️ Image effects already done for \(yearsAgo), skipping animation.")
+                                        return
+                                    }
+                                    viewModel.markImageEffectsAnimated(yearsAgo: yearsAgo)
+                                    print("🖼️ Performing IMAGE effects animation for \(yearsAgo).")
+                                    withAnimation(.easeInOut(duration: imageAppearEffectDuration).delay(imageAppearEffectDelay)) {
+                                        imageBrightness = targetImageBrightness
+                                    }
+                                    withAnimation(.easeOut(duration: imageScaleDuration)) {
+                                        imageScale = targetImageScale
+                                    }
                                 }
-
-                                // 2️⃣ Mark the IMAGE effects animation as done using the NEW method
-                                viewModel.markImageEffectsAnimated(yearsAgo: yearsAgo)
-
-                                // 3️⃣ Perform the image effects animations
-                                print("🖼️ Performing IMAGE effects animation for \(yearsAgo).") // Add print
-                                withAnimation(
-                                    .easeInOut(duration: imageAppearEffectDuration)
-                                    .delay(imageAppearEffectDelay)
-                                ) {
-                                    imageBrightness = targetImageBrightness
-                                }
-                                withAnimation(.easeOut(duration: imageScaleDuration)) {
-                                    imageScale = targetImageScale
-                                }
-                            }
                                 .contentShape(Rectangle())
                         } else {
                             // Loading placeholder
                             ZStack {
-                                Color(.systemGray4).ignoresSafeArea() // systemGray4 is fine as literal
-                                ProgressView()
-                            }
-                        }
-
-                        // MARK: - Year text overlay
-                        VStack(spacing: textOverlaySpacing) { // Use constant
-                            // Year label
-                            Text(yearLabel)
-                                .font(.system(size: yearLabelFontSize, weight: .bold)) // Use constant
-                                .offset(x: motion.xOffset * yearLabelParallaxFactor, y: motion.yOffset * yearLabelParallaxFactor) // Use constant
-                                .foregroundColor(.white)
-                                .shadow(color: .black.opacity(textShadowOpacityHigh), radius: textShadowRadiusHigh, x: 0, y: textShadowYOffsetHigh) // Use constants
-                                .shadow(color: .white.opacity(textShadowOpacityMedium), radius: textShadowRadiusMedium, x: 0, y: 0) // Use constants
-                                .shadow(color: .black.opacity(textShadowOpacityLow), radius: textShadowRadiusLow, x: 0, y: 0) // Use constants
-
-                            // Date label with animation
-                            if let date = item.asset.creationDate {
-                                let dateTextView = Text(date.formatMonthDayOrdinalAndYear()) // Use extension method
-                                    .font(.custom(dateFontName, size: dateLabelFontSize)) // Use constants
-                                    .foregroundColor(.white)
-                                    .shadow(color: .black.opacity(dateTextShadowOpacityHigh), radius: dateTextShadowRadiusHigh, x: 0, y: 0) // Use constants
-                                    .shadow(color: .black.opacity(dateTextShadowOpacityMedium), radius: dateTextShadowRadiusMedium, x: 0, y: dateTextShadowYOffsetMedium) // Use constants
-                                    .shadow(color: .white.opacity(dateTextHighlightOpacity), radius: dateTextHighlightRadius, x: 0, y: 0) // Use constants
-                                    .offset(x: motion.xOffset * dateLabelParallaxFactor, y: dateLabelVerticalOffset + motion.yOffset * dateLabelParallaxFactor) // Use constants
-                                    .padding(.horizontal, dateLabelHorizontalPadding) // Use constant
-
-                                if viewModel.shouldAnimate(yearsAgo: yearsAgo) {
-                                    dateTextView
-                                        .handwritingAnimation(active: true, duration: handwritingAnimationDuration, delay: handwritingAnimationDelay, yearsAgo: yearsAgo, viewModel: viewModel) // Use constants
-                                        .id("year-\(yearsAgo)") // String interpolation is fine
-                                } else {
-                                    dateTextView // Apply same modifiers if not animating
+                                Color(.systemGray4).ignoresSafeArea()
+                                if isLoadingImage {
+                                    ProgressView()
                                 }
                             }
                         }
-                        .padding(.top, geometry.size.height * textOverlayTopPaddingFactor) // Use constant
+
+                        // Year text overlay
+                        VStack(spacing: 16) { // Use constant
+                            // Year label
+                            Text(yearLabel)
+                                // ... (existing modifiers) ...
+                                .font(.system(size: yearLabelFontSize, weight: .bold))
+                                .offset(x: motion.xOffset * 0.3, y: motion.yOffset * 0.3) // Use constant factors
+                                .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2) // Use constants
+                                .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
+                                .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 0)
+
+
+                            // Date label with animation
+                            if let date = item.asset.creationDate {
+                                let dateTextView = Text(date.formatMonthDayOrdinalAndYear())
+                                    .font(.custom(dateFontName, size: dateLabelFontSize))
+                                    // ... (existing modifiers) ...
+                                    .foregroundColor(.white)
+                                    .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)
+                                    .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)
+                                    .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)
+                                    .offset(x: motion.xOffset * 0.5, y: -10 + motion.yOffset * 0.5) // Use constants
+                                    .padding(.horizontal, 20) // Use constant
+
+
+                                if viewModel.shouldAnimate(yearsAgo: yearsAgo) {
+                                    dateTextView
+                                        .handwritingAnimation(active: true, duration: handwritingAnimationDuration, delay: handwritingAnimationDelay, yearsAgo: yearsAgo, viewModel: viewModel)
+                                        .id("year-\(yearsAgo)")
+                                } else {
+                                    dateTextView
+                                }
+                            }
+                        }
+                        .padding(.top, geometry.size.height * 0.55) // Use constant factor
                     }
                 }
-                .transition(.opacity) // Add transition for smoother appearance after loading
+                .transition(.opacity)
             }
         }
         .onAppear {
-            // Set initial state using constants
+            // Set initial visual state
             imageBrightness = initialImageBrightness
             imageScale = initialImageScale
-            requestImage() // Request image when view appears
+
+            // --- Conditional Image Loading using ViewModel ---
+            if preloadedImage == nil && imageLoadTask == nil { // <<< Check if task is already running
+                print("🖼️ FeaturedYearFullScreenView: No preloaded image for \(yearsAgo), starting VM load task...")
+                isLoadingImage = true // Ensure loading indicator shows
+
+                // <<< Launch Task to call ViewModel's async function >>>
+                imageLoadTask = Task {
+                    // Call the async function on the ViewModel
+                    let imageData = await viewModel.requestFullImageData(for: item.asset)
+
+                    // Check for cancellation after await
+                    guard !Task.isCancelled else {
+                        print("🚫 Image load task cancelled after fetch for \(yearsAgo).")
+                        // Don't need to set isLoadingImage = false here, onDisappear handles it
+                        return
+                    }
+
+                    var loadedUIImage: UIImage? = nil
+                    if let data = imageData {
+                        loadedUIImage = UIImage(data: data) // Attempt to create image
+                    }
+
+                    // Update state on main thread
+                    await MainActor.run {
+                        if let uiImage = loadedUIImage {
+                            print("✅ Featured image loaded via VM Task for \(yearsAgo)")
+                            withAnimation(.easeIn(duration: imageLoadFadeDuration)) {
+                                self.image = uiImage
+                            }
+                        } else {
+                            print("⚠️ Featured image loaded via VM Task returned nil/invalid data for \(yearsAgo)")
+                            // Optionally set an error state or leave placeholder
+                        }
+                        self.isLoadingImage = false // Mark loading as complete
+                        self.imageLoadTask = nil // Clear task reference on completion
+                    }
+                } // End of Task
+            } else if preloadedImage != nil {
+                print("🖼️ FeaturedYearFullScreenView: Using preloaded image for \(yearsAgo).")
+                isLoadingImage = false // Ensure loading is off
+            } else {
+                 print("🖼️ FeaturedYearFullScreenView: Image load task already running for \(yearsAgo).")
+            }
         }
         .onDisappear {
-            showLoadingTransition = false // Reset transition state
-        }
-    }
-
-    // MARK: - Image Loading Functions
-    private func requestImage() {
-        let manager = PHImageManager.default()
-        let options = PHImageRequestOptions()
-        options.isSynchronous = false
-        options.deliveryMode = .highQualityFormat
-        options.resizeMode = .none // Request full size
-        options.isNetworkAccessAllowed = true
-        options.version = .current
-
-        let targetSize = PHImageManagerMaximumSize // System constant is fine
-
-        // Progress handler remains the same...
-        options.progressHandler = { progress, error, stop, info in
-            if let error = error {
-                print("❌ Error loading featured image: \(error.localizedDescription)")
-                print("📊 Progress: \(progress)")
-                // Retry logic can remain complex, consider simplifying later if needed
-                if progress < 1.0 {
-                     self.retryWithMaximumQuality()
-                 }
-            }
-        }
-
-        manager.requestImage(
-            for: item.asset,
-            targetSize: targetSize,
-            contentMode: .aspectFill, // Fill the area
-            options: options
-        ) { img, info in
-            if let error = info?[PHImageErrorKey] as? Error {
-                print("❌ Error loading featured image: \(error.localizedDescription)")
-                self.retryWithMaximumQuality()
-                return
-            }
-
-            if let img = img {
-                Task {
-                    await MainActor.run {
-                        // Use animation constant for fade-in
-                        withAnimation(.easeIn(duration: imageLoadFadeDuration)) {
-                            self.image = img
-                        }
-                    }
+            showLoadingTransition = false
+            // <<< Cancel the image loading task if it's running >>>
+            if let task = imageLoadTask {
+                print("🚫 FeaturedYearFullScreenView disappearing, cancelling image load task for \(yearsAgo).")
+                task.cancel()
+                imageLoadTask = nil
+                // Also reset loading indicator state if task was cancelled mid-load
+                if isLoadingImage {
+                     isLoadingImage = false
                 }
-            } else {
-                print("⚠️ Featured image was nil, retrying with maximum quality")
-                self.retryWithMaximumQuality()
             }
         }
     }
 
-    // Retry logic remains largely the same, but uses constant for animation
-    private func retryWithMaximumQuality() {
-        let manager = PHImageManager.default()
-        let retryOptions = PHImageRequestOptions()
-        retryOptions.isSynchronous = false
-        retryOptions.deliveryMode = .highQualityFormat
-        retryOptions.resizeMode = .none
-        retryOptions.isNetworkAccessAllowed = true
-        retryOptions.version = .current
-
-        manager.requestImage(
-            for: item.asset,
-            targetSize: PHImageManagerMaximumSize, // System constant
-            contentMode: .aspectFill,
-            options: retryOptions
-        ) { img, info in
-            if let img = img {
-                Task {
-                    await MainActor.run {
-                         // Use animation constant for fade-in
-                        withAnimation(.easeIn(duration: imageLoadFadeDuration)) {
-                            self.image = img
-                        }
-                    }
-                }
-            } else {
-                print("❌ Maximum quality retry failed")
-                // Maybe set an error state here?
-            }
-        }
-    }
-
-    // Removed local formattedDate function - now uses Date extension
 }

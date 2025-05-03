@@ -1,7 +1,10 @@
+// Throwbaks/Achilles/ViewModels/PhotoViewModel.swift
+
 import SwiftUI
 import Photos
 import AVKit
 import UIKit
+import Combine // Needed for Combine framework elements if used elsewhere
 
 @MainActor // Ensure UI updates happen on the main thread
 class PhotoViewModel: ObservableObject {
@@ -9,14 +12,13 @@ class PhotoViewModel: ObservableObject {
     // MARK: - Nested Constants
     private struct Constants {
         // Configuration
-        static let maxYearsToScanInitial: Int = 20 // How far back to look initially
-        static let yearCheckFetchLimit: Int = 1 // Fetch limit when checking if year has content
-        static let prefetchLimitPerYear: Int = 50 // Max assets to prefetch thumbnails for
+        static let maxYearsToScanInitial: Int = 20
+        static let yearCheckFetchLimit: Int = 1
+        static let initialFetchLimitForLoadPage: Int = 10 // Fetch first 10 to find featured quickly
 
         // Image Sizes
         static let defaultThumbnailSize = CGSize(width: 250, height: 250)
         static let prefetchThumbnailSize = CGSize(width: 200, height: 200)
-        // Note: PHImageManagerMaximumSize is a system constant, no need to redefine
 
         // Date Calculations
         static let daysToAddForDateRangeEnd: Int = 1
@@ -26,31 +28,38 @@ class PhotoViewModel: ObservableObject {
     }
 
     // MARK: - Dependencies
-    private let service: PhotoLibraryServiceProtocol
+    private let service: PhotoLibraryServiceProtocol // Keep if used elsewhere
     private let selector: FeaturedSelectorServiceProtocol
     private let imageManager = PHCachingImageManager()
-    private let imageCacheService: ImageCacheServiceProtocol // Depend on the protocol
-
+    private let imageCacheService: ImageCacheServiceProtocol
+    private let factory: MediaItemFactoryProtocol
 
     // MARK: - Published Properties for UI
-    @Published var pageStateByYear: [Int: PageState] = [:] // State for each year (keyed by yearsAgo)
-    @Published var availableYearsAgo: [Int] = [] // Sorted list of years with content
+    @Published var pageStateByYear: [Int: PageState] = [:]
+    @Published var availableYearsAgo: [Int] = []
     @Published var authorizationStatus: PHAuthorizationStatus = .notDetermined
-    @Published var initialYearScanComplete: Bool = false // Tracks if availableYearsAgo is ready
+    @Published var initialYearScanComplete: Bool = false
     @Published var dismissedSplashForYearsAgo: Set<Int> = []
     @Published var gridAnimationDone: Set<Int> = []
-    @Published var gridDateAnimationsCompleted: Set<Int> = [] // Use yearsAgo as the key
-    @Published var featuredTextAnimationsCompleted: Set<Int> = [] // Track which years have had their featured text animation
-    @Published var featuredImageAnimationsCompleted: Set<Int> = [] // Track image effects animation
+    @Published var gridDateAnimationsCompleted: Set<Int> = []
+    @Published var featuredTextAnimationsCompleted: Set<Int> = []
+    @Published var featuredImageAnimationsCompleted: Set<Int> = []
 
     // MARK: - Internal Properties
-    private var activeLoadTasks: [Int: Task<Void, Never>] = [:] // Track loading tasks per year
-    var thumbnailSize = Constants.defaultThumbnailSize // Use constant - Used by GridItemView
+    // Task Management
+    private var activeLoadTasks: [Int: Task<Void, Never>] = [:]
+    private var activeGridLoadTasks: [Int: Task<Void, Never>] = [:]
+    private var activePrefetchThumbnailTasks: [Int: Task<Void, Never>] = [:]
+    private var activeFeaturedPrefetchTasks: [Int: Task<Void, Never>] = [:]
+
+    // Preloaded Data Storage
+    private var preloadedFeaturedImages: [Int: UIImage] = [:]
+
+    var thumbnailSize = Constants.defaultThumbnailSize
 
     // Caching Properties
     private var activeRequests: [String: PHImageRequestID] = [:]
 
-    // How far back to look for available years initially
     private let maxYearsToScan = Constants.maxYearsToScanInitial
 
 
@@ -58,13 +67,13 @@ class PhotoViewModel: ObservableObject {
     init(
         service: PhotoLibraryServiceProtocol = PhotoLibraryService(),
         selector: FeaturedSelectorServiceProtocol = FeaturedSelectorService(),
-             // Add the cache service, providing a default for convenience
-        imageCacheService: ImageCacheServiceProtocol = ImageCacheService()
+        imageCacheService: ImageCacheServiceProtocol = ImageCacheService(),
+        factory: MediaItemFactoryProtocol = MediaItemFactory()
     ){
         self.service = service
         self.selector = selector
         self.imageCacheService = imageCacheService
-        // Request permissions after setup
+        self.factory = factory
         checkAuthorization()
     }
 
@@ -96,58 +105,68 @@ class PhotoViewModel: ObservableObject {
     // MARK: - Authorization Handling
     func checkAuthorization() {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        self.authorizationStatus = status
-
-        switch status {
-        case .authorized, .limited:
-            print("Photo Library access status: \(status)")
-            Task { await findAvailableYears() }
-        case .restricted, .denied:
-            print("Photo Library access restricted or denied.")
-            self.pageStateByYear = [:]
-            self.availableYearsAgo = []
-            self.initialYearScanComplete = true
-        case .notDetermined:
-            print("Requesting Photo Library access...")
-            requestAuthorization()
-        @unknown default:
-            print("Unknown Photo Library authorization status.")
-            self.initialYearScanComplete = true
-        }
+        handleAuthorization(status: status) // Use helper
     }
+
+    private func handleAuthorization(status: PHAuthorizationStatus) {
+         self.authorizationStatus = status
+
+         switch status {
+         case .authorized, .limited:
+             print("Photo Library access status: \(status)")
+             // Start scanning for years only if not already complete or in progress
+             if !initialYearScanComplete { // Add check if needed
+                  Task { await findAvailableYears() }
+             }
+         case .restricted, .denied:
+             print("Photo Library access restricted or denied.")
+             // Clear any existing data and mark scan as complete (with no results)
+             self.pageStateByYear = [:]
+             self.availableYearsAgo = []
+             self.initialYearScanComplete = true
+         case .notDetermined:
+             print("Requesting Photo Library access...")
+             requestAuthorization()
+         @unknown default:
+             print("Unknown Photo Library authorization status.")
+             self.initialYearScanComplete = true // Mark complete to show error/unknown state
+         }
+     }
+
 
     private func requestAuthorization() {
         Task {
             let requestedStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
             // Switch back to main thread to update published properties
             await MainActor.run {
-                self.authorizationStatus = requestedStatus
-                if requestedStatus == .authorized || requestedStatus == .limited {
-                    print("Photo Library access granted: \(requestedStatus)")
-                    Task { await findAvailableYears() }
-                } else {
-                    print("Photo Library access denied after request.")
-                    self.initialYearScanComplete = true
-                }
+                // Use the handler function to process the new status
+                self.handleAuthorization(status: requestedStatus)
             }
         }
     }
 
     // MARK: - Content Loading & Prefetching
-    // Step 2: Find years with content
+
+    // Find available years
     private func findAvailableYears() async {
+        // Ensure this runs only once or is cancellable if needed
+        guard !initialYearScanComplete else {
+             print("Initial year scan already complete.")
+             return
+        }
         guard authorizationStatus == .authorized || authorizationStatus == .limited else {
             print("Cannot scan for years without photo library access.")
-            await MainActor.run { self.initialYearScanComplete = true }
+            await MainActor.run { self.initialYearScanComplete = true } // Mark complete even if no access
             return
         }
 
         print("Starting initial scan for available years (up to \(maxYearsToScan) years ago)...")
         var foundYears: [Int] = []
-        let calendar = Calendar(identifier: .gregorian)
+        let calendar = Calendar.current // Use current calendar
         let today = Date()
 
         // Use constant for loop range
+        // TODO: Implement phased scanning here later if needed
         for yearsAgoValue in 1...maxYearsToScan {
             guard let targetDateRange = calculateDateRange(yearsAgo: yearsAgoValue, calendar: calendar, today: today) else {
                 print("Skipping year \(yearsAgoValue) due to date calculation error.")
@@ -159,13 +178,14 @@ class PhotoViewModel: ObservableObject {
             // Limit fetch to 1 just to check existence, use constant
             fetchOptions.fetchLimit = Constants.yearCheckFetchLimit
 
+            // Note: Fetching assets can block, consider background thread if UI becomes unresponsive
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
-            if fetchResult.count > 0 {
+
+            if fetchResult.firstObject != nil { // Check if any asset exists
+                print("🗓️ Found media for \(yearsAgoValue) years ago.")
                 foundYears.append(yearsAgoValue)
-                // Start pre-fetching thumbnails for this year in the background
-                Task.detached(priority: .background) {
-                    await self.preFetchPhotosForYear(yearsAgo: yearsAgoValue)
-                }
+                // Note: preFetchPhotosForYear was called here previously,
+                // but prefetching is now handled by triggerPrefetch
             }
         }
 
@@ -177,130 +197,261 @@ class PhotoViewModel: ObservableObject {
         }
     }
 
-    // Prefetch initial thumbnails for a given year
-    private func preFetchPhotosForYear(yearsAgo: Int) async {
-        print("⚡️ Starting prefetch for \(yearsAgo) years ago...")
-        let calendar = Calendar(identifier: .gregorian)
-        let today = Date()
-        guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else {
-            print("⚡️ Prefetch skipped for \(yearsAgo) - date range error.")
+    // Public wrapper to launch the async task for loading a page
+    func loadPage(yearsAgo: Int) {
+        guard activeLoadTasks[yearsAgo] == nil else {
+            print("⏳ Load already in progress for page \(yearsAgo) (Task exists).")
+            return
+        }
+        let currentState = pageStateByYear[yearsAgo] ?? .idle
+        switch currentState {
+        case .idle, .error(_):
+            break   // we’re allowed to launch a load
+        default:
+            print("ℹ️ Load not needed for page \(yearsAgo), state is \(currentState).")
             return
         }
 
-        let fetchOptions = PHFetchOptions()
-        fetchOptions.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", dateRange.start as NSDate, dateRange.end as NSDate)
-        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-        // Use constant for prefetch limit
-        fetchOptions.fetchLimit = Constants.prefetchLimitPerYear
-
-        let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
-        guard fetchResult.count > 0 else {
-             print("⚡️ No assets found to prefetch for \(yearsAgo) years ago.")
-             return
-         }
-
-        var assetsToCache: [PHAsset] = []
-        fetchResult.enumerateObjects { (asset, _, _) in
-            assetsToCache.append(asset)
+        print("🚀 Launching load task for page \(yearsAgo)...")
+        let loadTask = Task {
+            await loadPageAsync(yearsAgo: yearsAgo)
         }
-
-        // Start caching the assets with prefetch size
-        print("⚡️ Requesting caching for \(assetsToCache.count) thumbnails for \(yearsAgo) years ago.")
-        imageManager.startCachingImages(
-            for: assetsToCache,
-            targetSize: Constants.prefetchThumbnailSize, // Use constant
-            contentMode: .aspectFit,
-            options: nil // Use default options for caching
-        )
+        activeLoadTasks[yearsAgo] = loadTask
     }
 
-    // Load full page data for a specific year
-    func loadPage(yearsAgo: Int) async {
-        // Check authorization and existing tasks
+    // Asynchronous loading logic for a specific year page
+    private func loadPageAsync(yearsAgo: Int) async {
         guard authorizationStatus == .authorized || authorizationStatus == .limited else {
             print("🚫 Cannot load page \(yearsAgo) - authorization denied.")
-            return
-        }
-        if activeLoadTasks[yearsAgo] != nil {
-            print("⏳ Load already in progress for page \(yearsAgo).")
+            await MainActor.run {
+                 pageStateByYear[yearsAgo] = .error(message: "Photo Library access denied.")
+                 activeLoadTasks[yearsAgo] = nil
+            }
             return
         }
 
-        // Mark as loading
-        await MainActor.run {
-            // Add placeholder task to prevent duplicate loads
-            activeLoadTasks[yearsAgo] = Task { /* Non-functional task as marker */ }
-            pageStateByYear[yearsAgo] = .loading
-        }
+        await MainActor.run { pageStateByYear[yearsAgo] = .loading }
         print("⬆️ Loading page for \(yearsAgo) years ago...")
 
-        // Get target date
-        guard let targetDate = Calendar.current.date(byAdding: .year, value: -yearsAgo, to: Date()) else {
-             print("❌ Error calculating target date for \(yearsAgo) years ago.")
-             await MainActor.run {
-                 pageStateByYear[yearsAgo] = .error(message: "Internal date calculation error.")
-                 activeLoadTasks[yearsAgo] = nil
-             }
-             return
-         }
+        var featuredItem: MediaItem? = nil
 
-        // Fetch items using the service
-        service.fetchItems(for: targetDate) { [weak self] result in
-            // Ensure UI updates happen on the main thread
-            DispatchQueue.main.async {
+        do {
+            // Phase 1: Fetch Initial Items & Featured
+            print("⏳ Phase 1: Fetching initial items for year \(yearsAgo)")
+            let initialItems = try await fetchMediaItems(yearsAgo: yearsAgo, limit: Constants.initialFetchLimitForLoadPage)
+            try Task.checkCancellation()
+
+            if initialItems.isEmpty {
+                print("✅ Phase 1 Load complete for \(yearsAgo) - Empty.")
+                await MainActor.run { pageStateByYear[yearsAgo] = .empty }
+                activeLoadTasks[yearsAgo] = nil
+                return
+            }
+
+            featuredItem = self.selector.pickFeaturedItem(from: initialItems)
+            print("✅ Phase 1 Load complete for \(yearsAgo). Featured item \(featuredItem == nil ? "not found" : "found").")
+
+            await MainActor.run {
+                pageStateByYear[yearsAgo] = .loaded(featured: featuredItem, grid: [])
+            }
+
+            // Phase 2: Fetch Full Grid (Background Task)
+            print("⏳ Phase 2: Launching background task for full grid for year \(yearsAgo)")
+            activeGridLoadTasks[yearsAgo]?.cancel() // Cancel previous if any
+
+            let gridTask = Task.detached(priority: .background) { [weak self] in
                 guard let self = self else { return }
+                do {
+                    let allItems = try await self.fetchMediaItems(yearsAgo: yearsAgo, limit: nil)
+                    try Task.checkCancellation()
+                    let gridItems = allItems.filter { $0.id != featuredItem?.id }
+                    print("✅ Phase 2 Load complete for \(yearsAgo). Found \(gridItems.count) grid items.")
 
-                switch result {
-                case .success(let items):
-                    if items.isEmpty {
-                        print("✅ Load complete for \(yearsAgo) - Empty.")
-                        self.pageStateByYear[yearsAgo] = .empty
-                    } else {
-                        print("✅ Load complete for \(yearsAgo) - Found \(items.count) items.")
-                        // Use selector service to pick featured item
-                        let featured = self.selector.pickFeaturedItem(from: items)
-                        // Consider different logic for grid items if needed
-                        // E.g., remove featured item if it exists
-                        let grid = items.filter { $0.id != featured?.id }
-                        self.pageStateByYear[yearsAgo] = .loaded(featured: featured, grid: grid)
+                    await MainActor.run {
+                        guard !Task.isCancelled else { return }
+                        if case .loaded(let currentFeatured, _) = self.pageStateByYear[yearsAgo] {
+                             self.pageStateByYear[yearsAgo] = .loaded(featured: currentFeatured, grid: gridItems)
+                        } else {
+                             print("⚠️ State changed before grid load finished for year \(yearsAgo).")
+                        }
+                        self.activeGridLoadTasks[yearsAgo] = nil
                     }
-                case .failure(let error):
-                    print("❌ Load failed for \(yearsAgo): \(error.localizedDescription)")
-                    self.pageStateByYear[yearsAgo] = .error(message: error.localizedDescription)
+                } catch is CancellationError {
+                     print("🚫 Grid load task cancelled for year \(yearsAgo).")
+                     await MainActor.run { self.activeGridLoadTasks[yearsAgo] = nil }
+                } catch {
+                     print("❌ Error during Phase 2 grid load for year \(yearsAgo): \(error.localizedDescription)")
+                     await MainActor.run { self.activeGridLoadTasks[yearsAgo] = nil }
                 }
-                // Clear the active load marker regardless of outcome
-                self.activeLoadTasks[yearsAgo] = nil
+            }
+            activeGridLoadTasks[yearsAgo] = gridTask
+
+        } catch is CancellationError {
+             print("🚫 Load task cancelled during Phase 1 for year \(yearsAgo).")
+             await MainActor.run {
+                 if case .loading = pageStateByYear[yearsAgo] { pageStateByYear[yearsAgo] = .idle }
+                 activeLoadTasks[yearsAgo] = nil
+                 activeGridLoadTasks[yearsAgo]?.cancel()
+                 activeGridLoadTasks[yearsAgo] = nil
+             }
+        } catch let error as PhotoError {
+            print("❌ Load failed during Phase 1 for year \(yearsAgo): \(error.localizedDescription)")
+            await MainActor.run {
+                 pageStateByYear[yearsAgo] = .error(message: error.localizedDescription)
+                 activeLoadTasks[yearsAgo] = nil
+            }
+        } catch {
+            print("❌ Unexpected load failure during Phase 1 for year \(yearsAgo): \(error.localizedDescription)")
+            let wrappedError = PhotoError.underlyingPhotoLibraryError(error)
+            await MainActor.run {
+                 pageStateByYear[yearsAgo] = .error(message: wrappedError.localizedDescription)
+                 activeLoadTasks[yearsAgo] = nil
             }
         }
+        await MainActor.run { activeLoadTasks[yearsAgo] = nil }
     }
+
+    // Helper to fetch MediaItems
+    private func fetchMediaItems(yearsAgo: Int, limit: Int?) async throws -> [MediaItem] {
+        let calendar = Calendar.current
+        let today = Date()
+        guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else {
+            throw PhotoError.dateCalculationError(details: "Target date range for \(yearsAgo) years ago")
+        }
+
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(
+            format: "creationDate >= %@ AND creationDate < %@",
+            argumentArray: [dateRange.start, dateRange.end]
+        )
+        options.sortDescriptors = [ NSSortDescriptor(key: "creationDate", ascending: false) ]
+        if let limit = limit, limit > 0 { options.fetchLimit = limit }
+
+        let fetchResult = PHAsset.fetchAssets(with: options)
+        try Task.checkCancellation()
+
+        var items = [MediaItem]()
+        var cancelledDuringEnumeration = false
+        fetchResult.enumerateObjects { asset, _, stopPointer in
+             if Task.isCancelled {
+                 stopPointer.pointee = true
+                 cancelledDuringEnumeration = true
+                 return
+             }
+             items.append(self.factory.createMediaItem(from: asset))
+        }
+
+        if cancelledDuringEnumeration { try Task.checkCancellation() }
+        return items
+    }
+
+    // Cancel loading for a specific year
+    func cancelLoad(yearsAgo: Int) {
+        print("🚫 Requesting cancellation for year \(yearsAgo)...")
+        if let loadTask = activeLoadTasks[yearsAgo] {
+            print("🚫 Cancelling initial load task for year \(yearsAgo).")
+            loadTask.cancel()
+            activeLoadTasks[yearsAgo] = nil
+        }
+        if let gridLoadTask = activeGridLoadTasks[yearsAgo] {
+            print("🚫 Cancelling grid load task for year \(yearsAgo).")
+            gridLoadTask.cancel()
+            activeGridLoadTasks[yearsAgo] = nil
+        }
+        Task {
+             await MainActor.run {
+                 if case .loading = pageStateByYear[yearsAgo] { pageStateByYear[yearsAgo] = .idle }
+                 else if case .loaded(_, let grid) = pageStateByYear[yearsAgo], grid.isEmpty { pageStateByYear[yearsAgo] = .idle }
+             }
+        }
+    }
+
+    // Retry loading for a specific year
+     func retryLoad(yearsAgo: Int) {
+         guard case .error = pageStateByYear[yearsAgo] else {
+             print("ℹ️ Retry not needed for year \(yearsAgo), state is not error.")
+             return
+         }
+         print("🔁 Retrying load for year \(yearsAgo)...")
+         activeLoadTasks[yearsAgo]?.cancel(); activeLoadTasks[yearsAgo] = nil
+         activeGridLoadTasks[yearsAgo]?.cancel(); activeGridLoadTasks[yearsAgo] = nil
+         pageStateByYear[yearsAgo] = .idle
+         loadPage(yearsAgo: yearsAgo)
+     }
+
 
     // Trigger pre-fetching for adjacent years
     func triggerPrefetch(around centerYearsAgo: Int) {
         guard initialYearScanComplete else { return }
-
-        let prevYear = centerYearsAgo + 1
-        let nextYear = centerYearsAgo - 1
-        // Filter out years less than 1
-        let yearsToCheck = [prevYear, nextYear].filter { $0 > 0 }
-
+        let yearsToCheck = [centerYearsAgo + 1, centerYearsAgo - 1].filter { $0 > 0 }
         print("⚡️ Triggering prefetch check around \(centerYearsAgo). Checking: \(yearsToCheck)")
 
         for yearToPrefetch in yearsToCheck {
-            // Only prefetch if the year exists and isn't already loaded/loading/error
-            if availableYearsAgo.contains(yearToPrefetch) {
-                let currentState = pageStateByYear[yearToPrefetch] ?? .idle
-                if case .idle = currentState { // Only prefetch if idle
-                    if activeLoadTasks[yearToPrefetch] == nil {
-                        print("⚡️ Prefetching page for \(yearToPrefetch) years ago.")
-                        Task {
-                            await loadPage(yearsAgo: yearToPrefetch)
-                        }
-                    } else {
-                         print("⚡️ Prefetch skipped for \(yearToPrefetch) - already loading.")
-                     }
-                }
-            }
+            guard availableYearsAgo.contains(yearToPrefetch) else { continue }
+            let currentState = pageStateByYear[yearToPrefetch] ?? .idle
+            guard case .idle = currentState else { continue }
+            guard activeLoadTasks[yearToPrefetch] == nil else { continue }
+
+            // Initiate Loading
+            print("⚡️ Prefetching page for \(yearToPrefetch) years ago.")
+            loadPage(yearsAgo: yearToPrefetch)
+
+            // Initiate Thumbnail Prefetching
+            if activePrefetchThumbnailTasks[yearToPrefetch] == nil {
+                 print("⚡️ Starting thumbnail prefetch task for \(yearToPrefetch).")
+                 let thumbnailTask = Task {
+                     do {
+                         let initialItems = try await fetchMediaItems(yearsAgo: yearToPrefetch, limit: Constants.initialFetchLimitForLoadPage)
+                         try Task.checkCancellation(); guard !initialItems.isEmpty else { return }
+                         print("⚡️ Requesting \(initialItems.count) thumbnails proactively for \(yearToPrefetch)...")
+                         for item in initialItems {
+                              try Task.checkCancellation()
+                              requestImage(for: item.asset, targetSize: Constants.prefetchThumbnailSize) { _ in }
+                         }
+                         print("⚡️ Thumbnail requests initiated for \(yearToPrefetch).")
+                     } catch is CancellationError { print("🚫 Thumbnail prefetch task cancelled for \(yearToPrefetch).") }
+                       catch { print("❌ Error during thumbnail prefetch task for \(yearToPrefetch): \(error.localizedDescription)") }
+                     await MainActor.run { activePrefetchThumbnailTasks[yearToPrefetch] = nil }
+                 }
+                 activePrefetchThumbnailTasks[yearToPrefetch] = thumbnailTask
+            } else { print("⚡️ Thumbnail prefetch task already active for \(yearToPrefetch).") }
+
+            // Initiate Featured Image Prefetching
+            if activeFeaturedPrefetchTasks[yearToPrefetch] == nil && preloadedFeaturedImages[yearToPrefetch] == nil {
+                 print("⚡️ Starting featured image prefetch task for \(yearToPrefetch).")
+                 let featuredTask = Task { [weak self] in
+                     guard let self = self else { return }
+                     do {
+                         let initialItems = try await self.fetchMediaItems(yearsAgo: yearToPrefetch, limit: Constants.initialFetchLimitForLoadPage)
+                         try Task.checkCancellation()
+                         guard let featured = self.selector.pickFeaturedItem(from: initialItems) else {
+                             print("⚡️ No featured item found to preload for \(yearToPrefetch)."); return
+                         }
+                         try Task.checkCancellation()
+                         print("⚡️ Requesting full-size image for featured item \(featured.id) for year \(yearToPrefetch)...")
+                         self.requestFullSizeImage(for: featured.asset) { image in
+                              Task {
+                                  await MainActor.run {
+                                      guard !Task.isCancelled else { print("🚫 Featured prefetch task cancelled before storing image for \(yearToPrefetch)."); return }
+                                      if let loadedImage = image {
+                                          print("✅ Featured image preloaded successfully for \(yearToPrefetch). Storing.")
+                                          self.preloadedFeaturedImages[yearToPrefetch] = loadedImage
+                                      } else { print("⚠️ Featured image preloading returned nil for \(yearToPrefetch).") }
+                                  }
+                              }
+                         }
+                     } catch is CancellationError { print("🚫 Featured prefetch task cancelled for \(yearToPrefetch).") }
+                       catch { print("❌ Error during featured prefetch task for \(yearToPrefetch): \(error.localizedDescription)") }
+                     await MainActor.run { self.activeFeaturedPrefetchTasks[yearToPrefetch] = nil }
+                 }
+                 activeFeaturedPrefetchTasks[yearToPrefetch] = featuredTask
+            } else { print("⚡️ Featured image prefetch task already active or image already preloaded for \(yearToPrefetch).") }
         }
+    }
+
+    // Function to get preloaded featured image
+    func getPreloadedFeaturedImage(for yearsAgo: Int) -> UIImage? {
+        return preloadedFeaturedImages[yearsAgo]
     }
 
 
@@ -309,311 +460,177 @@ class PhotoViewModel: ObservableObject {
         let assetIdentifier = asset.localIdentifier
         let isHighRes = targetSize == PHImageManagerMaximumSize
 
-        // Check appropriate cache first
         if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
              print("✅ Using cached \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
-             completion(cachedImage)
-             return
+             completion(cachedImage); return
         }
-
         print("⬆️ Requesting \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = isHighRes ? .highQualityFormat : .opportunistic
-        options.resizeMode = isHighRes ? .none : .fast // Use fast for thumbnails
-        options.isSynchronous = false // Never block the main thread
+        options.resizeMode = isHighRes ? .none : .fast
+        options.isSynchronous = false
         options.version = .current
+        cancelActiveRequest(for: assetIdentifier)
 
-        // Cancel any existing request for this specific asset identifier
-         cancelActiveRequest(for: assetIdentifier)
-
-        // Progress Handler
         options.progressHandler = { [weak self] progress, error, stop, info in
-             // Ensure self still exists
              guard let self = self else { return }
-
              if let error = error {
                  print("❌ Image loading error (progress): \(error.localizedDescription) for \(assetIdentifier)")
-                 print("📊 Progress: \(progress)")
-                 // Only retry on recoverable errors and if progress is low?
-                 // Consider more nuanced error checking if necessary.
-                 // Use constant for progress check
                  if progress < Constants.fullProgress {
                      print("🔄 Retrying image request due to progress error for \(assetIdentifier)")
                      self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
                  }
-                 // Stop the current request if retrying
                  stop.pointee = true
              }
          }
 
-        // Request the image
-        let requestID = imageManager.requestImage(
-            for: asset, targetSize: targetSize, contentMode: .aspectFit, options: options
-        ) { [weak self] image, info in
-            // Ensure self exists, clear active request
+        let requestID = imageManager.requestImage(for: asset, targetSize: targetSize, contentMode: .aspectFit, options: options) {
+            [weak self] image, info in
             guard let self = self else { return }
-             // Safely remove request ID only if it matches the completed one
              if self.activeRequests[assetIdentifier] == info?[PHImageResultRequestIDKey] as? PHImageRequestID {
                   self.activeRequests.removeValue(forKey: assetIdentifier)
              }
-
-
-             // Check for explicit cancellation
              let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
-             if isCancelled {
-                 print("🚫 Image request cancelled for \(assetIdentifier).")
-                 completion(nil) // Ensure completion handler is called
-                 return
-             }
-
-            // Check for request errors
-            if let error = info?[PHImageErrorKey] as? Error {
-                print("❌ Image loading error (completion): \(error.localizedDescription) for \(assetIdentifier)")
-                 // Don't retry automatically from completion, maybe rely on progress handler retry
-                completion(nil)
-                return
-            }
-
-            // Process the result image
+             if isCancelled { print("🚫 Image request cancelled for \(assetIdentifier)."); completion(nil); return }
+            if let error = info?[PHImageErrorKey] as? Error { print("❌ Image loading error (completion): \(error.localizedDescription) for \(assetIdentifier)"); completion(nil); return }
             if let image = image {
                 print("✅ Image loaded successfully for \(assetIdentifier)")
-                // Cache the loaded image
                 self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
-                    DispatchQueue.main.async { completion(image) }
-                } else {
-                // Image is nil, but no error? Should ideally not happen with non-sync requests
-                // unless cancelled before delivery or error occurred but wasn't caught above.
-                print("⚠️ Image was nil, but no error reported for asset \(assetIdentifier)")
-                 DispatchQueue.main.async { completion(nil) }
-            }
+                DispatchQueue.main.async { completion(image) }
+            } else { print("⚠️ Image was nil, but no error reported for asset \(assetIdentifier)"); DispatchQueue.main.async { completion(nil) } }
         }
-
-        // Store the request ID to allow cancellation
         activeRequests[assetIdentifier] = requestID
         print("⏳ Stored request ID \(requestID) for asset \(assetIdentifier)")
     }
 
-    // Specific retry logic (called from progress handler usually)
     private func retryImageRequest(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
         print("🔄 Executing retry logic for asset \(asset.localIdentifier)")
         let assetIdentifier = asset.localIdentifier
-        let isHighRes = targetSize == PHImageManagerMaximumSize // Recalculate for context
-
-        // Use high quality options for retry attempt
+        let isHighRes = targetSize == PHImageManagerMaximumSize
         let retryOptions = PHImageRequestOptions()
         retryOptions.isNetworkAccessAllowed = true
-        retryOptions.deliveryMode = .highQualityFormat // Force high quality
-        retryOptions.resizeMode = .none // Ensure exact size or full quality
+        retryOptions.deliveryMode = .highQualityFormat
+        retryOptions.resizeMode = .none
         retryOptions.isSynchronous = false
         retryOptions.version = .current
-
-        // Cancel previous request for this asset before retrying
         cancelActiveRequest(for: assetIdentifier)
 
-        let requestID = imageManager.requestImage(
-            for: asset, targetSize: targetSize, contentMode: .aspectFit, options: retryOptions
-        ) { [weak self] retryImage, retryInfo in
+        let requestID = imageManager.requestImage(for: asset, targetSize: targetSize, contentMode: .aspectFit, options: retryOptions) {
+            [weak self] retryImage, retryInfo in
             guard let self = self else { return }
-            // Safely remove request ID only if it matches the completed one
             if self.activeRequests[assetIdentifier] == retryInfo?[PHImageResultRequestIDKey] as? PHImageRequestID {
                  self.activeRequests.removeValue(forKey: assetIdentifier)
             }
-
-            // Check for cancellation
-            let isCancelled = retryInfo?[PHImageCancelledKey] as? Bool ?? false
-             if isCancelled {
-                 print("🚫 Retry request cancelled for \(assetIdentifier).")
-                 completion(nil)
-                 return
-             }
-
-            // Handle retry error
-            if let retryError = retryInfo?[PHImageErrorKey] as? Error {
-                print("❌❌ Retry failed for asset \(assetIdentifier): \(retryError.localizedDescription)")
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
-
-            // Process retry image
+             let isCancelled = retryInfo?[PHImageCancelledKey] as? Bool ?? false
+             if isCancelled { print("🚫 Retry request cancelled for \(assetIdentifier)."); completion(nil); return }
+            if let retryError = retryInfo?[PHImageErrorKey] as? Error { print("❌❌ Retry failed for asset \(assetIdentifier): \(retryError.localizedDescription)"); DispatchQueue.main.async { completion(nil) }; return }
             if let retryImage = retryImage {
                 print("✅✅ Retry successful for asset \(assetIdentifier)")
-
                 self.imageCacheService.cacheImage(retryImage, for: assetIdentifier, isHighRes: isHighRes)
-                    DispatchQueue.main.async { completion(retryImage) }
-                } else {
-                print("⚠️⚠️ Retry resulted in nil image for asset \(assetIdentifier)")
-                DispatchQueue.main.async { completion(nil) }
-            }
+                DispatchQueue.main.async { completion(retryImage) }
+            } else { print("⚠️⚠️ Retry resulted in nil image for asset \(assetIdentifier)"); DispatchQueue.main.async { completion(nil) } }
         }
-        // Store the new request ID
         activeRequests[assetIdentifier] = requestID
         print("⏳ Stored retry request ID \(requestID) for asset \(assetIdentifier)")
     }
 
-    // Helper to cancel active request for an asset
     private func cancelActiveRequest(for assetIdentifier: String) {
         if let existingRequestID = activeRequests[assetIdentifier] {
              print("🚫 Cancelling existing request \(existingRequestID) for asset \(assetIdentifier)")
              imageManager.cancelImageRequest(existingRequestID)
-             activeRequests.removeValue(forKey: assetIdentifier) // Remove immediately after cancelling
+             activeRequests.removeValue(forKey: assetIdentifier)
         }
     }
 
-    // Method to clear thumbnail cache (e.g., on memory warning)
-        internal func clearImageCache() {
-            // Delegate to the service
-            imageCacheService.clearCache()
-        }
+    internal func clearImageCache() {
+        print("🧹 Clearing preloaded featured images along with cache.")
+        preloadedFeaturedImages.removeAll()
+        imageCacheService.clearCache()
+    }
 
-    // Fetch full image data (used for sharing)
     func requestFullImageData(for asset: PHAsset) async -> Data? {
         return await withCheckedContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.version = .current
-            options.deliveryMode = .highQualityFormat
-            options.isNetworkAccessAllowed = true
-            options.resizeMode = .none
-            options.isSynchronous = false // Asynchronous best practice
-
+            let options = PHImageRequestOptions(); options.version = .current; options.deliveryMode = .highQualityFormat; options.isNetworkAccessAllowed = true; options.resizeMode = .none; options.isSynchronous = false
             print("⬆️ Requesting full image data for sharing asset \(asset.localIdentifier)")
             imageManager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
-                 if let error = info?[PHImageErrorKey] as? Error {
-                     print("❌ Error fetching full image data: \(error.localizedDescription)")
-                     continuation.resume(returning: nil)
-                 } else if let data = data {
-                    print("✅ Full image data fetched for \(asset.localIdentifier)")
-                    continuation.resume(returning: data)
-                 } else {
-                     print("⚠️ Full image data was nil for \(asset.localIdentifier)")
-                     continuation.resume(returning: nil)
-                 }
+                 if let error = info?[PHImageErrorKey] as? Error { print("❌ Error fetching full image data: \(error.localizedDescription)"); continuation.resume(returning: nil) }
+                 else if let data = data { print("✅ Full image data fetched for \(asset.localIdentifier)"); continuation.resume(returning: data) }
+                 else { print("⚠️ Full image data was nil for \(asset.localIdentifier)"); continuation.resume(returning: nil) }
             }
         }
     }
 
-    // Fetch video URL (used for player and sharing)
     func requestVideoURL(for asset: PHAsset) async -> URL? {
         guard asset.mediaType == .video else { return nil }
-
         return await withCheckedContinuation { continuation in
-            let options = PHVideoRequestOptions()
-            options.version = .current
-            options.isNetworkAccessAllowed = true
-            options.deliveryMode = .automatic // Let system decide best delivery
-
+            let options = PHVideoRequestOptions(); options.version = .current; options.isNetworkAccessAllowed = true; options.deliveryMode = .automatic
              print("⬆️ Requesting AVAsset for video \(asset.localIdentifier)")
             imageManager.requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
-                if let error = info?[PHImageErrorKey] as? Error {
-                    print("❌ Error requesting AVAsset for \(asset.localIdentifier): \(error)")
-                    continuation.resume(returning: nil)
-                    return
-                }
-                guard let urlAsset = avAsset as? AVURLAsset else {
-                    print("⚠️ Requested AVAsset is not AVURLAsset for \(asset.localIdentifier)")
-                    continuation.resume(returning: nil)
-                    return
-                }
-                 print("✅ AVAsset URL fetched for \(asset.localIdentifier)")
-                continuation.resume(returning: urlAsset.url)
+                 if let error = info?[PHImageErrorKey] as? Error { print("❌ Error requesting AVAsset for \(asset.localIdentifier): \(error)"); continuation.resume(returning: nil); return }
+                 guard let urlAsset = avAsset as? AVURLAsset else { print("⚠️ Requested AVAsset is not AVURLAsset for \(asset.localIdentifier)"); continuation.resume(returning: nil); return }
+                 print("✅ AVAsset URL fetched for \(asset.localIdentifier)"); continuation.resume(returning: urlAsset.url)
             }
         }
     }
-
-    // MARK: - Limited Library Handling
-    // Placeholder for triggering the limited library picker UI flow
-    func presentLimitedLibraryPicker() {
-        print("⚠️ Placeholder: Would present limited library picker here.")
-        // Implementation requires UIKit interaction, likely via a Coordinator or UIViewControllerRepresentable
-    }
-    // Add this function inside PhotoViewModel.swift
 
     func requestFullSizeImage(for asset: PHAsset, completion: @escaping (UIImage?) -> Void) {
-        let assetIdentifier = asset.localIdentifier
-        let isHighRes = true // Always true for this request
-
-        // 1. Check cache via service
-        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
-            print("✅ [VM] Using cached full-size image for asset: \(assetIdentifier)")
-            completion(cachedImage)
-            return
-        }
-
-        // 2. If not cached, request using imageManager
+        let assetIdentifier = asset.localIdentifier; let isHighRes = true
+        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) { print("✅ [VM] Using cached full-size image for asset: \(assetIdentifier)"); completion(cachedImage); return }
         print("⬆️ [VM] Requesting full-size image data for \(assetIdentifier)")
-        let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = true
-        options.deliveryMode = .highQualityFormat
-        options.resizeMode = .none
-        options.isSynchronous = false
-        options.version = .current
+        let options = PHImageRequestOptions(); options.isNetworkAccessAllowed = true; options.deliveryMode = .highQualityFormat; options.resizeMode = .none; options.isSynchronous = false; options.version = .current
+        options.progressHandler = { progress, error, stop, info in /* Handle progress if needed */ }
+        // cancelActiveRequest(for: assetIdentifier) // Optional
 
-        // Progress handler (optional)
-        options.progressHandler = { progress, error, stop, info in
-             // Handle progress or error during download if needed
-             // print("📊 [VM] Full-size image progress: \(progress)")
-        }
-
-        // Cancel any existing request for this specific asset identifier (optional but good)
-        // Note: This assumes you want ONE active request per asset ID managed by the VM
-        // cancelActiveRequest(for: assetIdentifier) // Consider if needed here
-
-        let requestID = imageManager.requestImageDataAndOrientation(
-            for: asset,
-            options: options
-        ) { [weak self] data, _, _, info in
+        let _ = imageManager.requestImageDataAndOrientation(for: asset, options: options) {
+            [weak self] data, _, _, info in
             guard let self = self else { return }
-
             let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
-            if isCancelled {
-                 print("🚫 [VM] Full-size request cancelled for \(assetIdentifier).")
-                 completion(nil)
-                 return
-            }
-
-            if let error = info?[PHImageErrorKey] as? Error {
-                print("❌ [VM] Error loading full-size image: \(error.localizedDescription)")
-                // Handle error - maybe don't cache, call completion with nil
-                completion(nil)
-                return
-            }
-
-            guard let data = data, let image = UIImage(data: data) else {
-                print("⚠️ [VM] Full-size image data invalid for asset \(assetIdentifier)")
-                completion(nil)
-                return
-            }
-
-            // 3. Cache the result via service
+            if isCancelled { print("🚫 [VM] Full-size request cancelled for \(assetIdentifier)."); completion(nil); return }
+            if let error = info?[PHImageErrorKey] as? Error { print("❌ [VM] Error loading full-size image: \(error.localizedDescription)"); completion(nil); return }
+            guard let data = data, let image = UIImage(data: data) else { print("⚠️ [VM] Full-size image data invalid for asset \(assetIdentifier)"); completion(nil); return }
             print("✅ [VM] Full-size image loaded successfully for \(assetIdentifier)")
             self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
-
-            // 4. Call completion handler
-            completion(image) // Already on a background thread, let caller dispatch if needed
-
-            // Clear active request ID if managing them here
-            // self.activeRequests.removeValue(forKey: assetIdentifier)
+            completion(image)
+            // self.activeRequests.removeValue(forKey: assetIdentifier) // If managing IDs here
         }
-        // Store request ID if managing cancellations here
-        // self.activeRequests[assetIdentifier] = requestID
+        // self.activeRequests[assetIdentifier] = requestID // If managing IDs here
     }
+
+
+    // MARK: - Limited Library Handling
+    func presentLimitedLibraryPicker() {
+        print("⚠️ Placeholder: Would present limited library picker here.")
+    }
+
+
     // MARK: - Private Helper Functions
-    // Calculate date range for a specific "years ago" value
     private func calculateDateRange(yearsAgo: Int, calendar: Calendar, today: Date) -> (start: Date, end: Date)? {
         var components = calendar.dateComponents([.year, .month, .day], from: today)
-        // Adjust year component
         components.year = (components.year ?? calendar.component(.year, from: today)) - yearsAgo
-
-        guard let targetDate = calendar.date(from: components) else {
-            print("❌ Error: Could not calculate target date for \(yearsAgo) years ago.")
-            return nil
-        }
+        guard let targetDate = calendar.date(from: components) else { print("❌ Error: Could not calculate target date for \(yearsAgo) years ago."); return nil }
         let startOfDay = calendar.startOfDay(for: targetDate)
-        // Use constant for day calculation
-        guard let endOfDay = calendar.date(byAdding: .day, value: Constants.daysToAddForDateRangeEnd, to: startOfDay) else {
-            print("❌ Error: Could not calculate end of day for target date.")
-            return nil
-        }
+        guard let endOfDay = calendar.date(byAdding: .day, value: Constants.daysToAddForDateRangeEnd, to: startOfDay) else { print("❌ Error: Could not calculate end of day for target date."); return nil }
         return (startOfDay, endOfDay)
     }
+
+    // --- Updated cancellation logic ---
+    // Note: cancelAllPrefetchTasks is removed as cleanup is now in performCleanup
+
+    // This function MUST be called from the MainActor (e.g., view's onDisappear)
+    func performCleanup() {
+        print("🧹 Performing ViewModel cleanup (cancelling tasks and clearing state)...")
+        print("🚫 Cancelling load tasks..."); activeLoadTasks.values.forEach { $0.cancel() }; activeLoadTasks.removeAll()
+        print("🚫 Cancelling grid load tasks..."); activeGridLoadTasks.values.forEach { $0.cancel() }; activeGridLoadTasks.removeAll()
+        print("🚫 Cancelling thumbnail prefetch tasks..."); activePrefetchThumbnailTasks.values.forEach { $0.cancel() }; activePrefetchThumbnailTasks.removeAll()
+        print("🚫 Cancelling featured prefetch tasks..."); activeFeaturedPrefetchTasks.values.forEach { $0.cancel() }; activeFeaturedPrefetchTasks.removeAll()
+        print("🧹 ViewModel cleanup complete.")
     }
+
+    // --- DEINIT ---
+    deinit {
+         print("🗑️ PhotoViewModel deinit finished.") // Keep simple
+    }
+
+} // End of PhotoViewModel class
+
