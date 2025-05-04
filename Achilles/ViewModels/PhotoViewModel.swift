@@ -393,6 +393,85 @@ class PhotoViewModel: ObservableObject {
         print("🧹 Clearing preloaded featured images along with cache."); preloadedFeaturedImages.removeAll(); imageCacheService.clearCache()
     }
 
+
+    func requestLivePhoto(for asset: PHAsset,
+                          targetSize: CGSize = PHImageManagerMaximumSize, // Default to full size
+                          completion: @escaping @MainActor (PHLivePhoto?) -> Void) { // Ensure completion on MainActor
+
+        // 1. Validate Asset Type
+        guard asset.mediaSubtypes.contains(.photoLive) else {
+            print("⚠️ [VM] Attempted to request Live Photo for a non-Live Photo asset: \(asset.localIdentifier)")
+            // No need for Task{} here as completion is already @MainActor
+            completion(nil)
+            return
+        }
+
+        let assetIdentifier = asset.localIdentifier
+
+        // 2. Check Cache First
+        if let cachedLivePhoto = imageCacheService.cachedLivePhoto(for: assetIdentifier) {
+            print("✅ [VM] Using cached Live Photo for asset: \(assetIdentifier)")
+            // No need for Task{} here as completion is already @MainActor
+            completion(cachedLivePhoto)
+            return // Return early if cache hit
+        }
+
+        // 3. Prepare Request Options (Cache Miss)
+        print("⬆️ [VM] Requesting Live Photo object (cache miss) for asset: \(assetIdentifier)")
+        let options = PHLivePhotoRequestOptions()
+        options.deliveryMode = .highQualityFormat // Prefer high quality for detail view
+        options.isNetworkAccessAllowed = true // Allow downloading from iCloud if needed
+        options.version = .current
+
+        // 4. Make Request via PHImageManager
+        // Using the viewModel's instance: self.imageManager
+        imageManager.requestLivePhoto(for: asset,
+                                   targetSize: targetSize,
+                                   contentMode: .aspectFit, // Or .aspectFill depending on UI needs
+                                   options: options) { [weak self] livePhoto, info in
+            // We are likely already on the main thread for the *final* result handler,
+            // but marking completion @MainActor provides extra safety/clarity.
+
+            guard let self = self else { return } // Ensure ViewModel hasn't been deallocated
+
+            // 5. Handle Completion Info Dictionary
+            let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
+            let error = info?[PHImageErrorKey] as? Error
+
+            // Check for cancellation
+            if isCancelled {
+                print("🚫 [VM] Live Photo request cancelled for \(assetIdentifier).")
+                completion(nil) // Completion is already @MainActor
+                return
+            }
+
+            // Check for errors
+            if let error = error {
+                print("❌ [VM] Live Photo loading error: \(error.localizedDescription) for \(assetIdentifier)")
+                completion(nil) // Completion is already @MainActor
+                return
+            }
+
+            // Check if result is valid
+            guard let fetchedLivePhoto = livePhoto else {
+                // This case might happen, though usually an error is provided.
+                print("⚠️ [VM] Live Photo result was nil, but no error reported for asset \(assetIdentifier)")
+                completion(nil) // Completion is already @MainActor
+                return
+            }
+
+            // 6. Success: Cache and Complete
+            print("✅ [VM] Live Photo loaded successfully for \(assetIdentifier)")
+            // Cache the successfully fetched Live Photo
+            self.imageCacheService.cacheLivePhoto(fetchedLivePhoto, for: assetIdentifier)
+            // Call the completion handler with the result
+            completion(fetchedLivePhoto) // Completion is already @MainActor
+        }
+    }
+    
+    // End of requestLivePhoto function
+    
+    
     func requestFullImageData(for asset: PHAsset) async -> Data? {
         return await withCheckedContinuation { continuation in let options = PHImageRequestOptions(); options.version = .current; options.deliveryMode = .highQualityFormat; options.isNetworkAccessAllowed = true; options.resizeMode = .none; options.isSynchronous = false; print("⬆️ Requesting full image data for sharing asset \(asset.localIdentifier)"); imageManager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in if let error = info?[PHImageErrorKey] as? Error { print("❌ Error fetching full image data: \(error.localizedDescription)"); continuation.resume(returning: nil) } else if let data = data { print("✅ Full image data fetched for \(asset.localIdentifier)"); continuation.resume(returning: data) } else { print("⚠️ Full image data was nil for \(asset.localIdentifier)"); continuation.resume(returning: nil) } } }
     }

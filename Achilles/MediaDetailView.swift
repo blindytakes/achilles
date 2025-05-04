@@ -2,6 +2,8 @@ import SwiftUI
 import Photos
 import AVKit
 import UIKit // Keep for Share Sheet
+import PhotosUI // <-- ADD THIS
+
 
 struct MediaDetailView: View {
     // --- Inputs ---
@@ -214,6 +216,31 @@ struct MediaDetailView: View {
         
     }
 
+struct PHLivePhotoViewRepresentable: UIViewRepresentable {
+    // Input: The PHLivePhoto object to display
+    var livePhoto: PHLivePhoto? // Make it optional
+
+    func makeUIView(context: Context) -> PHLivePhotoView {
+        // Create the initial UIKit view
+        let livePhotoView = PHLivePhotoView()
+        livePhotoView.contentMode = .scaleAspectFit // Adjust content mode as needed
+        // Optional: Customize playback controls, mute, etc.
+        // livePhotoView.playbackGestureRecognizer.isEnabled = true // Allow tap-to-play
+        return livePhotoView
+    }
+
+    func updateUIView(_ uiView: PHLivePhotoView, context: Context) {
+        // Update the UIKit view when the livePhoto state changes in SwiftUI
+        uiView.livePhoto = livePhoto
+
+        // Optional: Start playback automatically, or manage it based on context
+        // if livePhoto != nil && /* some condition */ {
+        //     uiView.startPlayback(with: .hint) // Example: Start playback subtly
+        // } else {
+        //     uiView.stopPlayback()
+        // }
+    }
+}
     
     // MARK: - Helper Struct for Share Sheet Item (Unchanged)
     struct ShareableItem: Identifiable {

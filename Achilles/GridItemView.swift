@@ -6,54 +6,66 @@ struct GridItemView: View {
     let item: MediaItem
     var tapAction: (() -> Void)? = nil
 
-    @State private var thumbnail: UIImage? = nil
+    @State private var thumbnail: UIImage?
     @State private var isPressed = false
     @State private var showImage = false
 
-    private let itemFrameSize: CGFloat = 200 // Higher quality request
+
+    private var isLivePhoto: Bool {
+      item.asset.mediaSubtypes.contains(.photoLive)
+    }
+
+    
+    private let itemFrameSize: CGFloat = 200
 
     var body: some View {
         ZStack {
-            // Background color for letter/pillar boxing
-            Color(.systemGray6) // This matches Apple Photos' subtle light gray for letterbox areas
+            // Background placeholder
+            Color(.systemGray6)
 
-            // Thumbnail image when loaded
             if let thumbnail = thumbnail {
+                // Thumbnail image
                 Image(uiImage: thumbnail)
                     .resizable()
-                    .scaledToFill() // Fill the square frame completely
-                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                    .clipped() // Essential to prevent overflow/overlapping
+                    .scaledToFill()
+                    .frame(width: itemFrameSize, height: itemFrameSize)
+                    .clipped()
                     .opacity(showImage ? 1 : 0)
-                    .animation(.easeIn(duration: 0.3), value: showImage)
                     .onAppear {
-                        withAnimation { showImage = true }
+                        withAnimation(.easeIn(duration: 0.3)) {
+                            showImage = true
+                        }
                     }
+
+                // Overlays for Live Photo and video duration
+                ZStack(alignment: .topLeading) {
+
+                    // Video duration badge
+                    if item.asset.mediaType == .video {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                Text(formattedDuration(item.asset.duration))
+                                    .font(.caption2.bold())
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(Color.black.opacity(0.4))
+                                    .clipShape(Capsule())
+                                    .padding(4)
+                            }
+                        }
+                    }
+                }
+
             } else {
-                // Loading indicator - Apple's is more subtle
+                // Loading indicator
                 ProgressView()
                     .scaleEffect(0.7)
-                    .tint(Color.gray)
-            }
-
-            // Video indicator overlay
-            if thumbnail != nil && item.asset.mediaType == .video {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Text(formattedDuration(item.asset.duration))
-                            .font(.caption2.bold())
-                            .foregroundColor(.white)
-                            .padding(.vertical, 2)
-                            .padding(.horizontal, 4)
-                            .background(Color.black.opacity(0.3))
-                    }
-                    .padding(4)
-                }
+                    .tint(.gray)
             }
         }
-        // Remove forced aspect ratio to allow parent view to control this
+        .frame(width: itemFrameSize, height: itemFrameSize)
         .contentShape(Rectangle())
         .scaleEffect(isPressed ? 0.97 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
@@ -66,55 +78,30 @@ struct GridItemView: View {
             }
         }
         .onAppear {
-    // Log first to confirm the view appeared
-    print("➡️ GridItemView ON APPEAR for Asset ID: \(item.id)")
-
-    // Check *once* if loading is needed
-    if thumbnail == nil {
-        print("➡️➡️ Thumbnail is nil, calling loadThumbnail() for Asset ID: \(item.id)")
-        loadThumbnail() // Call loadThumbnail() *only once*
-    } else {
-        // Log if the image was already loaded (e.g., view reappeared)
-        print("➡️➡️ Thumbnail already exists for Asset ID: \(item.id)")
-    }
-}
-    }
-
-    // Function to load the thumbnail
-    private func loadThumbnail() {
-        let assetIdentifier = item.asset.localIdentifier
-        
-        // 2. If not cached, proceed with the request
-        print("➡️➡️➡️ Thumbnail not in cache, calling viewModel.requestImage for Asset ID: \(assetIdentifier)")
-        let scale = UIScreen.main.scale
-        let targetSize = CGSize(
-            width: 300 * scale, 
-            height: 300 * scale
-        )
-
-        // Use the existing requestImage function which handles caching on completion
-        viewModel.requestImage(for: item.asset, targetSize: targetSize) { image in
-            print("⬅️ GridItemView IMAGE RECEIVED for Asset ID: \(assetIdentifier). Image is \(image != nil ? "VALID" : "NIL")")
-            DispatchQueue.main.async {
-                // Only update if the image is valid (might be nil on error)
-                if let validImage = image {
-                     self.thumbnail = validImage
-                }
-                // If image is nil after request, the ProgressView should remain
+            if thumbnail == nil {
+                loadThumbnail()
             }
         }
     }
 
-    // Helper to format duration
-    func formattedDuration(_ duration: TimeInterval) -> String {
-        guard duration.isFinite && !duration.isNaN && duration >= 0 else { return "0:00" }
+    // MARK: - Helpers
+    private func loadThumbnail() {
+        let assetID = item.asset.localIdentifier
+        let scale = UIScreen.main.scale
+        let size = CGSize(width: 300 * scale, height: 300 * scale)
+
+        viewModel.requestImage(for: item.asset, targetSize: size) { image in
+            DispatchQueue.main.async {
+                self.thumbnail = image
+            }
+        }
+    }
+
+    private func formattedDuration(_ duration: TimeInterval) -> String {
+        guard duration >= 0, duration.isFinite else { return "0:00" }
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
-
-
-
-
 

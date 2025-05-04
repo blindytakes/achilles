@@ -1,14 +1,16 @@
 import SwiftUI
 import Photos
 import AVKit
-import UIKit
+import UIKit // Keep for Share Sheet
+import PhotosUI // <-- **ADD THIS IMPORT**
 
-// MARK: - State Enum Definition
+// MARK: - State Enum Definition (Updated)
 fileprivate enum DetailViewState {
     case loading
     case error(String)
     case image(displayImage: UIImage)
-    case unsupported // Covers video/audio/unknown handled by main switch
+    case livePhoto(displayLivePhoto: PHLivePhoto) // <-- **ADD THIS CASE**
+    case unsupported // For types not handled (video is handled separately via player)
 }
 
 // MARK: - ItemDisplayView
@@ -21,334 +23,397 @@ struct ItemDisplayView: View {
     @Binding var showInfoPanel: Bool
 
     // Internal State
-    @State private var viewState: DetailViewState = .loading
+    @State private var viewState: DetailViewState = .loading // Initial state
     @State private var controlsHidden: Bool = false
-    @State private var zoomScale: CGFloat = 1.0 // Used by ZoomableScrollView
+    @State private var zoomScale: CGFloat = 1.0 // Used by ZoomableScrollView for static images ONLY
     @Environment(\.dismiss) private var dismiss
 
+    // (Keep all your existing Constants here - unchanged)
     // MARK: - Constants
     // Layout & Frame
     private let locationButtonBottomPadding: CGFloat = 40
-    private let locationButtonSize: CGFloat = 60
-    private let locationButtonCornerRadius: CGFloat = 12
-    private let locationButtonStrokeWidth: CGFloat = 1
-    private let mapIconWidth: CGFloat = 32
-    private let mapIconHeight: CGFloat = 24
-    private let mapIconCornerRadius: CGFloat = 6
-    private let mapPinIconSize: CGFloat = 26
-    private let mapPinIconYOffset: CGFloat = -2
-    private let mapLabelFontSize: CGFloat = 12
-    private let mapLabelVStackSpacing: CGFloat = 4 // Spacing in location button
-    private let locationPanelHorizontalMargin: CGFloat = 12
-    private let locationPanelHeightFactor: CGFloat = 0.65 // % of geometry height
-    private let locationPanelMaxHeight: CGFloat = 400
-    private let locationPanelPositionXFactor: CGFloat = 0.5 // Center X
-    private let locationPanelPositionYFactor: CGFloat = 0.45
-    private let errorVStackSpacing: CGFloat = 8
+    // ... other constants ...
     private let zoomableImageYOffset: CGFloat = -20
-
-    // Animation & Timing
-    private let locationButtonFadeDuration: Double = 0.25
-    private let panelSpringResponse: Double = 0.4
-    private let panelSpringDamping: Double = 0.75
-
-    // Style & Visuals
-    private let locationButtonBackgroundOpacity: Double = 0.85
-    private let locationButtonShadowOpacity: Double = 0.25
-    private let locationButtonShadowRadius: CGFloat = 4
-    private let locationButtonShadowYOffset: CGFloat = 2
-    private let locationButtonStrokeOpacity: Double = 0.3
-    private let mapIconFillOpacity: Double = 0.2
-    private let mapPinShadowOpacity: Double = 0.25
-    private let mapPinShadowRadius: CGFloat = 1
-    private let mapPinShadowYOffset: CGFloat = 1
-    private let progressViewScale: CGFloat = 1.5
-    private let hiddenOpacity: Double = 0.0
+    // ... etc ...
     private let visibleOpacity: Double = 1.0
 
     // Z-Indexes
     private let contentZIndex: Double = 0
     private let locationButtonZIndex: Double = 1
     private let locationPanelZIndex: Double = 2
+    
+    private let locationButtonFadeDuration: Double = 0.25 // Make sure this is declared if used
+    private let panelSpringResponse: Double = 0.4
+    private let panelSpringDamping: Double = 0.75
 
+    private let locationPanelHorizontalMargin: CGFloat = 12
+    private let locationPanelHeightFactor: CGFloat = 0.65
+    private let locationPanelMaxHeight: CGFloat = 400
+    private let locationPanelPositionXFactor: CGFloat = 0.5
+    private let locationPanelPositionYFactor: CGFloat = 0.45
+
+    private let mapIconWidth: CGFloat = 32            // Needed by locationButton if defined there
+    private let mapIconHeight: CGFloat = 24           // Needed by locationButton if defined there
+    private let mapIconCornerRadius: CGFloat = 6        // Needed by locationButton if defined there
+    private let mapPinIconSize: CGFloat = 26          // Needed by locationButton if defined there
+    private let mapPinIconYOffset: CGFloat = -2         // Needed by locationButton if defined there
+    private let mapLabelFontSize: CGFloat = 12         // Needed by locationButton if defined there
+    private let mapLabelVStackSpacing: CGFloat = 4      // Needed by locationButton if defined there
+    private let locationButtonSize: CGFloat = 60        // Needed by locationButton if defined there
+    private let locationButtonCornerRadius: CGFloat = 12 // Needed by locationButton if defined there
+    private let locationButtonStrokeWidth: CGFloat = 1  // Needed by locationButton if defined there
+    private let errorVStackSpacing: CGFloat = 8         // Needed by errorView/unsupportedView
+    private let progressViewScale: CGFloat = 1.5       // Needed by loading views
+
+    private let locationButtonBackgroundOpacity: Double = 0.85 // Needed by locationButton
+        private let locationButtonShadowOpacity: Double = 0.25   // Needed by locationButton
+        private let locationButtonShadowRadius: CGFloat = 4      // Needed by locationButton
+        private let locationButtonShadowYOffset: CGFloat = 2     // Needed by locationButton
+        private let locationButtonStrokeOpacity: Double = 0.3    // Needed by locationButton
+        private let mapIconFillOpacity: Double = 0.2             // Needed by locationButton
+        private let mapPinShadowOpacity: Double = 0.25           // Needed by locationButton
+        private let mapPinShadowRadius: CGFloat = 1              // Needed by locationButton
+        private let mapPinShadowYOffset: CGFloat = 1             // Needed by locationButton
+        private let hiddenOpacity: Double = 0.0
     // MARK: - Body
     var body: some View {
         GeometryReader { geometry in
+            
+            let _ = print(">>> ItemDisplayView [ID: \(item.id)] - Has Location: \(item.asset.location != nil), showInfoPanel: \(showInfoPanel)")
+
             ZStack(alignment: .bottom) {
-                // Main content area (Image, Video, Loading, Error)
+                // Main content area (Image, LivePhoto, Video, Loading, Error)
                 mainContentSwitchView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle()) // Ensure entire area is tappable for ZoomableScrollView
+                    .contentShape(Rectangle()) // Ensure tappable area
                     .zIndex(contentZIndex) // Base layer
 
                 // Location button overlay (only if location exists and panel is hidden)
                 if item.asset.location != nil && !showInfoPanel {
                     locationButton
-                        .opacity(controlsHidden ? hiddenOpacity : visibleOpacity) // Use constants
-                        .animation(.easeInOut(duration: locationButtonFadeDuration), value: controlsHidden) // Use constant
+                        .opacity(controlsHidden ? 0.0 : 1.0) // Use constants if preferred
+                        .animation(.easeInOut(duration: 0.25), value: controlsHidden)
                         .zIndex(locationButtonZIndex) // Above content
                 }
-
+                
                 // Location info panel overlay (only if location exists and panel is shown)
                 if showInfoPanel, item.asset.location != nil {
+                    let _ = print(">>> ItemDisplayView [ID: \(item.id)] - Rendering Location Panel")
                     LocationInfoPanelView(asset: item.asset)
-                        // Size and position the panel relative to the screen
-                        .frame(width: geometry.size.width - locationPanelHorizontalMargin * 2) // Use margin constant
-                        .frame(maxHeight: min(geometry.size.height * locationPanelHeightFactor, locationPanelMaxHeight)) // Use constants
-                        .position(x: geometry.size.width * locationPanelPositionXFactor, y: geometry.size.height * locationPanelPositionYFactor) // Use constants
-                        .transition(.opacity.combined(with: .offset(y: geometry.size.height * 0.1))) // Add offset transition
-                        .zIndex(locationPanelZIndex) // Above location button
+                         // (Keep existing frame/position/transition/zIndex modifiers)
+                        .frame(width: geometry.size.width - locationPanelHorizontalMargin * 2)
+                        .frame(maxHeight: min(geometry.size.height * locationPanelHeightFactor, locationPanelMaxHeight))
+                        .position(x: geometry.size.width * locationPanelPositionXFactor, y: geometry.size.height * locationPanelPositionYFactor)
+                        .transition(.opacity.combined(with: .offset(y: geometry.size.height * 0.1)))
+                        .zIndex(locationPanelZIndex)
                 }
             }
             .background(Color.black) // Ensure background for entire ZStack
             .id(item.id) // Force redraw when item changes
             .ignoresSafeArea(.all, edges: .all) // Extend to screen edges
         }
-        .task { loadImageOnlyIfNeeded() } // Load image when view appears/task starts
-        .onChange(of: item.id) { _, newItemId in // Use correct onChange signature if needed
-            // Reset view state when the item changes
-             if item.asset.mediaType == .image {
-                 viewState = .loading
-             } else {
-                 // Video/Audio is handled directly by the player state passed in
-                 // Set unsupported only if it's truly not image/video/audio?
-                 // Or rely on mainContentSwitchView to handle it.
-                 // Let's just reset image-specific state.
-                 viewState = (item.asset.mediaType == .image) ? .loading : .unsupported
-             }
-             // Reset panel state when item changes
-             showInfoPanel = false
-             controlsHidden = false // Also reset controls visibility
-             zoomScale = 1.0 // Reset zoom scale
+        // ** MODIFIED: Use .task(id:) to handle loading for different item types **
+        .task(id: item.id) {
+             await loadMediaData() // Call the unified loading function
+        }
+        // ** MODIFIED: Update onChange to handle reset correctly **
+        .onChange(of: item.id) { _, _ in // Use correct onChange signature if needed
+            // Reset shared UI state when item changes
+            showInfoPanel = false
+            controlsHidden = false
+            zoomScale = 1.0 // Reset zoom scale (only applies to static images)
+            // The .task(id:) modifier will handle resetting viewState and loading new data
         }
         .onAppear {
-             // Add observers for notifications
-             setupNotificationObservers()
+            setupNotificationObservers()
         }
         .onDisappear {
-             // Cancel any ongoing image requests and remove observers
-             removeNotificationObservers()
+            removeNotificationObservers()
         }
     }
 
     // MARK: - Location Button View
     private var locationButton: some View {
         Button {
-            // Show panel with spring animation
-            withAnimation(.spring(response: panelSpringResponse, dampingFraction: panelSpringDamping)) { // Use constants
+            // Action: Show panel with spring animation
+            withAnimation(.spring(response: panelSpringResponse, dampingFraction: panelSpringDamping)) {
                 showInfoPanel = true
             }
-            // Provide haptic feedback
+            // Haptic feedback
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
 
         } label: {
             ZStack {
-                // Background with subtle material effect
-                RoundedRectangle(cornerRadius: locationButtonCornerRadius) // Use constant
-                    .fill(Color(.systemBackground).opacity(locationButtonBackgroundOpacity)) // Use constant
-                    .shadow(color: .black.opacity(locationButtonShadowOpacity), radius: locationButtonShadowRadius, x: 0, y: locationButtonShadowYOffset) // Use constants
-                    .frame(width: locationButtonSize, height: locationButtonSize) // Use constant
+                // Background with material effect and shadow/stroke
+                RoundedRectangle(cornerRadius: locationButtonCornerRadius)
+                    .fill(Color(.systemBackground).opacity(locationButtonBackgroundOpacity))
+                    .shadow(color: .black.opacity(locationButtonShadowOpacity), radius: locationButtonShadowRadius, x: 0, y: locationButtonShadowYOffset)
                     .overlay(
-                        RoundedRectangle(cornerRadius: locationButtonCornerRadius) // Use constant
-                            .stroke(Color.white.opacity(locationButtonStrokeOpacity), lineWidth: locationButtonStrokeWidth) // Use constants
+                        RoundedRectangle(cornerRadius: locationButtonCornerRadius)
+                            .stroke(Color.white.opacity(locationButtonStrokeOpacity), lineWidth: locationButtonStrokeWidth)
                     )
 
-                // Map icon and label
-                VStack(spacing: mapLabelVStackSpacing) { // Use constant
+                // Content: Icon and Text
+                VStack(spacing: mapLabelVStackSpacing) {
                     ZStack {
-                        // Stylized map background shape
-                        RoundedRectangle(cornerRadius: mapIconCornerRadius) // Use constant
-                            .fill(Color.blue.opacity(mapIconFillOpacity)) // Use constant
-                            .frame(width: mapIconWidth, height: mapIconHeight) // Use constants
-
-                        // Pin icon overlay
-                        Image(systemName: "mappin.circle.fill") // System name is fine as literal
-                            .font(.system(size: mapPinIconSize, weight: .semibold)) // Use constant
-                            .foregroundColor(.red) // Color literal is fine
-                            .shadow(color: .black.opacity(mapPinShadowOpacity), radius: mapPinShadowRadius, x: 0, y: mapPinShadowYOffset) // Use constants
-                            .offset(y: mapPinIconYOffset) // Use constant
+                         // Pin icon overlay
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.system(size: mapPinIconSize, weight: .semibold))
+                            .foregroundColor(.red)
+                            .shadow(color: .black.opacity(mapPinShadowOpacity), radius: mapPinShadowRadius, x: 0, y: mapPinShadowYOffset)
                     }
+                    .frame(height: mapIconHeight) // Give icon area height
 
-                    Text("Map") // String literal is fine
-                        .font(.system(size: mapLabelFontSize, weight: .medium)) // Use constant
-                        .foregroundColor(.primary) // System color is fine
+                    Text("Map")
+                        .font(.system(size: mapLabelFontSize, weight: .medium))
+                        .foregroundColor(.primary)
                 }
             }
+            .frame(width: locationButtonSize, height: locationButtonSize) // Set overall size for the ZStack label
         }
-        .padding(.bottom, locationButtonBottomPadding) // Use constant
+        .padding(.bottom, locationButtonBottomPadding) // Apply padding outside the Button
     }
+    // Inside ItemDisplayView.swift
 
-    // MARK: - Main Content Switching View
     @ViewBuilder private var mainContentSwitchView: some View {
-        switch item.asset.mediaType {
-        case .image:
-            // Handle different states for image loading
-            switch viewState {
-            case .loading:
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(progressViewScale) // Use constant
-            case .error(let message):
-                // Display error state
-                VStack(spacing: errorVStackSpacing) { // Use constant
+        // Use GeometryReader if needed for frame calculations below
+        GeometryReader { geometry in // Added for potential frame needs
+            // Determine content based on the asset's media type first
+            switch item.asset.mediaType {
+                
+            case .image:
+                // Branch within .image for static vs live
+                if item.asset.mediaSubtypes.contains(.photoLive) {
+                    // --- Live Photo Display ---
+                    switch viewState {
+                    case .loading:
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.5)
+                    case .error(let message):
+                        errorView(message: message)
+                    case .livePhoto(let displayLivePhoto):
+                        // *** Wrap PHLivePhotoViewRepresentable in ZoomableScrollView ***
+                        // Prepare for gesture conflict debugging in ZoomableScrollView!
+                        ZoomableScrollView(
+                            contentType: .livePhoto,
+                            showInfoPanel: $showInfoPanel,
+                            controlsHidden: $controlsHidden,
+                            zoomScale: $zoomScale,
+                            dismissAction: { dismiss() }
+                            // Pass a hint about content type IF you modify ZoomableScrollView
+                            // contentType: .livePhoto // Example hypothetical modifier
+                        ) {
+                            PHLivePhotoViewRepresentable(livePhoto: displayLivePhoto)
+                            // Ensure the representable fills the space or has a defined size
+                            // Depending on PHLivePhotoViewRepresentable's internal sizing,
+                            // you might or might not need an explicit .frame modifier here.
+                            // Start without it, add if needed.
+                        }
+                    case .image, .unsupported: // Invalid states
+                        errorView(message: "Internal state error (LP expects .livePhoto).")
+                    }
+                } else {
+                    // --- Static Image Display ---
+                    switch viewState {
+                    case .loading:
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.5)
+                    case .error(let message):
+                        errorView(message: message)
+                    case .image(let displayImage):
+                        // *** Use ZoomableScrollView for static Image *** (As before)
+                        ZoomableScrollView(
+                            contentType: .image,
+                            showInfoPanel: $showInfoPanel,
+                            controlsHidden: $controlsHidden,
+                            zoomScale: $zoomScale,
+                            dismissAction: { dismiss() }
+                            // contentType: .image // Example hypothetical modifier
+                        ) {
+                            Image(uiImage: displayImage)
+                                .resizable()
+                                .interpolation(.high)
+                                .antialiased(true)
+                                .aspectRatio(contentMode: .fit)
+                            // Make sure the Image itself can fill the ZoomableScrollView area
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.black)
+                            //.offset(y: zoomableImageYOffset) // Offset might be undesirable now
+                        }
+                    case .livePhoto, .unsupported: // Invalid states
+                        errorView(message: "Internal state error (IMG expects .image).")
+                    }
+                }
+                
+            case .video:
+                // --- Video Display (Standard Player - No Zoom) ---
+                if let activePlayer = player {
+                    VideoPlayer(player: activePlayer)
+                        .onTapGesture { handleTap() } // Use standard tap for controls/play/pause
+                } else {
+                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.5)
+                }
+                
+            case .audio:
+                // Explicitly handle audio (e.g., show unsupported view)
+                unsupportedView(message: "Audio files not supported")
+                
+            case .unknown:
+                // Explicitly handle unknown (e.g., show unsupported view)
+                unsupportedView(message: "Unknown media type")
+                
+            @unknown default:
+                let _ = print("⚠️ Encountered unhandled PHAssetMediaType: \(item.asset.mediaType.rawValue)")
+                unsupportedView(message: "Unsupported media type: \(item.asset.mediaType.rawValue)")
+                unsupportedView(message: "Unsupported media type")
+            }
+        }
+    }
+            // MARK: - Data Loading (Updated)
+            @MainActor // Ensure state updates are on main thread
+            private func loadMediaData() async {
+                // Reset state to loading *unless* it's video (player state managed externally)
+                if item.asset.mediaType != .video {
+                    viewState = .loading
+                } else {
+                    // For video, just ensure any previous image/live photo state is cleared
+                    // The actual loading indicator display is handled by checking `player != nil`
+                    // in mainContentSwitchView
+                    if case .image = viewState { viewState = .loading }
+                    if case .livePhoto = viewState { viewState = .loading }
+                    // If it was already .loading or .error for a video, leave it
+                    print("Video item detected, player state managed externally.")
+                    return // Don't proceed with internal loading for video
+                }
+                
+                
+                let assetIdentifier = item.asset.localIdentifier
+                print("➡️ ItemDisplayView: Loading data for \(assetIdentifier), type: \(item.asset.mediaType.rawValue)")
+                
+                // --- Fetch based on type ---
+                if item.asset.mediaSubtypes.contains(.photoLive) {
+                    print("➡️ ItemDisplayView: Requesting Live Photo for \(assetIdentifier)")
+                    viewModel.requestLivePhoto(for: item.asset) { [assetIdentifier] fetchedLivePhoto in
+                        // Check if view is still relevant before updating state
+                        guard self.item.asset.localIdentifier == assetIdentifier else {
+                            print("⬅️ ItemDisplayView: Received Live Photo for \(assetIdentifier), but view is no longer relevant.")
+                            return
+                        }
+                        if let validLivePhoto = fetchedLivePhoto {
+                            print("⬅️ ItemDisplayView: Received VALID Live Photo for \(assetIdentifier)")
+                            self.viewState = .livePhoto(displayLivePhoto: validLivePhoto)
+                        } else {
+                            print("⬅️ ItemDisplayView: Received NIL Live Photo for \(assetIdentifier)")
+                            self.viewState = .error("Failed to load Live Photo")
+                        }
+                    }
+                } else if item.asset.mediaType == .image {
+                    print("➡️ ItemDisplayView: Requesting static image for \(assetIdentifier)")
+                    // Fetch static image (using existing logic, adapted)
+                    viewModel.requestFullSizeImage(for: item.asset) { [assetIdentifier] image in
+                        // Ensure view is still relevant
+                        guard self.item.asset.localIdentifier == assetIdentifier else {
+                            print("⬅️ ItemDisplayView: Received image for \(assetIdentifier), but view is no longer relevant.")
+                            return
+                        }
+                        if let validImage = image {
+                            print("⬅️ ItemDisplayView: Received VALID full-size image for \(assetIdentifier)")
+                            self.viewState = .image(displayImage: validImage)
+                        } else {
+                            print("⬅️ ItemDisplayView: Received NIL full-size image for \(assetIdentifier)")
+                            self.viewState = .error("Failed to load image")
+                        }
+                    }
+                } else {
+                    // Should not reach here if video check is done earlier, but as fallback:
+                    print("➡️ ItemDisplayView: Unsupported type (\(item.asset.mediaType.rawValue)) for internal loading.")
+                    viewState = .unsupported
+                }
+            }
+            
+            // MARK: - UI Helper Views (NEW/Refactored)
+            
+            // Helper for displaying errors consistently
+            @ViewBuilder private func errorView(message: String) -> some View {
+                VStack(spacing: 8) { // Use constant if defined
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
-                        .font(.largeTitle) // System font style is fine
+                        .font(.largeTitle)
                     Text("Error Loading Media")
                         .font(.headline)
                         .foregroundColor(.white)
                     Text(message)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray) // Use gray for secondary text
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal) // Default padding is okay here
-                }
-            case .image(let displayImage):
-                // Display the loaded image in the zoomable view
-                ZoomableScrollView(
-                    showInfoPanel: $showInfoPanel,
-                    controlsHidden: $controlsHidden,
-                    zoomScale: $zoomScale,
-                    dismissAction: { dismiss() }
-                ) {
-                    Image(uiImage: displayImage)
-                        .resizable()
-                        .interpolation(.high) // Enum value is fine
-                        .antialiased(true) // Boolean literal is fine
-                        .aspectRatio(contentMode: .fit) // Enum value is fine
-                        .frame(maxWidth: .infinity, maxHeight: .infinity) // System constants are fine
-                        .background(Color.black)
-                        .offset(y: zoomableImageYOffset) // Use constant
-                }
-            case .unsupported: // Should ideally not happen if mediaType is .image
-                Text("Internal Error: Unsupported image state.")
-                    .foregroundColor(.secondary)
-            }
-        case .video:
-            // Display video player or loading indicator
-            if let activePlayer = player {
-                VideoPlayer(player: activePlayer)
-                    // Consider adding controls visibility toggle for video?
-            } else {
-                // Show loading indicator while player is being prepared
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(progressViewScale) // Use constant
-            }
-        case .audio, .unknown:
-            // Display unsupported state for audio/unknown
-            VStack(spacing: errorVStackSpacing) { // Use constant
-                Image(systemName: "questionmark.diamond.fill")
-                    .foregroundColor(.orange)
-                    .font(.largeTitle)
-                Text("Unsupported Media")
-                    .font(.headline)
-                    .foregroundColor(.white)
-            }
-        @unknown default:
-            // Handle future media types
-            Text("Unhandled media type")
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private func loadImageOnlyIfNeeded() {
-        // Only proceed if the view state is currently loading and it's an image
-        guard case .loading = viewState, item.asset.mediaType == .image else { return }
-
-        let assetIdentifier = item.asset.localIdentifier
-        print("➡️ ItemDisplayView requesting full-size image for \(assetIdentifier) via ViewModel")
-
-        // Use the new ViewModel method
-        viewModel.requestFullSizeImage(for: item.asset) { image in
-            // We need to dispatch back to the main thread to update the UI state
-            DispatchQueue.main.async {
-                // Ensure view is still relevant
-                guard self.item.asset.localIdentifier == assetIdentifier else {
-                    print("⬅️ ItemDisplayView received image for \(assetIdentifier), but view is no longer relevant.")
-                    return
-                }
-
-                if let validImage = image {
-                    print("⬅️ ItemDisplayView received VALID full-size image for \(assetIdentifier)")
-                    self.viewState = .image(displayImage: validImage)
-                } else {
-                    print("⬅️ ItemDisplayView received NIL full-size image for \(assetIdentifier)")
-                    self.viewState = .error("Failed to load image") // Or use a specific error
+                        .padding(.horizontal)
                 }
             }
-        }
-    }
-
-    // MARK: - Notification Handling
-    private func setupNotificationObservers() {
-        NotificationCenter.default.addObserver(
-          forName: Notification.Name("DismissMapPanel"),
-          object: nil,
-          queue: .main
-        ) { _ in
-            withAnimation(.spring(response: panelSpringResponse, dampingFraction: panelSpringDamping)) {
-                showInfoPanel = false
+            
+            // Helper for displaying unsupported state consistently
+            @ViewBuilder private func unsupportedView(message: String = "Unsupported Media Type") -> some View {
+                VStack(spacing: 8) { // Use constant if defined
+                    Image(systemName: "questionmark.diamond.fill")
+                        .foregroundColor(.orange)
+                        .font(.largeTitle)
+                    Text(message)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+            }
+            
+            // MARK: - Tap Gesture Handling (NEW)
+            private func handleTap() {
+                // Toggle controls visibility on tap for non-zoomable content
+                // ZoomableScrollView handles its own tap internally for controls
+                if item.asset.mediaType == .video || item.asset.mediaSubtypes.contains(.photoLive) {
+                    controlsHidden.toggle()
+                    // Also hide/show info panel if needed based on controls state?
+                    // If controls become visible, ensure info panel is hidden maybe?
+                    if !controlsHidden && showInfoPanel {
+                        withAnimation(.spring(response: panelSpringResponse, dampingFraction: panelSpringDamping)) {
+                            showInfoPanel = false
+                        }
+                    }
+                }
+            }
+            
+            
+            // (Keep Notification Handling - unchanged)
+            private func setupNotificationObservers() {
+                NotificationCenter.default.addObserver(
+                    forName: Notification.Name("DismissMapPanel"),
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    withAnimation(.spring(response: self.panelSpringResponse,
+                                          dampingFraction: self.panelSpringDamping)) {
+                        self.showInfoPanel = false
+                    }
+                }
+                
+                NotificationCenter.default.addObserver(
+                    forName: UIApplication.didReceiveMemoryWarningNotification,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    // This closure will capture `viewModel` strongly,
+                    // but that’s fine—PhotoViewModel is a long-lived object anyway.
+                    viewModel.clearImageCache()
+                }
+            }
+            
+            // Don’t forget to remove them in `removeNotificationObservers()` as you already do.
+            
+            
+            private func removeNotificationObservers() {
+                print("Removing notification observers for ItemDisplayView") // Debug print
+                // Remove *specific* observers using the name
+                // Note: Removing 'self' might not work correctly if weak self was used in closure.
+                // It's often safer to store the observer token returned by addObserver and remove using that token.
+                // But for simplicity for now, try removing by name:
+                NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
+                NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+                
             }
         }
-
-         NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
-         ) { [weak viewModel] _ in
-             DispatchQueue.main.async {
-                 viewModel?.clearImageCache()
-             }
-         }
-    }
-
-    private func removeNotificationObservers() {
-         // Use the name-based removal for safety
-         NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
-         NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
-    }
-}
-
-
-// MARK: - Helper Structs & Extensions (Keep at end of file)
-
-// Corner Radius Extension
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
-
-// Shape for applying corner radius selectively
-struct RoundedCorner: Shape {
-    var radius: CGFloat = .infinity // Default to full rounding (like Capsule)
-    var corners: UIRectCorner = .allCorners
-
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(
-            roundedRect: rect,
-            byRoundingCorners: corners,
-            cornerRadii: CGSize(width: radius, height: radius)
-        )
-        return Path(path.cgPath)
-    }
-}
-
-// Placeholder for video loading (simple play icon)
-struct VideoPlayerPlaceholderView: View {
-    let asset: PHAsset // Keep asset if needed for future info display
-
-    // MARK: - Constants
-    private let iconSize: CGFloat = 60
-    private let iconOpacity: Double = 0.8
-
-    var body: some View {
-        ZStack {
-            Color.black // Background
-            Image(systemName: "play.circle.fill")
-                .font(.system(size: iconSize, weight: .regular)) // Use constant
-                .foregroundColor(.white.opacity(iconOpacity)) // Use constant
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
+    
