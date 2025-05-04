@@ -163,18 +163,7 @@ struct MediaDetailView: View {
     }
 }
 
-// MARK: - Live Photo View Representable
-struct PHLivePhotoViewRepresentable: UIViewRepresentable {
-    var livePhoto: PHLivePhoto?
-    func makeUIView(context: Context) -> PHLivePhotoView {
-        let view = PHLivePhotoView()
-        view.contentMode = .scaleAspectFit
-        return view
-    }
-    func updateUIView(_ uiView: PHLivePhotoView, context: Context) {
-        uiView.livePhoto = livePhoto
-    }
-}
+
 
 // MARK: - Share Sheet Helpers
 struct ShareableItem: Identifiable {

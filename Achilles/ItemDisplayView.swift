@@ -45,8 +45,8 @@ struct ItemDisplayView: View {
     private let mapIconHeight: CGFloat = 24
     private let mapPinIconSize: CGFloat = 26
     private let mapPinShadowOpacity: Double = 0.25
-    private let mapPinShadowRadius: CGFloat = 1
-    private let mapPinShadowYOffset: CGFloat = 1
+    private let mapPinShadowRadius: Double = 1
+    private let mapPinShadowYOffset: Double = 1
 
     private let mapLabelFontSize: CGFloat = 12
     private let mapLabelVStackSpacing: CGFloat = 4
@@ -63,19 +63,20 @@ struct ItemDisplayView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
+                // 1) Main content (image / live photo / video)
                 mainContentSwitchView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .zIndex(contentZIndex)
 
-                // Map button overlay
+                // 2) Map button overlay
                 if item.asset.location != nil && !showInfoPanel && !controlsHidden {
                     locationButton
                         .transition(.opacity)
                         .zIndex(locationButtonZIndex)
                 }
 
-                // Location info panel
+                // 3) Location info panel
                 if showInfoPanel, item.asset.location != nil {
                     LocationInfoPanelView(asset: item.asset)
                         .frame(width: geometry.size.width - locationPanelHorizontalMargin * 2)
@@ -92,6 +93,7 @@ struct ItemDisplayView: View {
             .background(Color.black)
             .id(item.id)
             .ignoresSafeArea(.all)
+            // ← Only one tap handler, applies to both photo & video
             .simultaneousGesture(
                 TapGesture(count: 1)
                     .onEnded {
@@ -167,8 +169,10 @@ struct ItemDisplayView: View {
             return staticImageView()
         case .video:
             if let activePlayer = player {
+                // Just a padded VideoPlayer; no inner gestures
                 return AnyView(
                     VideoPlayer(player: activePlayer)
+                        .padding(.bottom, 70)
                 )
             } else {
                 return AnyView(
@@ -322,6 +326,19 @@ struct ItemDisplayView: View {
         NotificationCenter.default.removeObserver(self,
                                                   name: UIApplication.didReceiveMemoryWarningNotification,
                                                   object: nil)
+    }
+}
+
+// MARK: - Live Photo View Representable
+struct PHLivePhotoViewRepresentable: UIViewRepresentable {
+    var livePhoto: PHLivePhoto?
+    func makeUIView(context: Context) -> PHLivePhotoView {
+        let view = PHLivePhotoView()
+        view.contentMode = .scaleAspectFit
+        return view
+    }
+    func updateUIView(_ uiView: PHLivePhotoView, context: Context) {
+        uiView.livePhoto = livePhoto
     }
 }
 
