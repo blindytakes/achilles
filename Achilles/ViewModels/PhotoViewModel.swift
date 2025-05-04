@@ -142,65 +142,89 @@ class PhotoViewModel: ObservableObject {
 
     // --- Phased Year Scanning (Error Handling Fixed) ---
     private func startYearScanningProcess() async {
-        guard !initialYearScanComplete else { print("Initial year scan (Phase 1) already complete."); return }
+        // Don’t rerun Phase 1 if it’s already done
+        guard !initialYearScanComplete else {
+            print("Initial year scan (Phase 1) already complete.")
+            return
+        }
+        // Ensure we have library permission
         guard authorizationStatus == .authorized || authorizationStatus == .limited else {
             print("Cannot scan for years without photo library access.")
-            await MainActor.run { self.initialYearScanComplete = true }; return
+            await MainActor.run {
+                self.initialYearScanComplete = true
+            }
+            return
         }
-        backgroundYearScanTask?.cancel(); backgroundYearScanTask = nil
+        // Cancel any in-flight Phase 2 task
+        backgroundYearScanTask?.cancel()
+        backgroundYearScanTask = nil
 
-        // Phase 1
+        // MARK: Phase 1 (foreground)
         let initialRange = 1...Constants.initialScanPhaseYears
         print("🚀 Starting Phase 1 scan for years: \(initialRange)")
-        var phase1Error: Error? = nil // Store potential error
+
+        var phase1Error: Error? = nil
         var initialYearsFound: [Int] = []
+
         do {
             initialYearsFound = try await scanYearsInRange(range: initialRange)
             print("✅ Phase 1 scan complete. Found years: \(initialYearsFound.sorted())")
         } catch is CancellationError {
-             print("🚫 Phase 1 scan cancelled.")
-             return // Don't proceed if cancelled
-        } catch { // Catch any other error
-             print("❌ Error during Phase 1 scan: \(error.localizedDescription)")
-             phase1Error = error // Store error
+            print("🚫 Phase 1 scan cancelled.")
+            return
+        } catch {
+            print("❌ Error during Phase 1 scan: \(error.localizedDescription)")
+            phase1Error = error
         }
 
-        // Update state after Phase 1 completes (even if error occurred)
+        // Publish Phase 1 results
         await MainActor.run {
             self.availableYearsAgo = initialYearsFound.sorted()
-            self.initialYearScanComplete = true // Mark Phase 1 complete
+            self.initialYearScanComplete = true
             if let error = phase1Error {
                 print("⚠️ Phase 1 completed with error: \(error.localizedDescription)")
-                // Optionally update UI to show a general error message
             }
         }
 
-        // Phase 2
+        // MARK: Phase 2 (background)
         let remainingRange = (Constants.initialScanPhaseYears + 1)...Constants.maxYearsToScanTotal
-        guard !remainingRange.isEmpty else { print("ℹ️ No remaining years to scan in Phase 2."); return }
+        guard !remainingRange.isEmpty else {
+            print("ℹ️ No remaining years to scan in Phase 2.")
+            return
+        }
 
         print("⏳ Starting Phase 2 background scan for years: \(remainingRange)")
+
         backgroundYearScanTask = Task.detached(priority: .background) { [weak self] in
             guard let self = self else { return }
-            var backgroundYearsFound: [Int] = [] // Declare INSIDE task
+
             do {
-                backgroundYearsFound = try await self.scanYearsInRange(range: remainingRange)
+                // 1) Perform the scan into a local constant
+                let foundYears = try await self.scanYearsInRange(range: remainingRange)
                 try Task.checkCancellation()
-                print("✅ Phase 2 scan complete. Found additional years: \(backgroundYearsFound.sorted())")
+                print("✅ Phase 2 scan complete. Found additional years: \(foundYears.sorted())")
+
+                // 2) Merge and publish on the Main Actor
                 await MainActor.run {
-                     guard !Task.isCancelled else { return }
-                    let combinedYears = Set(self.availableYearsAgo + backgroundYearsFound)
-                    self.availableYearsAgo = Array(combinedYears).sorted()
+                    guard !Task.isCancelled else { return }
+                    let combined = Set(self.availableYearsAgo + foundYears)
+                    self.availableYearsAgo = Array(combined).sorted()
                     print("🔄 Combined available years: \(self.availableYearsAgo)")
                 }
+
             } catch is CancellationError {
-                 print("🚫 Phase 2 scan task cancelled.")
-            } catch { // Catch any other error
-                 print("❌ Error during Phase 2 background scan: \(error.localizedDescription)")
+                print("🚫 Phase 2 scan task cancelled.")
+            } catch {
+                print("❌ Error during Phase 2 background scan: \(error.localizedDescription)")
             }
-            await MainActor.run { self.backgroundYearScanTask = nil } // Clear task reference
+
+            // 3) Always clear the task reference on the Main Actor
+            await MainActor.run {
+                self.backgroundYearScanTask = nil
+            }
         }
     }
+
 
     // Helper function to scan a specific range of years
     private func scanYearsInRange(range: ClosedRange<Int>) async throws -> [Int] {
