@@ -31,9 +31,9 @@ struct LoadedYearContentView: View {
     private let mainVStackSpacing: CGFloat = 0
     private let titleVStackSpacing: CGFloat = 3
     private let titleTopPadding: CGFloat = 16
-    private let titleBottomPadding: CGFloat = 20
-    private let gridColumnSpacing: CGFloat = 6
-    private let gridRowSpacing: CGFloat = 6
+    private let titleBottomPadding: CGFloat = 15
+    private let gridColumnSpacing: CGFloat = 5
+    private let gridRowSpacing: CGFloat = 4
     private let gridHorizontalPadding: CGFloat = 6
     private let footerVerticalPadding: CGFloat = 16
     private let gridItemAspectRatio: CGFloat = 1.0
@@ -185,7 +185,6 @@ struct LoadedYearContentView: View {
                                              }
                                          }
                                 }
-                                .frame(maxWidth: .infinity)
                                 .padding(.bottom, titleBottomPadding)
                                 .opacity(hasTappedSplash || featured == nil ? visibleOpacity : hiddenOpacity)
                                 .animation(.easeInOut(duration: contentFadeInDuration).delay(contentFadeInDelay), value: hasTappedSplash || featured == nil)
@@ -195,7 +194,6 @@ struct LoadedYearContentView: View {
                                     ForEach(Array(allGridItems.enumerated()), id: \.element.id) { index, item in
                                         GridItemView(viewModel: viewModel, item: item) { selectedItemForDetail = item }
                                         .aspectRatio(gridItemAspectRatio, contentMode: .fill)
-                                        .frame(maxWidth: .infinity)
                                         .clipShape(Rectangle())
                                         .shadow(color: .black.opacity(gridItemShadowOpacity), radius: gridItemShadowRadius, x: 0, y: gridItemShadowYOffset)
                                         .offset(y: animatedItems.contains(item.id) ? 0 : gridItemAppearOffset)

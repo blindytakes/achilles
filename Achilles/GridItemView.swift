@@ -16,7 +16,7 @@ struct GridItemView: View {
     }
 
     
-    private let itemFrameSize: CGFloat = 200
+    private let itemFrameSize: CGFloat = 190
 
     var body: some View {
         ZStack {
