@@ -242,7 +242,6 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
                      initialPanDirection = .zero
 
                  case .changed:
-                     let currentPoint = gesture.location(in: scrollView.superview)
                      let totalTranslation = gesture.translation(in: scrollView.superview)
                      
                      // Capture initial direction if not set

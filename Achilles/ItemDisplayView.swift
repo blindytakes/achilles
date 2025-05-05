@@ -28,7 +28,7 @@ struct ItemDisplayView: View {
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Constants
-    private let locationButtonBottomPadding: CGFloat = 40
+    private let locationButtonBottomPadding: CGFloat = 1425
     private let contentZIndex: Double = 0
     private let locationButtonZIndex: Double = 1
     private let locationPanelZIndex: Double = 2
@@ -62,7 +62,7 @@ struct ItemDisplayView: View {
     // MARK: - Body
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .bottom) {
+            ZStack(alignment: .center) {
                 // 1) Main content (image / live photo / video)
                 mainContentSwitchView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -73,6 +73,8 @@ struct ItemDisplayView: View {
                 if item.asset.location != nil && !showInfoPanel && !controlsHidden {
                     locationButton
                         .transition(.opacity)
+                        .position(x: geometry.size.width / 2,
+                                         y: locationButtonBottomPadding)
                         .zIndex(locationButtonZIndex)
                 }
 
@@ -172,7 +174,6 @@ struct ItemDisplayView: View {
                 // Just a padded VideoPlayer; no inner gestures
                 return AnyView(
                     VideoPlayer(player: activePlayer)
-                        .padding(.bottom, 70)
                 )
             } else {
                 return AnyView(
@@ -232,12 +233,15 @@ struct ItemDisplayView: View {
                     zoomScale: $zoomScale,
                     dismissAction: { dismiss() }
                 ) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.black)
+                    GeometryReader { geometry in  // Add GeometryReader
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .position(x: geometry.size.width / 2, y: geometry.size.height / 2 - 20)
+                            .background(Color.black)
+                    }
                 }
             )
         case .error(let msg):

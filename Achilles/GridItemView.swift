@@ -86,7 +86,6 @@ struct GridItemView: View {
 
     // MARK: - Helpers
     private func loadThumbnail() {
-        let assetID = item.asset.localIdentifier
         let scale = UIScreen.main.scale
         let size = CGSize(width: 300 * scale, height: 300 * scale)
 
