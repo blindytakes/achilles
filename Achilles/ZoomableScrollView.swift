@@ -17,16 +17,16 @@ fileprivate struct Constants {
     static let zoomRectCalculationFactor: CGFloat = 2.0
 
     // Pan Gesture (Swipe Down Dismiss)
-    static let panMinVerticalDistanceStartFeedback: CGFloat = 50.0
+    static let panMinVerticalDistanceStartFeedback: CGFloat = 50
     static let panHorizontalDominanceFactor: CGFloat = 0.8 // horizontal < vertical * factor
     static let panDismissProgressMax: CGFloat = 1.0
-    static let panDismissProgressDistanceDivider: CGFloat = 300.0
+    static let panDismissProgressDistanceDivider: CGFloat = 300
     static let panFeedbackAnimationDuration: Double = 0.1
     static let panFeedbackMinAlpha: CGFloat = 0.7
     static let panFeedbackAlphaFactor: CGFloat = 0.3
     static let panFeedbackScaleFactor: CGFloat = 0.05
     static let panResetAnimationDuration: Double = 0.3
-    static let panMinVerticalDistanceForDismiss: CGFloat = 100.0
+    static let panMinVerticalDistanceForDismiss: CGFloat = 100
     static let panDismissHorizontalDominanceFactor: CGFloat = 0.5
 
     // Taps

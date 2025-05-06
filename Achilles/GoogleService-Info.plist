@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>655930252784-g2smqtm4t08lbuhf8jlrum6nfab1c8p6.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.655930252784-g2smqtm4t08lbuhf8jlrum6nfab1c8p6</string>
+	<key>API_KEY</key>
+	<string>AIzaSyA06ILXw-9fSOrEExUkuAFHCIC8rsWIgL4</string>
+	<key>GCM_SENDER_ID</key>
+	<string>655930252784</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>plzwork.Achilles</string>
+	<key>PROJECT_ID</key>
+	<string>throwbaks-may-2025</string>
+	<key>STORAGE_BUCKET</key>
+	<string>throwbaks-may-2025.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:655930252784:ios:eb0619f64d43939563d135</string>
+</dict>
+</plist>
