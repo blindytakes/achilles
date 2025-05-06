@@ -4,13 +4,18 @@ import FirebaseFirestore
 
 @MainActor
 class AuthViewModel: ObservableObject {
+    // MARK: - Published State
     @Published var user: User?
     @Published var errorMessage: String?
     @Published var isLoading = false
+    @Published var onboardingComplete = false
+    @Published var dailyWelcomeNeeded = false
 
+
+    // MARK: - Private Props
+    private var listener: ListenerRegistration?     // ← holds our snapshot listener
     private let auth = Auth.auth()
     private let db   = Firestore.firestore()
-
     private var authHandle: AuthStateDidChangeListenerHandle?
 
     init() {
@@ -18,12 +23,17 @@ class AuthViewModel: ObservableObject {
         authHandle = auth.addStateDidChangeListener { _, currentUser in
             print("🔑 auth state changed:", currentUser?.uid ?? "nil")
             self.user = currentUser
-            guard let _ = currentUser else { return }
+
+            // start listening for featureFlags.onboardingComplete
+            self.subscribeToUserDoc()
+
+            guard currentUser != nil else { return }
+
             Task {
                 do {
-                    // 1️⃣ Ensure the user doc exists (creates it if missing)
+                    // 1) Create doc if missing
                     try await self.ensureUserDocument()
-                    // 2️⃣ Then safely increment lastLoginAt + sessionCount
+                    // 2) bump lastLogin & sessionCount
                     try await self.updateLastLogin()
                 } catch {
                     print("🔥 Firestore error:", error)
@@ -32,12 +42,55 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Auth Methods
+    // MARK: - Firestore featureFlags Listener
+
+    func subscribeToUserDoc() {
+      listener?.remove()
+      guard let uid = user?.uid else { return }
+
+      listener = db.collection("users")
+        .document(uid)
+        .addSnapshotListener { snapshot, error in
+          guard let data = snapshot?.data() else { return }
+
+          // — featureFlags.onboardingComplete (already there) —
+          if let ff = data["featureFlags"] as? [String:Any],
+             let done = ff["onboardingComplete"] as? Bool {
+            DispatchQueue.main.async { self.onboardingComplete = done }
+          }
+
+          // — lastDailyWelcomeAt logic —
+          if let ts = data["lastDailyWelcomeAt"] as? Timestamp {
+            let lastDate = ts.dateValue()
+            // if it’s _not_ today then we need to show it again
+            let needs = !Calendar.current.isDateInToday(lastDate)
+            DispatchQueue.main.async { self.dailyWelcomeNeeded = needs }
+          } else {
+            // never shown it before → show it
+            DispatchQueue.main.async { self.dailyWelcomeNeeded = true }
+          }
+        }
+    }
+
+
+    func markDailyWelcomeDone() {
+      guard let uid = user?.uid else { return }
+      db.collection("users").document(uid)
+        .updateData(["lastDailyWelcomeAt": FieldValue.serverTimestamp()]) { error in
+          if let err = error {
+            print("⚠️ couldn’t mark daily welcome:", err)
+          } else {
+            DispatchQueue.main.async {
+              self.dailyWelcomeNeeded = false
+            }
+          }
+        }
+    }
+    
+    // MARK: - Auth Methods (signIn/signUp/resetPassword/signOut)
 
     func signIn(email: String, password: String) async {
-        isLoading = true
-        defer { isLoading = false }
-
+        isLoading = true; defer { isLoading = false }
         print("🔐 signIn with \(email)")
         do {
             let result = try await auth.signIn(withEmail: email, password: password)
@@ -50,17 +103,35 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func signUp(email: String, password: String, displayName: String) async {
-        isLoading = true
-        defer { isLoading = false }
+    
+    /// Call this once the user finishes the welcome/onboarding flow
+    func markOnboardingDone() {
+      guard let uid = user?.uid else { return }
+      db.collection("users")
+        .document(uid)
+        .updateData(["featureFlags.onboardingComplete": true]) { error in
+          if let err = error {
+            print("⚠️ couldn’t mark onboarding done:", err)
+          } else {
+            // locally flip the flag immediately if you like:
+            DispatchQueue.main.async {
+              self.onboardingComplete = true
+            }
+          }
+        }
+    }
 
+    
+    
+    func signUp(email: String, password: String, displayName: String) async {
+        isLoading = true; defer { isLoading = false }
         print("🆕 signUp with \(email)")
         do {
             let result = try await auth.createUser(withEmail: email, password: password)
             let changeRequest = result.user.createProfileChangeRequest()
             changeRequest.displayName = displayName
             try await changeRequest.commitChanges()
-            self.user = result.user
+            user = result.user
             print("✅ created user", result.user.uid, "– now writing Firestore doc")
             try await createUserDocument()
         } catch {
@@ -92,18 +163,18 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Firestore Helpers
+    // MARK: - Firestore Helpers (user doc lifecycle)
 
     private func createUserDocument() async throws {
         guard let uid = user?.uid else { return }
         print("📄 [Firestore] createUserDocument() for uid:", uid)
         let data: [String:Any] = [
             "displayName":       user?.displayName ?? "",
-            "onboardingComplete": false,
             "yearsViewed":       [],
             "lastLoginAt":       FieldValue.serverTimestamp(),
             "sessionCount":      1,
-            "featureFlags":      [:],
+            "featureFlags":      ["onboardingComplete": false],
+            "lastDailyWelcomeAt": FieldValue.serverTimestamp(),
             "usageDuration":     0,
             "pushToken":         "",
             "reminderSchedule":  "",
@@ -129,8 +200,8 @@ class AuthViewModel: ObservableObject {
         guard let uid = user?.uid else { return }
         print("⚙️ [Firestore] updateLastLogin() for uid:", uid)
         try await db.collection("users").document(uid).updateData([
-            "lastLoginAt":    FieldValue.serverTimestamp(),
-            "sessionCount":   FieldValue.increment(Int64(1))
+            "lastLoginAt":  FieldValue.serverTimestamp(),
+            "sessionCount": FieldValue.increment(Int64(1))
         ])
         print("✅ [Firestore] updated lastLoginAt & sessionCount")
     }

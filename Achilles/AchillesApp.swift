@@ -62,28 +62,35 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 @main
 struct AchillesApp: App {
-  // hook in our AppDelegate
   @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-
   @StateObject var authVM = AuthViewModel()
   @State private var photoStatus = PHPhotoLibrary.authorizationStatus()
 
-  var body: some Scene {
-    WindowGroup {
-      Group {
+    var body: some Scene {
+      WindowGroup {
         if authVM.user == nil {
-          LoginView().environmentObject(authVM)
+          LoginView()
+            .environmentObject(authVM)
+
+        } else if !authVM.onboardingComplete {
+          OnboardingView()
+            .environmentObject(authVM)
+
+        } else if authVM.dailyWelcomeNeeded {
+          DailyWelcomeView()
+            .environmentObject(authVM)
+
         } else if photoStatus != .authorized {
           AuthorizationRequiredView(status: photoStatus) {
             PHPhotoLibrary.requestAuthorization { new in
               DispatchQueue.main.async { photoStatus = new }
             }
           }
+
         } else {
-          ContentView().environmentObject(authVM)
+          ContentView()
+            .environmentObject(authVM)
         }
       }
     }
   }
-}
-
