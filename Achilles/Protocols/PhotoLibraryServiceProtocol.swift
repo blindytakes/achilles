@@ -9,8 +9,6 @@ protocol PhotoLibraryServiceProtocol {
         completion: @escaping (Result<[MediaItem], Error>) -> Void
     )
 
-    /// Request a UIImage for the given item at a target size.
-    /// Returns the PHImageRequestID if you need to cancel.
     @discardableResult
     func requestImage(
         for item: MediaItem,

@@ -21,7 +21,7 @@ protocol ImageCacheServiceProtocol {
     /// Retrieves a cached PHLivePhoto object for the given key (asset identifier).
     /// - Parameter key: The unique identifier for the PHAsset.
     /// - Returns: The cached `PHLivePhoto` if found, otherwise `nil`.
-    ///
+
     func cachedLivePhoto(for key: String) -> PHLivePhoto?
     /// - Parameters:
     ///   - livePhoto: The `PHLivePhoto` object to cache.

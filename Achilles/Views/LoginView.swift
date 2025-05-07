@@ -36,7 +36,7 @@ struct LoginView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(authVM.isLoading)
+                .disabled(authVM.isLoading || email.isEmpty || password.isEmpty)
 
                 HStack {
                     Button("Sign Up") { showSignup = true }
