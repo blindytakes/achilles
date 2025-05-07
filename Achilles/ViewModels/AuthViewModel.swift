@@ -11,32 +11,48 @@ class AuthViewModel: ObservableObject {
     @Published var onboardingComplete = false
     @Published var dailyWelcomeNeeded = false
 
-
     // MARK: - Private Props
     private var listener: ListenerRegistration?     // ← holds our snapshot listener
     private let auth = Auth.auth()
     private let db   = Firestore.firestore()
     private var authHandle: AuthStateDidChangeListenerHandle?
+    private var authTask: Task<Void, Error>?  // ← new property to track our async task
 
     init() {
         print("🔌 AuthViewModel init – setting up listener")
         authHandle = auth.addStateDidChangeListener { _, currentUser in
             print("🔑 auth state changed:", currentUser?.uid ?? "nil")
             self.user = currentUser
-
+            
+            // Cancel any existing auth task first
+            self.authTask?.cancel()
+            self.authTask = nil
+            
             // start listening for featureFlags.onboardingComplete
             self.subscribeToUserDoc()
 
             guard currentUser != nil else { return }
 
-            Task {
+            // Store the reference to the new task
+            self.authTask = Task {
                 do {
+                    // Check for cancellation
+                    try Task.checkCancellation()
+                    
                     // 1) Create doc if missing
                     try await self.ensureUserDocument()
+                    
+                    // Check again before next operation
+                    try Task.checkCancellation()
+                    
                     // 2) bump lastLogin & sessionCount
                     try await self.updateLastLogin()
                 } catch {
-                    print("🔥 Firestore error:", error)
+                    if error is CancellationError {
+                        print("🛑 Auth task cancelled")
+                    } else {
+                        print("🔥 Firestore error:", error)
+                    }
                 }
             }
         }
@@ -45,46 +61,45 @@ class AuthViewModel: ObservableObject {
     // MARK: - Firestore featureFlags Listener
 
     func subscribeToUserDoc() {
-      listener?.remove()
-      guard let uid = user?.uid else { return }
+        listener?.remove()
+        guard let uid = user?.uid else { return }
 
-      listener = db.collection("users")
-        .document(uid)
-        .addSnapshotListener { snapshot, error in
-          guard let data = snapshot?.data() else { return }
+        listener = db.collection("users")
+            .document(uid)
+            .addSnapshotListener { snapshot, error in
+                guard let data = snapshot?.data() else { return }
 
-          // — featureFlags.onboardingComplete (already there) —
-          if let ff = data["featureFlags"] as? [String:Any],
-             let done = ff["onboardingComplete"] as? Bool {
-            DispatchQueue.main.async { self.onboardingComplete = done }
-          }
+                // — featureFlags.onboardingComplete (already there) —
+                if let ff = data["featureFlags"] as? [String:Any],
+                   let done = ff["onboardingComplete"] as? Bool {
+                    DispatchQueue.main.async { self.onboardingComplete = done }
+                }
 
-          // — lastDailyWelcomeAt logic —
-          if let ts = data["lastDailyWelcomeAt"] as? Timestamp {
-            let lastDate = ts.dateValue()
-            // if it’s _not_ today then we need to show it again
-            let needs = !Calendar.current.isDateInToday(lastDate)
-            DispatchQueue.main.async { self.dailyWelcomeNeeded = needs }
-          } else {
-            // never shown it before → show it
-            DispatchQueue.main.async { self.dailyWelcomeNeeded = true }
-          }
-        }
+                // — lastDailyWelcomeAt logic —
+                if let ts = data["lastDailyWelcomeAt"] as? Timestamp {
+                    let lastDate = ts.dateValue()
+                    // if it's _not_ today then we need to show it again
+                    let needs = !Calendar.current.isDateInToday(lastDate)
+                    DispatchQueue.main.async { self.dailyWelcomeNeeded = needs }
+                } else {
+                    // never shown it before → show it
+                    DispatchQueue.main.async { self.dailyWelcomeNeeded = true }
+                }
+            }
     }
 
-
     func markDailyWelcomeDone() {
-      guard let uid = user?.uid else { return }
-      db.collection("users").document(uid)
-        .updateData(["lastDailyWelcomeAt": FieldValue.serverTimestamp()]) { error in
-          if let err = error {
-            print("⚠️ couldn’t mark daily welcome:", err)
-          } else {
-            DispatchQueue.main.async {
-              self.dailyWelcomeNeeded = false
+        guard let uid = user?.uid else { return }
+        db.collection("users").document(uid)
+            .updateData(["lastDailyWelcomeAt": FieldValue.serverTimestamp()]) { error in
+                if let err = error {
+                    print("⚠️ couldn't mark daily welcome:", err)
+                } else {
+                    DispatchQueue.main.async {
+                        self.dailyWelcomeNeeded = false
+                    }
+                }
             }
-          }
-        }
     }
     
     // MARK: - Auth Methods (signIn/signUp/resetPassword/signOut)
@@ -102,26 +117,23 @@ class AuthViewModel: ObservableObject {
             print("❌ signIn error:", error)
         }
     }
-
     
     /// Call this once the user finishes the welcome/onboarding flow
     func markOnboardingDone() {
-      guard let uid = user?.uid else { return }
-      db.collection("users")
-        .document(uid)
-        .updateData(["featureFlags.onboardingComplete": true]) { error in
-          if let err = error {
-            print("⚠️ couldn’t mark onboarding done:", err)
-          } else {
-            // locally flip the flag immediately if you like:
-            DispatchQueue.main.async {
-              self.onboardingComplete = true
+        guard let uid = user?.uid else { return }
+        db.collection("users")
+            .document(uid)
+            .updateData(["featureFlags.onboardingComplete": true]) { error in
+                if let err = error {
+                    print("⚠️ couldn't mark onboarding done:", err)
+                } else {
+                    // locally flip the flag immediately if you like:
+                    DispatchQueue.main.async {
+                        self.onboardingComplete = true
+                    }
+                }
             }
-          }
-        }
     }
-
-    
     
     func signUp(email: String, password: String, displayName: String) async {
         isLoading = true; defer { isLoading = false }
@@ -153,6 +165,11 @@ class AuthViewModel: ObservableObject {
 
     func signOut() {
         print("🔓 signing out")
+        
+        // Cancel the auth task first
+        authTask?.cancel()
+        authTask = nil
+        
         do {
             try auth.signOut()
             user = nil
@@ -206,4 +223,3 @@ class AuthViewModel: ObservableObject {
         print("✅ [Firestore] updated lastLoginAt & sessionCount")
     }
 }
-
