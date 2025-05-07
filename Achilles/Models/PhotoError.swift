@@ -42,7 +42,5 @@ enum PhotoError: Error, LocalizedError {
             return NSLocalizedString("An unknown error occurred.", comment: "Error message")
         }
     }
-
-    // Optional: Add specific error codes or recovery suggestions if applicable
 }
 

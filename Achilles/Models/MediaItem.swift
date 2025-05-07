@@ -1,9 +1,9 @@
 import Foundation
 import Photos
 
-// --- Data Model (Assuming this remains the same) ---
+// --- Data Model
 struct MediaItem: Identifiable, Hashable {
-    let id: String // Use asset local identifier
+    let id: String 
     let asset: PHAsset
 }
 extension MediaItem {

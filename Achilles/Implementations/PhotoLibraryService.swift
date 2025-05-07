@@ -21,7 +21,7 @@ class PhotoLibraryService: PhotoLibraryServiceProtocol {
             argumentArray: [start, end]
         )
         options.sortDescriptors = [
-            NSSortDescriptor(key: "creationDate", ascending: false)
+            NSSortDescriptor(key: "creationDate", ascending: true)
         ]
 
         let result = PHAsset.fetchAssets(with: options)

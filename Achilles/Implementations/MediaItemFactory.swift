@@ -2,7 +2,6 @@
 import Foundation
 import Photos
 
-/// Concrete implementation of the MediaItemFactoryProtocol.
 struct MediaItemFactory: MediaItemFactoryProtocol {
     /// Creates a MediaItem from the given PHAsset.
     /// - Parameter asset: The PHAsset to convert.

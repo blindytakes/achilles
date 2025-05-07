@@ -1,18 +1,16 @@
-// Suggested Path: Throwbaks/Achilles/Implementations/ImageCacheService.swift
 import UIKit
 import Foundation // Needed for NSCache
-import Photos // <-- **ADD THIS IMPORT**
+import Photos
 
-// Conforms to the UPDATED ImageCacheServiceProtocol
 class ImageCacheService: ImageCacheServiceProtocol {
 
     // MARK: - Nested Constants
     private struct CacheConstants {
         // UIImage Cache Limits
-        static let imageCacheCountLimit: Int = 100 // Thumbnail cache (Increased example)
+        static let imageCacheCountLimit: Int = 100 // Thumbnail cache
         static let imageCacheMaxCostMB: Int = 100 // In Megabytes
-        static let highResCacheCountLimit: Int = 15 // High-res UIImage cache (Increased example)
-        static let highResCacheMaxCostMB: Int = 300 // In Megabytes (Increased example)
+        static let highResCacheCountLimit: Int = 15 // High-res UIImage cache
+        static let highResCacheMaxCostMB: Int = 300 // In Megabytes
 
         // NEW: PHLivePhoto Cache Limits
         static let livePhotoCacheCountLimit: Int = 15 // Keep fewer Live Photos due to size
@@ -37,25 +35,17 @@ class ImageCacheService: ImageCacheServiceProtocol {
 
         // Configure **NEW** Live Photo cache
         livePhotoCache.countLimit = CacheConstants.livePhotoCacheCountLimit
-        // We'll rely primarily on count limit for Live Photos, setting cost to 0 when adding.
-        // livePhotoCache.totalCostLimit = ... // Optionally set a total cost limit
 
         print("💾 ImageCacheService initialized with 3 caches (Thumbnails, HighRes Images, Live Photos).")
     }
 
     // MARK: - ImageCacheServiceProtocol Implementation
 
-    // --- UIImage Methods (Mostly Unchanged) ---
 
     func cacheImage(_ image: UIImage, for assetIdentifier: String, isHighRes: Bool) {
         let cost = Int(image.size.width * image.size.height * image.scale * CGFloat(CacheConstants.assumedBytesPerPixel))
         let cacheToUse = isHighRes ? highResCache : imageCache
         let cacheName = isHighRes ? "high-res" : "thumbnail"
-
-        // Optional: Warning logic can remain if desired
-        // if cacheToUse.totalCostLimit > 0 && cacheToUse.totalCostLimit < cost {
-        //     print("⚠️ \(cacheName) cache limit potentially exceeded by new image cost (\(cost))...")
-        // }
 
         cacheToUse.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
         print("📦 [SVC] Cached \(cacheName) image for asset: \(assetIdentifier), cost: \(cost)")
@@ -101,3 +91,4 @@ class ImageCacheService: ImageCacheServiceProtocol {
         print("🧹 [SVC] All caches cleared.")
     }
 }
+
