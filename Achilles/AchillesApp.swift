@@ -61,18 +61,18 @@ struct AchillesApp: App {
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
   @StateObject private var authVM: AuthViewModel
   @State private var photoStatus = PHPhotoLibrary.authorizationStatus()
-  
-  init() {
-    // 1) Configure Firebase
-    FirebaseApp.configure()
     
-    // 2) Initialize AuthViewModel
-    _authVM = StateObject(wrappedValue: AuthViewModel())
+    init() {
+      FirebaseApp.configure()
+      // 1) Create one single instance…
+      let vm = AuthViewModel()
+      // 2) Initialize the StateObject from *that* instance
+      _authVM = StateObject(wrappedValue: vm)
+      // 3) Give the delegate the same instance, *without* ever reading authVM
+      appDelegate.authVM = vm
+    }
     
-    // 3) Connect AppDelegate to AuthViewModel (this will work because we use _authVM directly)
-    appDelegate.authVM = authVM
-  }
-  
+    
   var body: some Scene {
     WindowGroup {
       rootView
