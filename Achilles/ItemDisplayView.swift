@@ -1,3 +1,21 @@
+// ItemDisplayView.swift
+//
+// This view handles the display of individual media items (photos, live photos, and videos)
+// in a detail view with interactive features.
+//
+// Key features:
+// - Supports multiple media types (static images, live photos, videos)
+// - Provides zooming capability for photos with gesture support
+// - Shows location data when available with an interactive map button
+// - Displays a location info panel that can be shown/hidden
+// - Handles tap gestures to show/hide controls
+// - Manages efficient media loading with proper state handling
+//
+// The view adjusts its presentation based on media type and maintains proper
+// lifecycle management with memory warnings handling and notification observers.
+// It coordinates with the parent view for state changes like showing/hiding UI elements
+// and provides appropriate loading and error states.
+
 import SwiftUI
 import Photos
 import AVKit

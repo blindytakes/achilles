@@ -1,4 +1,21 @@
-// Suggested Path: Throwbaks/Achilles/Protocols/ImageCacheServiceProtocol.swift
+// ImageCacheServiceProtocol.swift
+//
+// This protocol defines the interface for a caching service that handles
+// different types of media assets (images and live photos) to improve app performance.
+//
+// Key features:
+// - Manages separate caches for different image resolutions:
+//   - Thumbnail/low-resolution images for grid views
+//   - High-resolution images for detailed viewing
+// - Supports caching of PHLivePhoto objects for live photo content
+// - Provides methods to store and retrieve cached items by asset identifier
+// - Includes cache management functionality to clear memory when needed
+//
+// The protocol enables efficient memory usage by allowing the app to:
+// - Avoid redundant loading of the same assets
+// - Use appropriate resolution images for different UI contexts
+// - Free memory resources when system memory is constrained
+
 import UIKit
 import Foundation // Keep if other parts rely on it, though NSCache is Foundation
 import Photos // <-- **ADD THIS IMPORT**

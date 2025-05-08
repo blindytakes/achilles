@@ -1,3 +1,20 @@
+// Date+Extensions.swift
+//
+// This file provides extensions to the Date type with custom formatting options
+// for displaying dates in human-readable formats with proper ordinal indicators.
+//
+// Key features:
+// - Efficiently reuses DateFormatter instances as static properties
+// - Provides ordinal suffix calculation (st, nd, rd, th) for day numbers
+// - Offers several formatting options:
+//   - monthDayWithOrdinal(): "April 27th"
+//   - monthDayWithOrdinalAndYear(): "April 27th, 2025"
+//   - longDateShortTime(): "April 27, 2025 at 9:22 PM"
+//   - abbreviatedDateShortTime(): "Apr 27, 2025, 9:22 PM"
+//
+// These extensions enhance readability for date displays throughout the app
+// while following best practices for DateFormatter usage to maintain performance.
+
 import Foundation
 
 extension Date {

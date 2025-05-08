@@ -1,3 +1,22 @@
+// LoginView.swift
+//
+// This view provides the main authentication interface for users to sign into the app,
+// with options to create a new account or reset a forgotten password.
+//
+// Key features:
+// - Collects user credentials:
+//   - Email address (with appropriate keyboard type)
+//   - Password (using secure entry)
+// - Validates input fields are non-empty before enabling submission
+// - Shows loading indicator during authentication attempts
+// - Displays error messages when authentication fails
+// - Provides navigation to related authentication flows:
+//   - Sign up for new account creation
+//   - Password reset for account recovery
+//
+// The view serves as the central entry point to the app for returning users
+// and coordinates with AuthViewModel to handle authentication operations.
+
 import SwiftUI
 
 struct LoginView: View {

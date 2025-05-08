@@ -1,5 +1,20 @@
-// Throwbaks/Achilles/Models/PhotoError.swift
-
+// PhotoError.swift
+//
+// This enum defines a comprehensive set of error types that can occur during
+// photo library operations, providing structured error handling throughout the app.
+//
+// Key features:
+// - Categorizes photo-related errors into specific types:
+//   - Authorization errors (denied, restricted, limited)
+//   - Data retrieval errors (missing items, invalid URLs, corrupted data)
+//   - Calculation errors for date-based operations
+//   - Wrapper for underlying Photos framework errors
+// - Implements LocalizedError protocol for user-friendly error messages
+// - Supports optional detail parameters for improved debugging
+//
+// The enum enables consistent error handling across the app's photo operations,
+// with proper localization support for user-facing error messages and
+// sufficient detail for debugging and error reporting.
 import Foundation
 
 /// Errors that can occur during photo library operations within the Achilles app.

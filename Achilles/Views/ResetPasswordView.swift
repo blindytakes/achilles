@@ -1,3 +1,18 @@
+// ResetPasswordView.swift
+//
+// This view provides the user interface for requesting a password reset link,
+// allowing users who have forgotten their password to regain access to their account.
+//
+// Key features:
+// - Collects the user's email address with appropriate keyboard configuration
+// - Validates that the email field is non-empty before enabling submission
+// - Sends password reset request through the AuthViewModel
+// - Shows success feedback when the reset link has been sent
+// - Provides navigational elements including a title and cancel button
+//
+// The view uses SwiftUI's environment object pattern to communicate with the
+// authentication system and modern environment-based dismissal for navigation.
+
 import SwiftUI
 
 struct ResetPasswordView: View {

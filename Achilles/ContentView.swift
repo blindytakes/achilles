@@ -1,3 +1,23 @@
+// ContentView.swift
+//
+// This is the main entry point view for the app, handling photo library authorization
+// and displaying the appropriate content based on the current state.
+//
+// Key features:
+// - Manages photo library access permissions with different views for each state:
+//   - Request access when permissions aren't determined
+//   - Show instructions when access is denied/restricted
+//   - Display content when fully authorized
+// - Handles the initial photo library scan to find memories from past years
+// - Shows appropriate loading states during scanning
+// - Provides empty state feedback when no memories are found
+// - Includes the PagedYearsView component for navigating between years when memories exist
+//
+// The view coordinates with PhotoViewModel to handle authorization requests,
+// determine available content years, and select a default year (preferring 1 year ago).
+// It also manages the navigation UI and paging behavior between different years of memories.
+
+
 import SwiftUI
 import Photos // For PHAuthorizationStatus
 import UIKit // Needed for UIApplication below

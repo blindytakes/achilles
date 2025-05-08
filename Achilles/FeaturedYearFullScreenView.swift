@@ -1,4 +1,22 @@
-// Throwbaks/Achilles/Views/FeaturedYearFullScreenView.swift
+// FeaturedYearFullScreenView.swift
+//
+// This view displays a featured photo as a full-screen presentation with animated text overlays
+// and visual effects, typically shown when first accessing memories from a specific year.
+//
+// Key features:
+// - Displays a large background image with subtle brightness and scaling animations
+// - Presents year and date text with dynamic effects:
+//   - Custom "handwriting" animation that reveals the date text
+//   - Parallax motion effects on text elements
+// - Handles image loading with proper state management:
+//   - Supports preloaded images for better performance
+//   - Shows loading indicators while waiting for images
+//   - Properly cancels image loading tasks when view disappears
+// - Provides transition to the detail view via tap gesture
+//
+// The view coordinates with the parent view model to track animation states
+// and prevent unnecessary animations when revisiting previously animated years.
+// It includes a custom ViewModifier for the handwriting animation effect.
 
 import SwiftUI
 import Photos

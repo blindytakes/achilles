@@ -1,3 +1,29 @@
+// AchillesApp.swift
+//
+// This is the main application file that configures the app, handles Firebase setup,
+// manages push notifications, and controls the app's navigation flow.
+//
+// Key features:
+// - Initializes Firebase services during app startup
+// - Configures push notifications with Firebase Cloud Messaging (FCM)
+// - Manages authentication state through AuthViewModel
+// - Controls the app's navigation flow based on:
+//   - Authentication state (logged in/out)
+//   - Onboarding status
+//   - Daily welcome requirements
+//   - Photo library permissions
+// - Handles photo library authorization changes
+//
+// The file includes two main components:
+// 1. AppDelegate: Manages Firebase configuration, push notification permissions,
+//    and FCM token handling
+// 2. AchillesApp: The SwiftUI app structure that determines which view to display
+//    based on the current application state
+//
+// The app maintains proper coordination between the UIKit-based AppDelegate
+// and the SwiftUI app structure through careful state management.
+
+
 import SwiftUI
 import Firebase            // FirebaseCore
 import FirebaseAuth        // brings in `Auth`

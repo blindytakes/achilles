@@ -1,3 +1,23 @@
+// PhotoLibraryService.swift
+//
+// This service provides the concrete implementation of the PhotoLibraryServiceProtocol,
+// handling interactions with the device's photo library to retrieve media items.
+//
+// Key features:
+// - Fetches media items from a specific date:
+//   - Creates date predicates to find items from a given day
+//   - Sorts results by creation date
+//   - Converts PHAssets to app-specific MediaItem instances
+// - Requests images from the photo library:
+//   - Supports specific sizing and content mode options
+//   - Returns PHImageRequestID for cancellation support
+//   - Provides proper error handling through Result type
+//
+// The service acts as the primary gateway between the app and the system's
+// photo library, using PHCachingImageManager for efficient image retrieval
+// and caching of requested images.
+
+
 import Foundation
 import Photos
 import UIKit

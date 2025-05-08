@@ -1,4 +1,18 @@
-// Throwbaks/Achilles/Views/ErrorYearView.swift
+// ErrorYearView.swift
+//
+// This view provides error feedback when loading photos for a specific year fails,
+// displaying an error message and offering a retry option.
+//
+// Key features:
+// - Shows a visual error indicator with an exclamation triangle icon
+// - Displays both a generic error title and the specific error message
+// - Provides a retry button that triggers the viewModel to attempt reloading
+// - Uses a full-screen layout to replace the normal content view
+//
+// The view maintains a reference to both the viewModel (for retry functionality)
+// and the specific year that failed to load, enabling targeted reload attempts.
+
+
 import SwiftUI
 import Photos
 

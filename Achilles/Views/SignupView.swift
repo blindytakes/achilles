@@ -1,3 +1,22 @@
+// SignupView.swift
+//
+// This view provides the user interface for creating a new account in the app,
+// collecting name, email, and password information.
+//
+// Key features:
+// - Collects required registration information:
+//   - User's display name
+//   - Email address (with appropriate keyboard type)
+//   - Password (using secure entry)
+// - Validates input fields are non-empty before enabling submission
+// - Handles account creation through the AuthViewModel
+// - Provides navigation with a title and cancel button
+// - Automatically dismisses the view upon successful account creation
+//
+// The view communicates with the AuthViewModel through the environment object
+// pattern to execute the signup operation and handle any potential errors.
+
+
 import SwiftUI
 
 struct SignupView: View {

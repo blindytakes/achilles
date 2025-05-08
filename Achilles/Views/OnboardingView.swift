@@ -1,3 +1,18 @@
+// OnboardingView.swift
+//
+// This view provides a welcome onboarding experience for new users,
+// introducing them to the app's key features after successful account creation.
+//
+// Key features:
+// - Displays a welcome message with the app name
+// - Presents introductory information about the app
+// - Includes a prominent button to complete the onboarding process
+// - Communicates with AuthViewModel to track onboarding completion status
+//
+// The view is designed to be shown only once after initial account creation
+// or login, helping new users understand the app's functionality before
+// proceeding to the main content.
+
 import SwiftUI
 
 struct OnboardingView: View {

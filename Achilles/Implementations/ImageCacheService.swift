@@ -1,3 +1,23 @@
+// ImageCacheService.swift
+//
+// This service provides a concrete implementation of the ImageCacheServiceProtocol,
+// managing multiple caches for different types of media assets to optimize performance.
+//
+// Key features:
+// - Maintains three separate NSCache instances:
+//   - Thumbnail cache: For low-resolution grid display images (100 images, 100MB limit)
+//   - High-resolution cache: For detailed view images (15 images, 300MB limit)
+//   - Live photo cache: For PHLivePhoto objects (15 items limit)
+// - Implements intelligent cost calculation for images based on dimensions
+// - Provides methods to store and retrieve assets from appropriate caches
+// - Includes comprehensive cache management with memory clearing
+// - Features detailed logging for cache operations to aid in debugging
+//
+// The service balances memory usage with performance by using different
+// cache settings for different types of media, prioritizing thumbnails
+// for grid performance while limiting high-resolution and live photo storage.
+
+
 import UIKit
 import Foundation // Needed for NSCache
 import Photos

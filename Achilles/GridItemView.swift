@@ -1,3 +1,21 @@
+// GridItemView.swift
+//
+// This view displays individual media items (photos or videos) in a grid layout
+// with thumbnail images and media-specific indicators.
+//
+// Key features:
+// - Asynchronously loads and displays thumbnails with a loading placeholder
+// - Supports tap interactions with visual feedback (scale animation) and haptic feedback
+// - Displays special indicators for different media types:
+//   - Video duration badge for video assets
+// - Handles image appearance with a smooth fade-in animation
+// - Maintains efficient memory usage by loading appropriately sized thumbnails
+//
+// The view is designed to be used within collection/grid layouts and provides
+// a consistent presentation for different types of media assets while
+// maintaining good performance through proper image loading techniques.
+
+
 import SwiftUI
 import Photos
 

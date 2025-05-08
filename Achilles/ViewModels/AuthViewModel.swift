@@ -1,3 +1,29 @@
+// AuthViewModel.swift
+//
+// This view model handles all authentication-related functionality and user state management,
+// coordinating between Firebase Authentication and Firestore for a complete user experience.
+//
+// Key features:
+// - Manages the current user authentication state
+// - Handles core authentication operations:
+//   - Sign in with email/password
+//   - New account creation
+//   - Password reset
+//   - Sign out
+// - Maintains user-related flags and preferences:
+//   - Onboarding completion status
+//   - Daily welcome status
+// - Manages Firestore operations:
+//   - User document creation for new accounts
+//   - Login session tracking
+//   - Feature flag persistence
+//   - Push notification token management
+//
+// The view model employs proper async/await patterns for Firebase operations,
+// handles task cancellation appropriately, and uses Firestore listeners
+// to keep the UI in sync with the backend data.
+
+
 import Foundation
 import FirebaseAuth
 import FirebaseFirestore
