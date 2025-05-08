@@ -225,7 +225,7 @@ struct FullScreenMapView: View {
                         .lineLimit(1)
                     
                     if let date = date {
-                        Text(date.formatAbbreviatedDateShortTime()) 
+                        Text(date.abbreviatedDateShortTime())
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }

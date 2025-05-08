@@ -75,7 +75,7 @@ struct LoadedYearContentView: View {
         var components = calendar.dateComponents([.year, .month, .day], from: today)
         components.year = (components.year ?? 0) - yearsAgo
         guard let pastDate = calendar.date(from: components) else { return "" }
-        return pastDate.formatMonthDayOrdinalAndYear()
+        return pastDate.monthDayWithOrdinalAndYear()
     }
 
     var allGridItems: [MediaItem] {

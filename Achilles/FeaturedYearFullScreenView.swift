@@ -212,7 +212,7 @@ struct FeaturedYearFullScreenView: View {
 
                             // Date label with animation
                             if let date = item.asset.creationDate {
-                                let dateTextView = Text(date.formatMonthDayOrdinalAndYear())
+                                let dateTextView = Text(date.monthDayWithOrdinalAndYear())
                                     .font(.custom(dateFontName, size: dateLabelFontSize))
                                     // ... (existing modifiers) ...
                                     .foregroundColor(.white)

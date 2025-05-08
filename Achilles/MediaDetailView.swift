@@ -118,7 +118,7 @@ struct MediaDetailView: View {
 
     private func titleForCurrentItem() -> String {
         guard let date = currentItem()?.asset.creationDate else { return "Detail" }
-        return date.formatLongDateShortTime()
+        return date.longDateShortTime()
     }
 
     @ViewBuilder
