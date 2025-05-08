@@ -92,6 +92,7 @@ struct LoadedYearContentView: View {
                             .padding(.top, 16)
 
                         Text(formattedDate)
+                            .font(.system(size: 20, weight: .regular))  
                             .scaleEffect(dateAppeared ? (dateBounce ? dateBounceScale : 1) : dateAppearScale)
                             .rotationEffect(dateAppeared ? .zero : .degrees(dateAppearRotation))
                             .animation(.spring(response: dateSpringResponse, dampingFraction: dateSpringDamping),
@@ -101,21 +102,40 @@ struct LoadedYearContentView: View {
                     }
                     .padding(.bottom, 12)
                     // Trigger the date animation when the splash goes away
-                    .onChange(of: hasDismissedSplash) { didDismiss in
-                        guard didDismiss, !didAnimateDate else { return }
+                    .onChange(of: hasDismissedSplash) { oldValue, newValue in
+                        guard newValue, !didAnimateDate else { return }
                         didAnimateDate = true
-                        withAnimation {
+                        
+                        // Use explicit animation parameters for initial appearance
+                        withAnimation(.spring(
+                            response: dateSpringResponse,
+                            dampingFraction: dateSpringDamping
+                        )) {
                             dateAppeared = true
                         }
+                        
+                        // Delay the bounce effect
                         DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceDelay) {
-                            withAnimation { dateBounce = true }
+                            // Explicit animation for bounce start
+                            withAnimation(.spring(
+                                response: dateSpringResponse,
+                                dampingFraction: dateSpringDamping
+                            )) {
+                                dateBounce = true
+                            }
+                            
+                            // Reset the bounce effect
                             DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceEnd) {
-                                withAnimation { dateBounce = false }
+                                withAnimation(.spring(
+                                    response: dateSpringResponse,
+                                    dampingFraction: dateSpringDamping
+                                )) {
+                                    dateBounce = false
+                                }
                             }
                         }
                     }
                 }
-
                 // Your grid
                 LazyVGrid(columns: columns, spacing: 4) {
                     ForEach(allGridItems, id: \.id) { item in
