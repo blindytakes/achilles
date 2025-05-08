@@ -1,4 +1,31 @@
-// MediaDetailView.swift
+//
+//  MediaDetailView.swift
+//  Achilles
+//
+//  Created by [Your Name] on May 8, 2025.
+//  Updated by [Your Name] on May 8, 2025.
+//
+//  Displays a full‐screen, paged detail view for a single year’s worth of media items.
+//  Features:
+//    • Conditional use of NavigationStack (iOS 16+) with fallback to NavigationView.
+//    • Opens at the tapped photo via selectedItemID → currentItemIndex on appear.
+//    • Async video loading & playback driven by `.task(id: currentItem()?.id)`.
+//    • Share integration using a unified ShareState enum (idle, loading, ready).
+//    • Extracted subviews for clarity: PagedMediaView and MediaShareButton.
+//    • Adaptive styling: systemBackground & dynamic accentColor based on colorScheme.
+//    • Share‐sheet presentation bound to `shareState == .ready`, resetting on dismiss.
+//
+//  Responsibilities:
+//    1. Manage paging through `itemsForYear`.
+//    2. Load and play videos via `viewModel.requestVideoURL`.
+//    3. Present share sheet for images and videos.
+//    4. Toggle controls and optional location panel on single tap.
+//
+//  See also:
+//    • PagedMediaView.swift
+//    • MediaShareButton.swift
+//    • ActivityViewControllerRepresentable.swift
+//
 
 import SwiftUI
 import Photos
