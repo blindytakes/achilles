@@ -43,6 +43,8 @@ struct ItemDisplayView: View {
     // MARK: - Internal State
     @State private var viewState: DetailViewState = .loading
     @State private var zoomScale: CGFloat = 1.0
+    
+    
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Constants
@@ -95,17 +97,18 @@ struct ItemDisplayView: View {
                                          y: locationButtonBottomPadding)
                         .zIndex(locationButtonZIndex)
                 }
-
                 // 3) Location info panel
-                if showInfoPanel, item.asset.location != nil {
-                    LocationInfoPanelView(asset: item.asset)
-                        .frame(width: geometry.size.width - locationPanelHorizontalMargin * 2)
-                        .frame(maxHeight: min(geometry.size.height * locationPanelHeightFactor,
-                                              locationPanelMaxHeight))
-                        .position(
-                            x: geometry.size.width * locationPanelPositionXFactor,
-                            y: geometry.size.height * locationPanelPositionYFactor
-                        )
+                if showInfoPanel, let location = item.asset.location {
+                    LocationInfoPanelView(
+                      asset: item.asset,
+                      viewModel: viewModel,
+                      onDismiss: {
+                        // hide the panel when user taps the “X”
+                        withAnimation {
+                          showInfoPanel = false
+                        }
+                      }
+                    )
                         .transition(.opacity.combined(with: .offset(y: geometry.size.height * 0.1)))
                         .zIndex(locationPanelZIndex)
                 }

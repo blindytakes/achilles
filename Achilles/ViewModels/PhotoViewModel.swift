@@ -36,7 +36,6 @@ class PhotoViewModel: ObservableObject {
     
     let selector: FeaturedSelectorServiceProtocol
 
-
     // MARK: - Published Properties for UI
     @Published var pageStateByYear: [Int: PageState] = [:]
     @Published var availableYearsAgo: [Int] = []
@@ -514,6 +513,42 @@ class PhotoViewModel: ObservableObject {
     func presentLimitedLibraryPicker() { print("⚠️ Placeholder: Would present limited library picker here.") }
 
     // MARK: - Private Helper Functions
+    
+    // MARK: - Address Lookup
+    /// Reverse‑geocodes an asset’s location, caching the result so we only ever do it once.
+    private let geocoder = CLGeocoder()
+
+    func placemark(for asset: PHAsset) async -> String {
+        let id = asset.localIdentifier
+
+        // 1) Cache hit?
+        if let cached = imageCacheService.cachedPlacemark(for: id) {
+            return cached
+        }
+
+        // 2) Build address or fallback
+        let address: String
+        if let loc = asset.location {
+            do {
+                let places = try await geocoder.reverseGeocodeLocation(loc)
+                let comps = [places.first?.name,
+                             places.first?.locality,
+                             places.first?.administrativeArea]
+                             .compactMap { $0 }
+                address = comps.isEmpty ? "Nearby Location"
+                                        : comps.joined(separator: ", ")
+            } catch {
+                address = "Address not found"
+            }
+        } else {
+            address = "No Location Data"
+        }
+
+        // 3) Cache & return
+        imageCacheService.cachePlacemark(address, for: id)
+        return address
+    }
+
     private func calculateDateRange(yearsAgo: Int, calendar: Calendar, today: Date) -> (start: Date, end: Date)? {
         var components = calendar.dateComponents([.year, .month, .day], from: today); components.year = (components.year ?? calendar.component(.year, from: today)) - yearsAgo; guard let targetDate = calendar.date(from: components) else { print("❌ Error: Could not calculate target date for \(yearsAgo) years ago."); return nil }; let startOfDay = calendar.startOfDay(for: targetDate); guard let endOfDay = calendar.date(byAdding: .day, value: Constants.daysToAddForDateRangeEnd, to: startOfDay) else { print("❌ Error: Could not calculate end of day for target date."); return nil }; return (startOfDay, endOfDay)
     }

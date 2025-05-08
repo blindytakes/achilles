@@ -45,6 +45,8 @@ class ImageCacheService: ImageCacheServiceProtocol {
     private let highResCache = NSCache<NSString, UIImage>()     // For high-res UIImages
     private let livePhotoCache = NSCache<NSString, PHLivePhoto>() // ** NEW: For PHLivePhoto objects **
 
+    private var placemarkCache = [String:String]()
+    
     // MARK: - Initialization
     init() {
         // Configure UIImage caches
@@ -55,7 +57,7 @@ class ImageCacheService: ImageCacheServiceProtocol {
 
         // Configure **NEW** Live Photo cache
         livePhotoCache.countLimit = CacheConstants.livePhotoCacheCountLimit
-
+        print("💾 Also initialized placemark cache")
         print("💾 ImageCacheService initialized with 3 caches (Thumbnails, HighRes Images, Live Photos).")
     }
 
@@ -82,7 +84,7 @@ class ImageCacheService: ImageCacheServiceProtocol {
         return nil
     }
 
-    // --- PHLivePhoto Methods (NEW) ---
+    // --- PHLivePhoto Methods  ---
 
     func cachedLivePhoto(for key: String) -> PHLivePhoto? {
         let nsKey = key as NSString
@@ -100,6 +102,15 @@ class ImageCacheService: ImageCacheServiceProtocol {
         livePhotoCache.setObject(livePhoto, forKey: nsKey, cost: cost)
         print("📦 [SVC] Cached Live Photo for asset: \(key), cost: \(cost)")
     }
+    
+    func cachedPlacemark(for assetIdentifier: String) -> String? {
+        return placemarkCache[assetIdentifier]
+    }
+    
+    func cachePlacemark(_ placemark: String, for assetIdentifier: String) {
+        placemarkCache[assetIdentifier] = placemark
+        print("📦 [SVC] Cached placemark for asset \(assetIdentifier): “\(placemark)”")
+    }
 
     // --- Clear Cache Method (Updated) ---
 
@@ -107,7 +118,8 @@ class ImageCacheService: ImageCacheServiceProtocol {
         print("🧹 [SVC] Clearing ALL caches (thumbnails, high-res images, live photos)...")
         imageCache.removeAllObjects()
         highResCache.removeAllObjects()
-        livePhotoCache.removeAllObjects() // <-- ** ADDED clearing for the new cache **
+        livePhotoCache.removeAllObjects()
+        placemarkCache.removeAll()
         print("🧹 [SVC] All caches cleared.")
     }
 }

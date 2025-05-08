@@ -47,4 +47,12 @@ protocol ImageCacheServiceProtocol {
     
     /// Removes all objects from all managed caches (e.g., UIImage, PHLivePhoto).
     func clearCache()
+    /// Retrieves a cached placemark string for the given asset ID, if one exists.
+    /// 
+    func cachedPlacemark(for assetIdentifier: String) -> String?
+
+    /// Stores a placemark string (e.g. “Central Park, New York, NY”) for the given asset ID.
+    func cachePlacemark(_ placemark: String, for assetIdentifier: String)
+    
+    
 }
