@@ -10,14 +10,14 @@ class AuthViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var onboardingComplete = false
     @Published var dailyWelcomeNeeded = false
-
+    
     // MARK: - Private Props
     private var listener: ListenerRegistration?     // ← holds our snapshot listener
     private let auth = Auth.auth()
     private let db   = Firestore.firestore()
     private var authHandle: AuthStateDidChangeListenerHandle?
     private var authTask: Task<Void, Error>?  // ← new property to track our async task
-
+    
     init() {
         print("🔌 AuthViewModel init – setting up listener")
         authHandle = auth.addStateDidChangeListener { _, currentUser in
@@ -30,9 +30,9 @@ class AuthViewModel: ObservableObject {
             
             // start listening for featureFlags.onboardingComplete
             self.subscribeToUserDoc()
-
+            
             guard currentUser != nil else { return }
-
+            
             // Store the reference to the new task
             self.authTask = Task {
                 do {
@@ -57,24 +57,24 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-
+    
     // MARK: - Firestore featureFlags Listener
-
+    
     func subscribeToUserDoc() {
         listener?.remove()
         guard let uid = user?.uid else { return }
-
+        
         listener = db.collection("users")
             .document(uid)
             .addSnapshotListener { snapshot, error in
                 guard let data = snapshot?.data() else { return }
-
+                
                 // — featureFlags.onboardingComplete (already there) —
                 if let ff = data["featureFlags"] as? [String:Any],
                    let done = ff["onboardingComplete"] as? Bool {
                     DispatchQueue.main.async { self.onboardingComplete = done }
                 }
-
+                
                 // — lastDailyWelcomeAt logic —
                 if let ts = data["lastDailyWelcomeAt"] as? Timestamp {
                     let lastDate = ts.dateValue()
@@ -87,7 +87,7 @@ class AuthViewModel: ObservableObject {
                 }
             }
     }
-
+    
     func markDailyWelcomeDone() {
         guard let uid = user?.uid else { return }
         db.collection("users").document(uid)
@@ -103,7 +103,7 @@ class AuthViewModel: ObservableObject {
     }
     
     // MARK: - Auth Methods (signIn/signUp/resetPassword/signOut)
-
+    
     func signIn(email: String, password: String) async {
         isLoading = true; defer { isLoading = false }
         print("🔐 signIn with \(email)")
@@ -151,7 +151,7 @@ class AuthViewModel: ObservableObject {
             print("❌ signUp error:", error)
         }
     }
-
+    
     func resetPassword(email: String) async {
         print("🔄 resetPassword for", email)
         do {
@@ -162,7 +162,7 @@ class AuthViewModel: ObservableObject {
             print("❌ resetPassword error:", error)
         }
     }
-
+    
     func signOut() {
         print("🔓 signing out")
         
@@ -179,9 +179,9 @@ class AuthViewModel: ObservableObject {
             print("❌ signOut error:", error)
         }
     }
-
+    
     // MARK: - Firestore Helpers (user doc lifecycle)
-
+    
     private func createUserDocument() async throws {
         guard let uid = user?.uid else { return }
         print("📄 [Firestore] createUserDocument() for uid:", uid)
@@ -200,7 +200,7 @@ class AuthViewModel: ObservableObject {
         try await db.collection("users").document(uid).setData(data)
         print("✅ [Firestore] wrote users/\(uid)")
     }
-
+    
     private func ensureUserDocument() async throws {
         guard let uid = user?.uid else { return }
         print("🔍 [Firestore] ensureUserDocument() for uid:", uid)
@@ -212,7 +212,7 @@ class AuthViewModel: ObservableObject {
             print("🛑 doc already exists, skipping create")
         }
     }
-
+    
     private func updateLastLogin() async throws {
         guard let uid = user?.uid else { return }
         print("⚙️ [Firestore] updateLastLogin() for uid:", uid)
@@ -222,4 +222,22 @@ class AuthViewModel: ObservableObject {
         ])
         print("✅ [Firestore] updated lastLoginAt & sessionCount")
     }
+
+    func savePushToken(_ token: String) async {
+      guard let uid = user?.uid else { return }
+      do {
+        try await db.collection("users")
+                    .document(uid)
+                    .updateData(["pushToken": token])
+        print("✅ pushToken saved in ViewModel.")
+      } catch {
+        print("⚠️ ViewModel failed to save pushToken:", error)
+        // optionally propagate to UI:
+        errorMessage = error.localizedDescription
+      }
+    }
 }
+
+    
+    
+

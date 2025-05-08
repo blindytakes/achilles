@@ -2,20 +2,23 @@ import SwiftUI
 import Firebase            // FirebaseCore
 import FirebaseAuth        // brings in `Auth`
 import FirebaseMessaging   // brings in `Messaging`
-import FirebaseFirestore   // if you’re using Firestore anywhere
+import FirebaseFirestore   // if you're using Firestore anywhere
 import UserNotifications
 import PhotosUI            // for `PHPhotoLibrary`
 
-
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
+  // Add a reference to AuthViewModel
+  var authVM: AuthViewModel?
+  
   func application(_ application: UIApplication,
                    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-    FirebaseApp.configure()
-
+    // Firebase configuration moved to AchillesApp.init()
+    
     // 1) Ask permission for alerts/badges/sounds
     UNUserNotificationCenter.current().delegate = self
     UNUserNotificationCenter.current()
       .requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+        guard granted else { return }
         DispatchQueue.main.async {
           application.registerForRemoteNotifications()
         }
@@ -35,20 +38,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
   // This is called when FCM gives you (or refreshes) your token
   func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-    guard let fcmToken = fcmToken,
-          let uid = Auth.auth().currentUser?.uid else { return }
-
+    guard let fcmToken = fcmToken else { return }
     print("🔑 FCM token:", fcmToken)
-    // Save into Firestore under users/{uid}.pushToken
-    let db = Firestore.firestore()
-    db.collection("users").document(uid)
-      .updateData(["pushToken": fcmToken]) { error in
-        if let err = error {
-          print("⚠️ Couldn’t save pushToken:", err)
-        } else {
-          print("✅ pushToken saved.")
-        }
-      }
+    
+    // Forward to AuthViewModel if available
+    Task {
+      await authVM?.savePushToken(fcmToken)
+    }
   }
 
   // Optional: show notifications while app is foreground
@@ -62,35 +58,48 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 @main
 struct AchillesApp: App {
-  @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-  @StateObject var authVM = AuthViewModel()
+  @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+  @StateObject private var authVM: AuthViewModel
   @State private var photoStatus = PHPhotoLibrary.authorizationStatus()
-
-    var body: some Scene {
-      WindowGroup {
-        if authVM.user == nil {
-          LoginView()
-            .environmentObject(authVM)
-
-        } else if !authVM.onboardingComplete {
-          OnboardingView()
-            .environmentObject(authVM)
-
-        } else if authVM.dailyWelcomeNeeded {
-          DailyWelcomeView()
-            .environmentObject(authVM)
-
-        } else if photoStatus != .authorized {
-          AuthorizationRequiredView(status: photoStatus) {
-            PHPhotoLibrary.requestAuthorization { new in
-              DispatchQueue.main.async { photoStatus = new }
-            }
-          }
-
-        } else {
-          ContentView()
-            .environmentObject(authVM)
-        }
-      }
+  
+  init() {
+    // 1) Configure Firebase
+    FirebaseApp.configure()
+    
+    // 2) Initialize AuthViewModel
+    _authVM = StateObject(wrappedValue: AuthViewModel())
+    
+    // 3) Connect AppDelegate to AuthViewModel (this will work because we use _authVM directly)
+    appDelegate.authVM = authVM
+  }
+  
+  var body: some Scene {
+    WindowGroup {
+      rootView
+        .environmentObject(authVM)
+    }
+    .onChange(of: photoStatus) {
+      // Access photoStatus directly inside the closure
+      print("📸 Photo-library status is now \(photoStatus)")
     }
   }
+  
+  @ViewBuilder
+  private var rootView: some View {
+    if authVM.user == nil {
+      LoginView()
+    } else if !authVM.onboardingComplete {
+      OnboardingView()
+    } else if authVM.dailyWelcomeNeeded {
+      DailyWelcomeView()
+    } else if photoStatus != .authorized {
+      AuthorizationRequiredView(status: photoStatus) {
+        PHPhotoLibrary.requestAuthorization { new in
+          DispatchQueue.main.async { photoStatus = new }
+        }
+      }
+    } else {
+      ContentView()
+    }
+  }
+}
