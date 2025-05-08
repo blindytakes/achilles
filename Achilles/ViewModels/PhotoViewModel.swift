@@ -30,10 +30,12 @@ class PhotoViewModel: ObservableObject {
 
     // MARK: - Dependencies
     private let service: PhotoLibraryServiceProtocol // Keep if used elsewhere
-    private let selector: FeaturedSelectorServiceProtocol
     private let imageManager = PHCachingImageManager()
     private let imageCacheService: ImageCacheServiceProtocol
     private let factory: MediaItemFactoryProtocol
+    
+    let selector: FeaturedSelectorServiceProtocol
+
 
     // MARK: - Published Properties for UI
     @Published var pageStateByYear: [Int: PageState] = [:]

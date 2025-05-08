@@ -14,13 +14,13 @@ struct LoadedYearCarouselView: View {
     var body: some View {
         TabView {
             ForEach(sortedYears, id: \.self) { year in
-                if let items = allItemsByYear[year], let featured = pickFeaturedItem(from: items) {
+                if let items = allItemsByYear[year],
+                   let featured = viewModel.selector.pickFeaturedItem(from: items) {
+                    
                     FeaturedYearFullScreenView(
                         item: featured,
                         yearsAgo: year,
-                        onTap: {
-                            onSelectYear(year)
-                        },
+                        onTap: { onSelectYear(year) },
                         viewModel: viewModel
                     )
                     .tag(year)
@@ -28,7 +28,11 @@ struct LoadedYearCarouselView: View {
                         RoundedRectangle(cornerRadius: 0)
                             .strokeBorder(
                                 LinearGradient(
-                                    gradient: Gradient(colors: [Color.white.opacity(0.25), Color.clear, Color.white.opacity(0.25)]),
+                                    gradient: Gradient(colors: [
+                                        Color.white.opacity(0.25),
+                                        Color.clear,
+                                        Color.white.opacity(0.25)
+                                    ]),
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 ),
@@ -36,6 +40,14 @@ struct LoadedYearCarouselView: View {
                             )
                             .blendMode(.overlay)
                     )
+                } else {
+                    // Fallback for empty or missing data
+                    Color.black
+                        .overlay(
+                            Text("No photos from \(year) years ago")
+                                .foregroundColor(.white)
+                        )
+                        .tag(year)
                 }
             }
         }
@@ -43,11 +55,5 @@ struct LoadedYearCarouselView: View {
         .edgesIgnoringSafeArea(.all)
         .background(Color.black)
     }
-
-    private func pickFeaturedItem(from items: [MediaItem]) -> MediaItem? {
-        // Pick the first image (or customize logic here)
-        return items.first
-    }
 }
-
 
