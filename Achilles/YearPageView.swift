@@ -66,37 +66,4 @@ struct YearPageView: View {
 }
 
 
-// MARK: - Preview Provider (Requires Mock/Dummy Data - Update if needed)
-// Note: Previews might need significant updates now that YearLoader is removed
-// and YearPageView relies directly on PhotoViewModel state.
-// Commenting out for now unless you have mocks ready.
-/*
-#Preview {
-    // Create dummy instances needed by PhotoViewModel
-    // ... (Requires MockPhotoLibraryService, MockSelectorService, etc.) ...
-    let dummyService = MockPhotoLibraryService()
-    let dummySelector = MockSelectorService()
-    let dummyFactory = MockMediaItemFactory()
-    let dummyCache = ImageCacheService()
-
-    // Create a dummy PhotoViewModel
-    let dummyPhotoViewModel = PhotoViewModel(
-        service: dummyService,
-        selector: dummySelector,
-        imageCacheService: dummyCache,
-        factory: dummyFactory
-    )
-    // Set some initial state for preview
-    // dummyPhotoViewModel.pageStateByYear[3] = .loaded(featured: /* dummy item */, grid: [/* dummy items */])
-    dummyPhotoViewModel.pageStateByYear[3] = .loading // Or .loading, .empty, .error
-
-    // Return the YearPageView with dummy data
-    return YearPageView(
-        viewModel: dummyPhotoViewModel,
-        yearsAgo: 3
-    )
-    .padding()
-    .background(Color.gray.opacity(0.1))
-}
-*/
 

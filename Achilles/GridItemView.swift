@@ -10,12 +10,10 @@ struct GridItemView: View {
     @State private var isPressed = false
     @State private var showImage = false
 
-
     private var isLivePhoto: Bool {
       item.asset.mediaSubtypes.contains(.photoLive)
     }
 
-    
     private let itemFrameSize: CGFloat = 190
 
     var body: some View {

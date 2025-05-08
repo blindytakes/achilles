@@ -163,93 +163,101 @@ struct ItemDisplayView: View {
     }
 
     // MARK: - Main Content Switcher
-    private func mainContentSwitchView() -> AnyView {
+    @ViewBuilder
+    private func mainContentSwitchView() -> some View {
         switch item.asset.mediaType {
         case .image where item.asset.mediaSubtypes.contains(.photoLive):
-            return livePhotoView()
+            livePhotoView()
+
         case .image:
-            return staticImageView()
+            staticImageView()
+
         case .video:
             if let activePlayer = player {
-                // Just a padded VideoPlayer; no inner gestures
-                return AnyView(
-                    VideoPlayer(player: activePlayer)
-                )
+                VideoPlayer(player: activePlayer)
+                    .ignoresSafeArea()
             } else {
-                return AnyView(
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(1.5)
-                )
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(1.5)
             }
+
         default:
-            return AnyView(
-                unsupportedView(message: "Unsupported Media Type")
-            )
+            unsupportedView(message: "Unsupported Media Type")
         }
     }
 
-    private func livePhotoView() -> AnyView {
+
+    // MARK: - Live‑Photo Content
+    @ViewBuilder
+    private func livePhotoView() -> some View {
         switch viewState {
         case .loading:
-            return AnyView(
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .scaleEffect(1.5)
-            )
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(1.5)
+
         case .livePhoto(let livePhoto):
-            return AnyView(
-                ZoomableScrollView(
-                    contentType: .livePhoto,
-                    showInfoPanel: $showInfoPanel,
-                    controlsHidden: $controlsHidden,
-                    zoomScale: $zoomScale,
-                    dismissAction: { dismiss() }
-                ) {
-                    PHLivePhotoViewRepresentable(livePhoto: livePhoto)
-                }
-            )
+            ZoomableScrollView(
+                contentType: .livePhoto,
+                showInfoPanel: $showInfoPanel,
+                controlsHidden: $controlsHidden,
+                zoomScale: $zoomScale,
+                dismissAction: { dismiss() }
+            ) {
+                PHLivePhotoViewRepresentable(livePhoto: livePhoto)
+            }
+
         case .error(let msg):
-            return AnyView(errorView(message: msg))
+            errorView(message: msg)
+
         default:
-            return AnyView(errorView(message: "Internal state error"))
+            errorView(message: "Internal state error")
         }
     }
 
-    private func staticImageView() -> AnyView {
+    // MARK: - Static‑Image Content
+    @ViewBuilder
+    private func staticImageView() -> some View {
         switch viewState {
         case .loading:
-            return AnyView(
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .scaleEffect(1.5)
-            )
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(1.5)
+
         case .image(let uiImage):
-            return AnyView(
-                ZoomableScrollView(
-                    contentType: .image,
-                    showInfoPanel: $showInfoPanel,
-                    controlsHidden: $controlsHidden,
-                    zoomScale: $zoomScale,
-                    dismissAction: { dismiss() }
-                ) {
-                    GeometryReader { geometry in  // Add GeometryReader
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .interpolation(.high)
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .position(x: geometry.size.width / 2, y: geometry.size.height / 2 - 20)
-                            .background(Color.black)
-                    }
+            ZoomableScrollView(
+                contentType: .image,
+                showInfoPanel: $showInfoPanel,
+                controlsHidden: $controlsHidden,
+                zoomScale: $zoomScale,
+                dismissAction: { dismiss() }
+            ) {
+                GeometryReader { geometry in
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(
+                            width: geometry.size.width,
+                            height: geometry.size.height
+                        )
+                        .position(
+                            x: geometry.size.width / 2,
+                            y: geometry.size.height / 2 - 20
+                        )
+                        .background(Color.black)
                 }
-            )
+            }
+
         case .error(let msg):
-            return AnyView(errorView(message: msg))
+            errorView(message: msg)
+
         default:
-            return AnyView(errorView(message: "Internal state error"))
+            errorView(message: "Internal state error")
         }
     }
+
 
     // MARK: - Data Loading
     @MainActor
