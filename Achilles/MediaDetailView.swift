@@ -2,84 +2,114 @@
 
 import SwiftUI
 import Photos
+import PhotosUI
 import AVKit
-import UIKit          // For the share sheet
-import PhotosUI      // For PHLivePhotoViewRepresentable
+import UIKit
+
+// MARK: - Share State Management
+
+enum ShareState {
+    case idle
+    case loading
+    case ready(ShareableItem)
+}
+
+struct ShareableItem: Identifiable {
+    let id = UUID()
+    let items: [Any]
+}
+
+// MARK: - Main View
 
 struct MediaDetailView: View {
-    // MARK: - Inputs
+    // MARK: Inputs
     @ObservedObject var viewModel: PhotoViewModel
     let itemsForYear: [MediaItem]
     let selectedItemID: String
 
-    // MARK: - State
+    // MARK: State
     @State private var currentItemIndex: Int = 0
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
-    @State private var itemToShare: ShareableItem? = nil
-    @State private var isFetchingShareItem = false
+    @State private var shareState: ShareState = .idle
     @State private var showLocationPanel: Bool = false
     @State private var currentPlayer: AVPlayer? = nil
     @State private var currentPlayerItemURL: URL? = nil
     @State private var controlsHidden: Bool = false
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                TabView(selection: $currentItemIndex) {
-                    ForEach(Array(itemsForYear.enumerated()), id: \.element.id) { index, item in
-                        ItemDisplayView(
-                            viewModel: viewModel,
-                            item: item,
-                            player: currentPlayer,
-                            showInfoPanel: $showLocationPanel,
-                            controlsHidden: $controlsHidden,
-                            onSingleTap: {
-                                withAnimation(.easeInOut) {
-                                    controlsHidden.toggle()
-                                    showLocationPanel = false
-                                }
-                            }
-                        )
-                        .tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .background(Color.black)
-                .ignoresSafeArea(.container, edges: [.top, .bottom])
+        Group {
+            // STEP 1: Conditional NavigationStack on iOS 16+
+            if #available(iOS 16, *) {
+                NavigationStack { content }
+            } else {
+                NavigationView { content }
+                    .navigationViewStyle(.stack)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle(titleForCurrentItem())
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    shareButton()
-                }
+        }
+        // Adapt accent color based on color scheme
+        .accentColor(colorScheme == .dark ? .white : .blue)
+    }
+
+    // MARK: Extracted content
+
+    private var content: some View {
+        ZStack {
+            PagedMediaView(
+                items: itemsForYear,
+                currentIndex: $currentItemIndex,
+                viewModel: viewModel,
+                player: currentPlayer,
+                showLocationPanel: $showLocationPanel,
+                controlsHidden: $controlsHidden
+            )
+            .background(Color(.systemBackground))
+            .ignoresSafeArea(.container, edges: [.top, .bottom])
+            // STEP 4: jump to tapped photo on first appear
+            .onAppear {
+                currentItemIndex = itemsForYear
+                    .firstIndex { $0.id == selectedItemID } ?? 0
             }
-            .navigationBarHidden(controlsHidden)
-            .accentColor(.white)
+            // STEP 2: reload when the current item changes
+            .task(id: currentItem()?.id) {
+                updatePlayerForCurrentIndex()
+                showLocationPanel = false
+            }
         }
-        .navigationViewStyle(.stack)
-        .onAppear {
-            currentItemIndex = itemsForYear.firstIndex(where: { $0.id == selectedItemID }) ?? 0
-            updatePlayerForCurrentIndex()
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(titleForCurrentItem())
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Done") { dismiss() }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                MediaShareButton(
+                    shareState: $shareState,
+                    onShare: prepareAndShareCurrentItem,
+                    hasValidItem: currentItem() != nil
+                )
+            }
         }
-        .onChange(of: currentItemIndex) { _, _ in
-            updatePlayerForCurrentIndex()
-            showLocationPanel = false
-        }
+        .navigationBarHidden(controlsHidden)
         .onDisappear {
             currentPlayer?.pause()
         }
-        .sheet(item: $itemToShare) { shareable in
-            ActivityViewControllerRepresentable(activityItems: shareable.items)
-                .onDisappear { itemToShare = nil }
+        .sheet(
+            isPresented: Binding<Bool>(
+                get: { if case .ready = shareState { return true }; return false },
+                set: { if !$0 { shareState = .idle } }
+            ),
+            onDismiss: { /* analytics or cleanup */ }
+        ) {
+            if case .ready(let shareable) = shareState {
+                ActivityViewControllerRepresentable(activityItems: shareable.items)
+            }
         }
     }
 
     // MARK: - Player Management
+
     @MainActor
     private func updatePlayerForCurrentIndex() {
         guard let item = currentItem() else {
@@ -88,26 +118,27 @@ struct MediaDetailView: View {
             currentPlayerItemURL = nil
             return
         }
-        if item.asset.mediaType == .video {
-            let videoId = item.id
-            Task {
-                let url = await viewModel.requestVideoURL(for: item.asset)
-                guard currentItem()?.id == videoId,
-                      let validURL = url,
-                      validURL != currentPlayerItemURL
-                else { return }
-                let newPlayer = AVPlayer(url: validURL)
-                await MainActor.run {
-                    currentPlayer?.pause()
-                    currentPlayer = newPlayer
-                    currentPlayerItemURL = validURL
-                    currentPlayer?.play()
-                }
-            }
-        } else {
+
+        guard item.asset.mediaType == .video else {
             currentPlayer?.pause()
             currentPlayer = nil
             currentPlayerItemURL = nil
+            return
+        }
+
+        let videoId = item.id
+        Task {
+            let url = await viewModel.requestVideoURL(for: item.asset)
+            guard currentItem()?.id == videoId,
+                  let validURL = url,
+                  validURL != currentPlayerItemURL
+            else { return }
+
+            let newPlayer = AVPlayer(url: validURL)
+            currentPlayer?.pause()
+            currentPlayer = newPlayer
+            currentPlayerItemURL = validURL
+            currentPlayer?.play()
         }
     }
 
@@ -121,21 +152,13 @@ struct MediaDetailView: View {
         return date.longDateShortTime()
     }
 
-    @ViewBuilder
-    private func shareButton() -> some View {
-        Button { prepareAndShareCurrentItem() } label: {
-            if isFetchingShareItem {
-                ProgressView().tint(.white)
-            } else {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-        }
-        .disabled(currentItem() == nil || isFetchingShareItem)
-    }
+    // MARK: - Share Preparation
 
+    @MainActor
     private func prepareAndShareCurrentItem() {
-        guard let item = currentItem(), !isFetchingShareItem else { return }
-        isFetchingShareItem = true
+        guard let item = currentItem(), case .idle = shareState else { return }
+        shareState = .loading
+
         Task {
             var shareable: Any?
             switch item.asset.mediaType {
@@ -153,23 +176,71 @@ struct MediaDetailView: View {
             default:
                 break
             }
-            await MainActor.run {
-                isFetchingShareItem = false
-                if let valid = shareable {
-                    itemToShare = ShareableItem(items: [valid])
-                }
+
+            if let valid = shareable {
+                shareState = .ready(ShareableItem(items: [valid]))
+            } else {
+                shareState = .idle
             }
         }
     }
 }
 
+// MARK: - Extracted Subviews
 
+struct PagedMediaView: View {
+    let items: [MediaItem]
+    @Binding var currentIndex: Int
+    let viewModel: PhotoViewModel
+    let player: AVPlayer?
+    @Binding var showLocationPanel: Bool
+    @Binding var controlsHidden: Bool
 
-// MARK: - Share Sheet Helpers
-struct ShareableItem: Identifiable {
-    let id = UUID()
-    let items: [Any]
+    var body: some View {
+        TabView(selection: $currentIndex) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                ItemDisplayView(
+                    viewModel: viewModel,
+                    item: item,
+                    player: player,
+                    showInfoPanel: $showLocationPanel,
+                    controlsHidden: $controlsHidden
+                ) {
+                    withAnimation(.easeInOut) {
+                        controlsHidden.toggle()
+                        showLocationPanel = false
+                    }
+                }
+                .tag(index)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
 }
+
+struct MediaShareButton: View {
+    @Binding var shareState: ShareState
+    let onShare: () -> Void
+    let hasValidItem: Bool
+
+    private var canShare: Bool {
+        if case .idle = shareState { return hasValidItem }
+        return false
+    }
+
+    var body: some View {
+        Button(action: onShare) {
+            if case .loading = shareState {
+                ProgressView().tint(.white)
+            } else {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+        .disabled(!canShare)
+    }
+}
+
+// MARK: - Share Sheet Helper
 
 struct ActivityViewControllerRepresentable: UIViewControllerRepresentable {
     var activityItems: [Any]
@@ -181,6 +252,7 @@ struct ActivityViewControllerRepresentable: UIViewControllerRepresentable {
             applicationActivities: applicationActivities
         )
     }
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
