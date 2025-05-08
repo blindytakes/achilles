@@ -28,10 +28,14 @@ struct HandwritingAnimationModifier: ViewModifier {
     let duration: Double
     let delay: Double
     let yearsAgo: Int
+    
     @ObservedObject var viewModel: PhotoViewModel
+    
     @State private var progress: CGFloat = 0
     @State private var opacity: CGFloat = 0
     @State private var scale: CGFloat = 1.0
+
+
     private let fadeInDurationFactor: Double = 0.15
     private let writeOutDelayFactor: Double = 0.5
     private let gradientWidthFactor: CGFloat = 0.15
@@ -103,7 +107,7 @@ struct FeaturedYearFullScreenView: View {
     @State private var showLoadingTransition: Bool = false
     @State private var imageBrightness: Double = -0.1
     @State private var imageScale: CGFloat = 1.05
-    // <<< NEW: Task tracking for image loading initiated by this view >>>
+    @State private var transitionOpacity: Double = 1.0 // For transition fade-out animation
     @State private var imageLoadTask: Task<Void, Never>? = nil
 
     // MARK: - Constants
@@ -153,9 +157,30 @@ struct FeaturedYearFullScreenView: View {
         ZStack {
             // MARK: - Main content branch
             if showLoadingTransition, let currentImage = image {
-                // Transition view case
-                LoadingTransitionView(image: currentImage, onComplete: onTap)
-                    .transition(.opacity)
+                // Fix: Remove the duplicate if statement
+                ZStack {
+                    Color.black
+                        .ignoresSafeArea()
+                    
+                    Image(uiImage: currentImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(transitionOpacity)
+                        .ignoresSafeArea()
+                }
+                .onAppear {
+                    // Animate fade to 0
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        transitionOpacity = 0
+                    }
+                    
+                    // Call the original onTap after the fade
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        onTap()
+                    }
+                }
+                .transition(.opacity)
             } else {
                 // Regular view case
                 GeometryReader { geometry in
@@ -184,6 +209,8 @@ struct FeaturedYearFullScreenView: View {
                                 )
                                 .ignoresSafeArea()
                                 .onTapGesture {
+                                    // Reset the fade for consistent animation
+                                    transitionOpacity = 1.0
                                     withAnimation(.easeInOut(duration: imageTransitionDuration)) {
                                         showLoadingTransition = true
                                     }
