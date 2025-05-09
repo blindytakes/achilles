@@ -1,3 +1,28 @@
+// ZoomableScrollView.swift
+//
+// This component creates a zoomable, dismissible view for presenting media content
+// with complex gesture interactions.
+//
+// Key features:
+// - Image zooming with pinch gestures and double-tap
+// - Single tap to toggle UI controls
+// - Vertical swipe to dismiss
+// - Accurate gesture separation using directional analysis
+// - Content centering with dynamic content insets
+// - Performance optimizations for smooth scrolling and zooming
+//
+// The view is implemented as a UIViewRepresentable wrapping a UIScrollView
+// with custom gesture recognizers and delegate methods to handle the various
+// interaction patterns. It intelligently prevents gesture conflicts and
+// provides visual feedback during interactions.
+//
+// Supported content types:
+// - Static images
+// - Live photos (with specialized handling)
+//
+// The view includes optimizations for rendering performance and
+// smooth animation transitions.
+
 import SwiftUI
 import UIKit
 

@@ -1,3 +1,25 @@
+// LoadedYearContentView.swift
+//
+// This view handles the presentation of photos from a specific year in the past.
+// It has two main visual states:
+//
+// 1. Splash Screen: Initially shows a featured photo in full-screen mode
+//    until the user taps to dismiss it
+//
+// 2. Grid View: After splash dismissal, displays:
+//    - Header with years ago and formatted date (with entrance animation)
+//    - Photo grid showing the featured photo and additional photos
+//    - Footer message
+//
+// The view handles state transitions and animations:
+// - Manages the transition from splash to grid view
+// - Animates the date header with a spring and bounce effect
+// - Shows detail view when a photo is tapped
+// - Disables animations for grid items to prevent middle-to-edge loading effect
+//
+// All UI elements and animations are managed through SwiftUI's declarative syntax,
+// with efficient state tracking and smooth transitions between view states.
+
 import SwiftUI
 import Photos
 

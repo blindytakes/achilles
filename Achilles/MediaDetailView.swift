@@ -2,8 +2,6 @@
 //  MediaDetailView.swift
 //  Achilles
 //
-//  Created by [Your Name] on May 8, 2025.
-//  Updated by [Your Name] on May 8, 2025.
 //
 //  Displays a full‐screen, paged detail view for a single year’s worth of media items.
 //  Features:

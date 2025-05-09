@@ -1,4 +1,27 @@
-// Throwbaks/Achilles/Views/YearPageView.swift
+// YearPageView.swift
+//
+// This view displays photo content for a specific year in the past.
+//
+// YearPageView serves as a container that manages different states of content loading
+// for a particular year. It coordinates with a central PhotoViewModel to fetch, display,
+// and manage photos from the specified number of years ago.
+//
+// Key features:
+// - State management for yearly photo content (idle, loading, loaded, empty, error)
+// - Smooth transitions between different loading states with opacity animations
+// - Automatic content loading when the view appears
+// - Prefetching of adjacent years' content for smoother browsing experience
+// - Error handling with retry capabilities
+//
+// The view reacts to different content states:
+// - Shows a skeleton loading view during idle and loading states
+// - Displays the loaded content when photos are successfully retrieved
+// - Shows an empty state when no photos exist for the specified year
+// - Presents appropriate error messages with retry options when loading fails
+//
+// This approach centralizes state management in the main ViewModel while keeping
+// the view focused on presentation logic and user interactions.
+
 import SwiftUI
 import Photos
 

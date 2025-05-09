@@ -1,3 +1,32 @@
+
+// SkeletonView.swift
+//
+// A loading placeholder component that resembles the final content layout.
+//
+// This view provides a visual loading indicator that mimics the structure of
+// the loaded content, creating a smoother perceived transition when content loads.
+// It includes a customizable shimmer animation effect to indicate loading activity.
+//
+// Key features:
+// - Visual structure closely matching the LoadedYearContentView layout
+// - Shimmering animation effect to indicate content is loading
+// - Customizable animation parameters (duration, delay, bounce)
+// - Disabled interaction to prevent user actions during loading
+// - Smooth opacity transition when content becomes available
+//
+// The view consists of:
+// - A featured area at the top (simulates the primary photo)
+// - Grid layout below (simulates the photo grid)
+// - Redacted placeholders to create the skeleton effect
+// - Optional shimmer animation that moves across the placeholders
+//
+// The ShimmeringModifier is included to provide the animated gradient that
+// creates the shimmer effect, with parameters to control the animation behavior.
+// This can be extracted to a separate file for reuse across the application.
+//
+// This approach provides users with immediate visual feedback about the content structure
+// while data is being loaded, reducing perceived loading time and improving user experience.
+
 import SwiftUI
 
 struct SkeletonView: View {
