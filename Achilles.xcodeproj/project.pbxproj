@@ -55,10 +55,28 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		2A2727E02DCE44E500036656 /* Exceptions for "Achilles" folder in "AchillesTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Tests/AchillesTests/AchillesTests.swift,
+			);
+			target = 2A8092FC2D98828000EED088 /* AchillesTests */;
+		};
+		2A2727E62DCE44EA00036656 /* Exceptions for "Achilles" folder in "AchillesUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Tests/AchillesUITests/AchillesUITests.swift,
+				Tests/AchillesUITests/AchillesUITestsLaunchTests.swift,
+			);
+			target = 2A8093062D98828000EED088 /* AchillesUITests */;
+		};
 		2A80932B2D98CC7000EED088 /* Exceptions for "Achilles" folder in "Achilles" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Tests/AchillesTests/AchillesTests.swift,
+				Tests/AchillesUITests/AchillesUITests.swift,
+				Tests/AchillesUITests/AchillesUITestsLaunchTests.swift,
 			);
 			target = 2A8092EC2D98827F00EED088 /* Achilles */;
 		};
@@ -69,18 +87,10 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				2A80932B2D98CC7000EED088 /* Exceptions for "Achilles" folder in "Achilles" target */,
+				2A2727E02DCE44E500036656 /* Exceptions for "Achilles" folder in "AchillesTests" target */,
+				2A2727E62DCE44EA00036656 /* Exceptions for "Achilles" folder in "AchillesUITests" target */,
 			);
 			path = Achilles;
-			sourceTree = "<group>";
-		};
-		2A8093002D98828000EED088 /* AchillesTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AchillesTests;
-			sourceTree = "<group>";
-		};
-		2A80930A2D98828000EED088 /* AchillesUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AchillesUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -119,8 +129,6 @@
 				2A8232842DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf */,
 				2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */,
 				2A8092EF2D98827F00EED088 /* Achilles */,
-				2A8093002D98828000EED088 /* AchillesTests */,
-				2A80930A2D98828000EED088 /* AchillesUITests */,
 				2AEE43752DA013B800EA2836 /* Frameworks */,
 				2A8092EE2D98827F00EED088 /* Products */,
 			);
@@ -187,9 +195,6 @@
 			dependencies = (
 				2A8092FF2D98828000EED088 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				2A8093002D98828000EED088 /* AchillesTests */,
-			);
 			name = AchillesTests;
 			packageProductDependencies = (
 			);
@@ -209,9 +214,6 @@
 			);
 			dependencies = (
 				2A8093092D98828000EED088 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				2A80930A2D98828000EED088 /* AchillesUITests */,
 			);
 			name = AchillesUITests;
 			packageProductDependencies = (
