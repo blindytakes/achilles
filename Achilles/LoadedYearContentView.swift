@@ -1,32 +1,10 @@
-// LoadedYearContentView.swift
-//
-// This view handles the presentation of photos from a specific year in the past.
-// It has two main visual states:
-//
-// 1. Splash Screen: Initially shows a featured photo in full-screen mode
-//    until the user taps to dismiss it
-//
-// 2. Grid View: After splash dismissal, displays:
-//    - Header with years ago and formatted date (with entrance animation)
-//    - Photo grid showing the featured photo and additional photos
-//    - Footer message
-//
-// The view handles state transitions and animations:
-// - Manages the transition from splash to grid view
-// - Animates the date header with a spring and bounce effect
-// - Shows detail view when a photo is tapped
-//
-// All UI elements and animations are managed through SwiftUI's declarative syntax,
-// with efficient state tracking and smooth transitions between view states.
-
-
 import SwiftUI
 import Photos
 
 struct LoadedYearContentView: View {
     @ObservedObject var viewModel: PhotoViewModel
     let yearsAgo: Int
-
+    
     // MARK: - Computed properties
     private var pageState: PageState {
         viewModel.pageStateByYear[yearsAgo] ?? .idle
@@ -48,13 +26,13 @@ struct LoadedYearContentView: View {
         items.append(contentsOf: gridItems)
         return items
     }
-
+    
     // MARK: - Animation state
     @State private var didAnimateDate = false
     @State private var dateAppeared = false
     @State private var dateBounce = false
     @State private var selectedDetail: MediaItem?
-
+    
     // MARK: - Animation constants
     private let fadeDuration: Double = 1.0
     private let dateSpringResponse: Double = 0.7
@@ -64,7 +42,7 @@ struct LoadedYearContentView: View {
     private let dateAppearRotation: Double = -1
     private let dateAppearScale: CGFloat = 0.95
     private let dateBounceScale: CGFloat = 1.02
-
+    
     // MARK: - Date formatting
     private var formattedDate: String {
         let calendar = Calendar.current
@@ -73,13 +51,13 @@ struct LoadedYearContentView: View {
         guard let past = calendar.date(from: comps) else { return "" }
         return past.monthDayWithOrdinalAndYear()
     }
-
+    
     // MARK: - Grid layout
     private let columns = [
         GridItem(.flexible(), spacing: 5),
         GridItem(.flexible(), spacing: 5)
     ]
-
+    
     // MARK: - Grid view (always present underneath splash)
     private var gridView: some View {
         ScrollView {
@@ -90,9 +68,9 @@ struct LoadedYearContentView: View {
                         Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
                             .font(.largeTitle.bold())
                             .padding(.top, 16)
-
+                        
                         Text(formattedDate)
-                            .font(.system(size: 20, weight: .regular))  
+                            .font(.system(size: 20, weight: .regular))
                             .scaleEffect(dateAppeared ? (dateBounce ? dateBounceScale : 1) : dateAppearScale)
                             .rotationEffect(dateAppeared ? .zero : .degrees(dateAppearRotation))
                             .animation(.spring(response: dateSpringResponse, dampingFraction: dateSpringDamping),
@@ -136,52 +114,59 @@ struct LoadedYearContentView: View {
                         }
                     }
                 }
+                
                 // Your grid
                 LazyVGrid(columns: columns, spacing: 4) {
                     ForEach(allGridItems, id: \.id) { item in
-                        GridItemView(viewModel: viewModel, item: item) {
-                            selectedDetail = item
+                        withAnimation(nil) {
+                            GridItemView(viewModel: viewModel, item: item) {
+                                selectedDetail = item
+                            }
+                            .aspectRatio(1, contentMode: .fill)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
                         }
-                        .animation(nil, value: allGridItems)   // disable insertion animations
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                        .transaction { tx in tx.animation = nil }
                     }
                 }
                 .padding(.horizontal, 6)
-
+                
                 // Footer after splash
                 if hasDismissedSplash {
                     Text("Make More Memories!")
                         .font(.subheadline)
                         .padding(.vertical, 12)
                 }
-
+                
                 Spacer()
             }
             // Fade the grid in once splash is dismissed
             .opacity(hasDismissedSplash ? 1 : 0)
+            .animation(nil, value: hasDismissedSplash)
+            .transaction { tx in
+                tx.animation = nil
+                tx.disablesAnimations = true
+            }
         }
     }
-
+    
     var body: some View {
         ZStack {
             gridView
-
+            
             // Splash overlay
             if let featured = featuredItem, !hasDismissedSplash {
                 FeaturedYearFullScreenView(
                     item: featured,
                     yearsAgo: yearsAgo,
                     onTap: {
-                        withAnimation(.easeInOut(duration: fadeDuration)) {
-                            viewModel.markSplashDismissed(for: yearsAgo)
-                        }
+                        viewModel.markSplashDismissed(for: yearsAgo)
                     },
                     viewModel: viewModel,
                     preloadedImage: viewModel.getPreloadedFeaturedImage(for: yearsAgo)
                 )
                 .transition(.opacity)
+                .animation(.easeInOut(duration: fadeDuration), value: hasDismissedSplash)
             }
         }
         .sheet(item: $selectedDetail) { item in
@@ -194,4 +179,3 @@ struct LoadedYearContentView: View {
         .onDisappear { selectedDetail = nil }
     }
 }
-

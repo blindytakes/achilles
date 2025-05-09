@@ -46,12 +46,6 @@ struct GridItemView: View {
                     .scaledToFill()
                     .frame(width: itemFrameSize, height: itemFrameSize)
                     .clipped()
-                    .opacity(showImage ? 1 : 0)
-                    .onAppear {
-                        withAnimation(.easeIn(duration: 0.3)) {
-                            showImage = true
-                        }
-                    }
 
                 // Overlays for Live Photo and video duration
                 ZStack(alignment: .topLeading) {
