@@ -1,3 +1,23 @@
+// ContentView.swift
+//
+// This is the main entry point view for the app, handling photo library authorization
+// and displaying the appropriate content based on the current state.
+//
+// Key features:
+// - Manages photo library access permissions with different views for each state:
+//   - Request access when permissions aren't determined
+//   - Show instructions when access is denied/restricted
+//   - Display content when fully authorized
+// - Handles the initial photo library scan to find memories from past years
+// - Shows appropriate loading states during scanning
+// - Provides empty state feedback when no memories are found
+// - Includes the PagedYearsView component for navigating between years when memories exist
+//
+// The view coordinates with PhotoViewModel to handle authorization requests,
+// determine available content years, and select a default year (preferring 1 year ago).
+// It also manages the navigation UI and paging behavior between different years of memories.
+
+
 import SwiftUI
 import Photos // For PHAuthorizationStatus
 import UIKit // Needed for UIApplication below
@@ -5,6 +25,9 @@ import UIKit // Needed for UIApplication below
 struct ContentView: View {
     @StateObject private var viewModel = PhotoViewModel()
     @State private var selectedYearsAgo: Int?
+
+    // Constant for default year check
+    private let defaultTargetYear: Int = 1
 
     var body: some View {
         NavigationView {
@@ -14,117 +37,86 @@ struct ContentView: View {
                     // Pass the checkAuthorization function as the onRequest closure
                     AuthorizationRequiredView(
                         status: .notDetermined,
-                        onRequest: { viewModel.checkAuthorization() } // Fix 1: Pass closure
+                        onRequest: viewModel.checkAuthorization // Pass function directly
                     )
 
-                case .restricted, .denied, .limited: // Fix 2: Handle .limited here too
-                    // Pass the status. For these states, the internal buttons
-                    // handle actions (Open Settings, Manage Photos), so the onRequest
-                    // closure passed from here can be empty.
+                case .restricted, .denied, .limited:
+                    // Pass the status. Actions are handled internally by AuthorizationRequiredView
                     AuthorizationRequiredView(
                         status: viewModel.authorizationStatus,
-                        onRequest: { } // Fix 3: Pass empty closure, viewModel not needed here
-                        // NOTE: Make sure the ".limited" case inside AuthorizationRequiredView
-                        // uses viewModel.presentLimitedLibraryPicker() if you add that button back.
-                        // For now, this call just needs to compile.
+                        onRequest: {} // Empty closure needed
                     )
 
-                case .authorized: // Fix 4: Only proceed if fully authorized
+                case .authorized:
                     if viewModel.initialYearScanComplete {
                         if viewModel.availableYearsAgo.isEmpty {
+                            // Message when no content found after scan
                             Text("No past memories found for today's date.")
                                 .foregroundColor(.secondary)
-                                .navigationTitle("Memories")
+                                .navigationTitle("Memories") // Keep consistent title
                         } else {
+                            // Main content view
                             PagedYearsView(viewModel: viewModel, selectedYearsAgo: $selectedYearsAgo)
+                                .navigationTitle("Memories") // Apply title here too
                         }
                     } else {
-                        VStack {
+                        // Loading state while scanning
+                        VStack(spacing: 8) { // Add some spacing
                             ProgressView("Scanning Library...")
                             Text("Finding relevant years...")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .navigationTitle("Memories")
+                        .navigationTitle("Memories") // Keep consistent title
                     }
 
                 @unknown default:
                     Text("An unexpected error occurred with permissions.")
+                        .foregroundColor(.red) // Indicate error visually
+                        .navigationTitle("Error")
                 }
             }
         }
+        // Initialize selection once years are available
         .onReceive(viewModel.$availableYearsAgo) { availableYears in
-            if selectedYearsAgo == nil, let defaultYear = availableYears.contains(1) ? 1 : availableYears.first {
-                selectedYearsAgo = defaultYear
-            }
-        }
+             // Only set default if selection is currently nil AND years are available
+             if selectedYearsAgo == nil, !availableYears.isEmpty {
+                 // Prefer 1 year ago if available, otherwise first available year
+                 let defaultYear = availableYears.contains(defaultTargetYear)
+                                     ? defaultTargetYear
+                                     : availableYears.first! // Force unwrap safe due to !isEmpty check
+                 selectedYearsAgo = defaultYear
+                 print("Setting initial selected year to: \(defaultYear)")
+             }
+         }
     }
 }
-
 // --- Separate View for the Paged TabView ---
 struct PagedYearsView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @Binding var selectedYearsAgo: Int?
-    
-    // For smoother transitions
-    @State private var isAnimating = false
-    @State private var dragOffset: CGFloat = 0
-    
+
     var body: some View {
+        // 1️⃣ Define the TabView and its selection binding
         TabView(selection: $selectedYearsAgo) {
             ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
                 YearPageView(viewModel: viewModel, yearsAgo: yearsAgo)
-                    .tag(Optional(yearsAgo))
+                    .tag(yearsAgo)
             }
         }
-        .tabViewStyle(
-            PageTabViewStyle(indexDisplayMode: .never) // Hide the dots for cleaner look
-        )
-        // Make the TabView take up entire screen
+        // 2️⃣ Immediately disable *all* animations on this TabView
+        .transaction { tx in
+            tx.animation = nil
+        }
+        // 3️⃣ Then apply your PageTabViewStyle and any other modifiers
+        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.3), value: selectedYearsAgo)
-        // Add improved gesture for better horizontal swipes
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    // Only track significant horizontal movement
-                    if abs(value.translation.width) > abs(value.translation.height) * 1.2 {
-                        isAnimating = true
-                        dragOffset = value.translation.width
-                    }
-                }
-                .onEnded { value in
-                    // Detect direction with improved velocity detection
-                    let velocity = value.predictedEndTranslation.width / max(1, value.translation.width)
-                    let significantDrag = abs(value.translation.width) > 40
-                    
-                    if (significantDrag || abs(velocity) > 1) &&
-                       abs(value.translation.width) > abs(value.translation.height) {
-                        // Determine direction based on drag and velocity
-                        let direction = value.translation.width > 0 ? -1 : 1
-                        
-                        if let currentYearsAgo = selectedYearsAgo,
-                           let currentIndex = viewModel.availableYearsAgo.firstIndex(of: currentYearsAgo) {
-                            let targetIndex = currentIndex + direction
-                            if targetIndex >= 0 && targetIndex < viewModel.availableYearsAgo.count {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    selectedYearsAgo = viewModel.availableYearsAgo[targetIndex]
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Reset animation state
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isAnimating = false
-                        dragOffset = 0
-                    }
-                }
-        )
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("")
+        .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedYearsAgo) { _, newValue in
-            if let currentYearsAgo = newValue {
-                print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
-                viewModel.triggerPrefetch(around: currentYearsAgo)
+            if let year = newValue {
+                viewModel.triggerPrefetch(around: year)
             }
         }
     }

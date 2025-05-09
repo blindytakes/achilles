@@ -1,3 +1,19 @@
+//  A SwiftUI view that presents a user-friendly interface whenever
+//  the app lacks sufficient Photo Library permissions. It displays
+//  an icon, title, explanatory text, and context-appropriate action
+//  buttons for each `PHAuthorizationStatus` case:
+//
+//    • .notDetermined   — prompts the user to grant access
+//    • .denied/.restricted — directs the user to Settings to re-enable access
+//    • .limited         — warns of limited access and offers Settings link
+//    • .authorized      — (fallback) shows a brief “Checking permissions…” message
+//
+//  Usage:
+//    Pass in the current `PHAuthorizationStatus` and an `onRequest`
+//    closure that triggers `PHPhotoLibrary.requestAuthorization` or
+//    equivalent logic in your ViewModel.
+
+
 import SwiftUI
 import Photos // Needed for PHAuthorizationStatus
 

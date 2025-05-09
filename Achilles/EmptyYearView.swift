@@ -1,3 +1,17 @@
+// EmptyYearView.swift
+//
+// This view provides feedback when no photos or videos are available for a specific year,
+// displaying a friendly empty state message.
+//
+// Key features:
+// - Shows a visual indicator with a "sleeping moon" icon
+// - Displays a clear title indicating no memories were found
+// - Provides additional context explaining why content might be missing
+// - Uses a full-screen layout with centered content
+//
+// The view is designed to be used as a placeholder in the app when a year
+// that would normally show photos has no media content available.
+
 import SwiftUI
 
 struct EmptyYearView: View {

@@ -1,17 +1,131 @@
+// AchillesApp.swift
 //
-//  AchillesApp.swift
-//  Achilles
+// This is the main application file that configures the app, handles Firebase setup,
+// manages push notifications, and controls the app's navigation flow.
 //
-//  Created by Blind Takes on 3/29/25.
+// Key features:
+// - Initializes Firebase services during app startup
+// - Configures push notifications with Firebase Cloud Messaging (FCM)
+// - Manages authentication state through AuthViewModel
+// - Controls the app's navigation flow based on:
+//   - Authentication state (logged in/out)
+//   - Onboarding status
+//   - Daily welcome requirements
+//   - Photo library permissions
+// - Handles photo library authorization changes
 //
+// The file includes two main components:
+// 1. AppDelegate: Manages Firebase configuration, push notification permissions,
+//    and FCM token handling
+// 2. AchillesApp: The SwiftUI app structure that determines which view to display
+//    based on the current application state
+//
+// The app maintains proper coordination between the UIKit-based AppDelegate
+// and the SwiftUI app structure through careful state management.
+
 
 import SwiftUI
+import Firebase            // FirebaseCore
+import FirebaseAuth        // brings in `Auth`
+import FirebaseMessaging   // brings in `Messaging`
+import FirebaseFirestore   // if you're using Firestore anywhere
+import UserNotifications
+import PhotosUI            // for `PHPhotoLibrary`
+
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
+  // Add a reference to AuthViewModel
+  var authVM: AuthViewModel?
+  
+  func application(_ application: UIApplication,
+                   didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+    // Firebase configuration moved to AchillesApp.init()
+    
+    // 1) Ask permission for alerts/badges/sounds
+    UNUserNotificationCenter.current().delegate = self
+    UNUserNotificationCenter.current()
+      .requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+        guard granted else { return }
+        DispatchQueue.main.async {
+          application.registerForRemoteNotifications()
+        }
+      }
+
+    // 2) Wire up FCM
+    Messaging.messaging().delegate = self
+
+    return true
+  }
+
+  // APNs → FCM
+  func application(_ application: UIApplication,
+                   didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    Messaging.messaging().apnsToken = deviceToken
+  }
+
+  // This is called when FCM gives you (or refreshes) your token
+  func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+    guard let fcmToken = fcmToken else { return }
+    print("🔑 FCM token:", fcmToken)
+    
+    // Forward to AuthViewModel if available
+    Task {
+      await authVM?.savePushToken(fcmToken)
+    }
+  }
+
+  // Optional: show notifications while app is foreground
+  func userNotificationCenter(_ center: UNUserNotificationCenter,
+                              willPresent notification: UNNotification,
+                              withCompletionHandler completionHandler:
+                                @escaping (UNNotificationPresentationOptions) -> Void) {
+    completionHandler([.banner, .sound])
+  }
+}
 
 @main
 struct AchillesApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+  @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+  @StateObject private var authVM: AuthViewModel
+  @State private var photoStatus = PHPhotoLibrary.authorizationStatus()
+    
+    init() {
+      FirebaseApp.configure()
+      // 1) Create one single instance…
+      let vm = AuthViewModel()
+      // 2) Initialize the StateObject from *that* instance
+      _authVM = StateObject(wrappedValue: vm)
+      // 3) Give the delegate the same instance, *without* ever reading authVM
+      appDelegate.authVM = vm
     }
+    
+    
+  var body: some Scene {
+    WindowGroup {
+      rootView
+        .environmentObject(authVM)
+    }
+    .onChange(of: photoStatus) {
+      // Access photoStatus directly inside the closure
+      print("📸 Photo-library status is now \(photoStatus)")
+    }
+  }
+  
+  @ViewBuilder
+  private var rootView: some View {
+    if authVM.user == nil {
+      LoginView()
+    } else if !authVM.onboardingComplete {
+      OnboardingView()
+    } else if authVM.dailyWelcomeNeeded {
+      DailyWelcomeView()
+    } else if photoStatus != .authorized {
+      AuthorizationRequiredView(status: photoStatus) {
+        PHPhotoLibrary.requestAuthorization { new in
+          DispatchQueue.main.async { photoStatus = new }
+        }
+      }
+    } else {
+      ContentView()
+    }
+  }
 }

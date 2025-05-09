@@ -1,234 +1,285 @@
+//
+//  MediaDetailView.swift
+//  Achilles
+//
+//  Created by [Your Name] on May 8, 2025.
+//  Updated by [Your Name] on May 8, 2025.
+//
+//  Displays a full‐screen, paged detail view for a single year’s worth of media items.
+//  Features:
+//    • Conditional use of NavigationStack (iOS 16+) with fallback to NavigationView.
+//    • Opens at the tapped photo via selectedItemID → currentItemIndex on appear.
+//    • Async video loading & playback driven by `.task(id: currentItem()?.id)`.
+//    • Share integration using a unified ShareState enum (idle, loading, ready).
+//    • Extracted subviews for clarity: PagedMediaView and MediaShareButton.
+//    • Adaptive styling: systemBackground & dynamic accentColor based on colorScheme.
+//    • Share‐sheet presentation bound to `shareState == .ready`, resetting on dismiss.
+//
+//  Responsibilities:
+//    1. Manage paging through `itemsForYear`.
+//    2. Load and play videos via `viewModel.requestVideoURL`.
+//    3. Present share sheet for images and videos.
+//    4. Toggle controls and optional location panel on single tap.
+//
+//  See also:
+//    • PagedMediaView.swift
+//    • MediaShareButton.swift
+//    • ActivityViewControllerRepresentable.swift
+//
+
 import SwiftUI
 import Photos
+import PhotosUI
 import AVKit
-import UIKit // Keep for Share Sheet
+import UIKit
+
+// MARK: - Share State Management
+
+enum ShareState {
+    case idle
+    case loading
+    case ready(ShareableItem)
+}
+
+struct ShareableItem: Identifiable {
+    let id = UUID()
+    let items: [Any]
+}
+
+// MARK: - Main View
 
 struct MediaDetailView: View {
-    // --- Inputs ---
+    // MARK: Inputs
     @ObservedObject var viewModel: PhotoViewModel
     let itemsForYear: [MediaItem]
     let selectedItemID: String
 
-    // --- State ---
+    // MARK: State
     @State private var currentItemIndex: Int = 0
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
-    // State for Sharing
-    @State private var itemToShare: ShareableItem? = nil
-    @State private var isFetchingShareItem = false
-    
-    // State for location panel
+    @State private var shareState: ShareState = .idle
     @State private var showLocationPanel: Bool = false
-
-    // --- NEW: State for managing ONE active player ---
     @State private var currentPlayer: AVPlayer? = nil
-    @State private var currentPlayerItemURL: URL? = nil // Track URL to avoid reloading same video
+    @State private var currentPlayerItemURL: URL? = nil
+    @State private var controlsHidden: Bool = false
 
-    // --- REMOVED State for Location Panel (Deferred) ---
-
-    // --- Body ---s
     var body: some View {
-        NavigationView {
-            TabView(selection: $currentItemIndex) {
-                ForEach(Array(itemsForYear.enumerated()), id: \.element.id) { index, item in
-
-                    // --- Pass the shared player down ---
-                    // Pass a real binding for showInfoPanel
-                    ItemDisplayView(
-                        viewModel: viewModel,
-                        item: item,
-                        player: currentPlayer,
-                        showInfoPanel: $showLocationPanel
-                    )
-                    .tag(index)
-                }
+        Group {
+            // STEP 1: Conditional NavigationStack on iOS 16+
+            if #available(iOS 16, *) {
+                NavigationStack { content }
+            } else {
+                NavigationView { content }
+                    .navigationViewStyle(.stack)
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .background(Color.black)
+        }
+        // Adapt accent color based on color scheme
+        .accentColor(colorScheme == .dark ? .white : .blue)
+    }
+
+    // MARK: Extracted content
+
+    private var content: some View {
+        ZStack {
+            PagedMediaView(
+                items: itemsForYear,
+                currentIndex: $currentItemIndex,
+                viewModel: viewModel,
+                player: currentPlayer,
+                showLocationPanel: $showLocationPanel,
+                controlsHidden: $controlsHidden
+            )
+            .background(Color(.systemBackground))
             .ignoresSafeArea(.container, edges: [.top, .bottom])
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle(titleForCurrentItem())
-            .toolbar(content: {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    shareButton()
-                }
-            })
-
-
-            .accentColor(.white)
+            // STEP 4: jump to tapped photo on first appear
+            .onAppear {
+                currentItemIndex = itemsForYear
+                    .firstIndex { $0.id == selectedItemID } ?? 0
+            }
+            // STEP 2: reload when the current item changes
+            .task(id: currentItem()?.id) {
+                updatePlayerForCurrentIndex()
+                showLocationPanel = false
+            }
         }
-        .navigationViewStyle(.stack)
-        .onAppear {
-            // Set initial index
-            currentItemIndex = itemsForYear.firstIndex(where: { $0.id == selectedItemID }) ?? 0
-            // Load player for the initial item
-            updatePlayerForCurrentIndex()
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(titleForCurrentItem())
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Done") { dismiss() }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                MediaShareButton(
+                    shareState: $shareState,
+                    onShare: prepareAndShareCurrentItem,
+                    hasValidItem: currentItem() != nil
+                )
+            }
         }
-        // --- Update player when TabView selection changes ---
-        .onChange(of: currentItemIndex) { _, _ in // Use correct signature for your target OS
-            updatePlayerForCurrentIndex()
-        }
-        // --- Pause player when the whole sheet dismisses ---
+        .navigationBarHidden(controlsHidden)
         .onDisappear {
-            print("MediaDetailView disappearing, pausing current player.")
             currentPlayer?.pause()
-            // Optional: Reset player state if desired when view disappears
-            // currentPlayer = nil
-            // currentPlayerItemURL = nil
         }
-        .sheet(item: $itemToShare) { shareable in
-             ActivityViewControllerRepresentable(activityItems: shareable.items)
-                 .onDisappear { itemToShare = nil }
+        .sheet(
+            isPresented: Binding<Bool>(
+                get: { if case .ready = shareState { return true }; return false },
+                set: { if !$0 { shareState = .idle } }
+            ),
+            onDismiss: { /* analytics or cleanup */ }
+        ) {
+            if case .ready(let shareable) = shareState {
+                ActivityViewControllerRepresentable(activityItems: shareable.items)
+            }
         }
     }
 
     // MARK: - Player Management
 
-    @MainActor // Ensure player updates happen on main thread
+    @MainActor
     private func updatePlayerForCurrentIndex() {
-        print("Updating player for index: \(currentItemIndex)")
         guard let item = currentItem() else {
-            print("No current item, pausing and clearing player.")
             currentPlayer?.pause()
             currentPlayer = nil
             currentPlayerItemURL = nil
             return
         }
 
-        if item.asset.mediaType == .video {
-            // It's a video, load it (asynchronously)
-            let videoAsset = item.asset
-            let videoId = item.id
-            Task {
-                print("Requesting URL for video asset: \(videoId)")
-                let url = await viewModel.requestVideoURL(for: videoAsset)
-
-                // Check if we are still on the same item index after await
-                // And if URL is valid and different from the currently loaded one
-                guard currentItemIndex == itemsForYear.firstIndex(where: { $0.id == videoId }),
-                      let validURL = url,
-                      validURL != currentPlayerItemURL else {
-                    if url == nil {
-                        print("Failed to get URL for video asset: \(videoId)")
-                        await MainActor.run { // Ensure state update is on main
-                            if currentItem()?.id == videoId { // Check index again
-                                currentPlayer?.pause()
-                                currentPlayer = nil
-                                currentPlayerItemURL = nil
-                            }
-                        }
-                    } else if url == currentPlayerItemURL {
-                         print("Video URL is the same, not reloading player. Ensuring playback for \(videoId)")
-                         await MainActor.run { currentPlayer?.play() } // Ensure play resumes if needed
-                    } else {
-                         print("Index changed while loading URL for \(videoId), ignoring.")
-                    }
-                    return
-                }
-
-                // URL is new and valid, create/update player
-                print("Creating new player for URL: \(validURL)")
-                let newPlayer = AVPlayer(url: validURL)
-                // Update state
-                 await MainActor.run {
-                      currentPlayer?.pause() // Pause old player
-                      currentPlayer = newPlayer
-                      currentPlayerItemURL = validURL
-                      print("Playing new video: \(videoId)")
-                      currentPlayer?.play() // Start playing the new video
-                 }
-            }
-        } else {
-            // It's an image or other type, ensure no player is active
-            print("Current item \(item.id) is not a video, pausing and clearing player.")
+        guard item.asset.mediaType == .video else {
             currentPlayer?.pause()
             currentPlayer = nil
             currentPlayerItemURL = nil
+            return
+        }
+
+        let videoId = item.id
+        Task {
+            let url = await viewModel.requestVideoURL(for: item.asset)
+            guard currentItem()?.id == videoId,
+                  let validURL = url,
+                  validURL != currentPlayerItemURL
+            else { return }
+
+            let newPlayer = AVPlayer(url: validURL)
+            currentPlayer?.pause()
+            currentPlayer = newPlayer
+            currentPlayerItemURL = validURL
+            currentPlayer?.play()
         }
     }
 
-
-    // MARK: - Helper Functions (Unchanged)
-
     private func currentItem() -> MediaItem? {
-        guard currentItemIndex >= 0 && currentItemIndex < itemsForYear.count else { return nil }
+        guard itemsForYear.indices.contains(currentItemIndex) else { return nil }
         return itemsForYear[currentItemIndex]
     }
 
     private func titleForCurrentItem() -> String {
-        guard let item = currentItem(), let date = item.asset.creationDate else { return "Detail" }
-        return date.formatted(date: .long, time: .shortened)
+        guard let date = currentItem()?.asset.creationDate else { return "Detail" }
+        return date.longDateShortTime()
     }
 
-    // MARK: - Toolbar Button Views (Share Button Unchanged)
+    // MARK: - Share Preparation
 
-    @ViewBuilder
-    private func shareButton() -> some View {
-        Button { prepareAndShareCurrentItem() } label: {
-             if isFetchingShareItem { ProgressView().tint(.white) }
-             else { Label("Share", systemImage: "square.and.arrow.up") }
-        }
-        .disabled(currentItem() == nil || isFetchingShareItem)
-    }
-
-    // MARK: - Action Logic (Share Logic Updated to use currentPlayerItemURL)
-
+    @MainActor
     private func prepareAndShareCurrentItem() {
-        guard let item = currentItem(), !isFetchingShareItem else { return }
-        isFetchingShareItem = true
+        guard let item = currentItem(), case .idle = shareState else { return }
+        shareState = .loading
+
         Task {
-             var shareable: Any? = nil
-             switch item.asset.mediaType {
-             case .image:
-                 print("Requesting image data for sharing...")
-                 if let data = await viewModel.requestFullImageData(for: item.asset), let image = UIImage(data: data) { shareable = image; print("Image data prepared.") }
-                 else { print("Failed to get image data for sharing.") }
-             case .video:
-                 print("Requesting video URL for sharing...")
-                 // Use the currently loaded player URL if available and matches current item
-                 if let url = currentPlayerItemURL, currentItem()?.id == item.id {
-                      shareable = url
-                      print("Video URL for sharing obtained from current player: \(url)")
-                 } else { // Fallback if player URL wasn't ready or item changed quickly
-                      print("Player URL not available or item mismatch, fetching video URL again for sharing...")
-                      if let url = await viewModel.requestVideoURL(for: item.asset) { shareable = url; print("Video URL prepared: \(url)") }
-                      else { print("Failed to get video URL for sharing.") }
-                 }
-             default:
-                 print("Unsupported media type for sharing.")
-             }
-             await MainActor.run {
-                  isFetchingShareItem = false
-                  if let validItem = shareable {
-                      self.itemToShare = ShareableItem(items: [validItem])
-                      print("Setting itemToShare to trigger sheet.")
-                  } else {
-                      print("Failed to prepare item for sharing, not showing sheet.")
-                  }
-             }
+            var shareable: Any?
+            switch item.asset.mediaType {
+            case .image:
+                if let data = await viewModel.requestFullImageData(for: item.asset),
+                   let image = UIImage(data: data) {
+                    shareable = image
+                }
+            case .video:
+                if let url = currentPlayerItemURL, currentItem()?.id == item.id {
+                    shareable = url
+                } else if let url = await viewModel.requestVideoURL(for: item.asset) {
+                    shareable = url
+                }
+            default:
+                break
+            }
+
+            if let valid = shareable {
+                shareState = .ready(ShareableItem(items: [valid]))
+            } else {
+                shareState = .idle
+            }
         }
     }
-
-} // End of struct MediaDetailView
-
-
-// MARK: - Helper Struct for Share Sheet Item (Unchanged)
-struct ShareableItem: Identifiable {
-    let id = UUID()
-    let items: [Any]
 }
 
-// MARK: - UIActivityViewControllerRepresentable (Unchanged)
+// MARK: - Extracted Subviews
+
+struct PagedMediaView: View {
+    let items: [MediaItem]
+    @Binding var currentIndex: Int
+    let viewModel: PhotoViewModel
+    let player: AVPlayer?
+    @Binding var showLocationPanel: Bool
+    @Binding var controlsHidden: Bool
+
+    var body: some View {
+        TabView(selection: $currentIndex) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                ItemDisplayView(
+                    viewModel: viewModel,
+                    item: item,
+                    player: player,
+                    showInfoPanel: $showLocationPanel,
+                    controlsHidden: $controlsHidden
+                ) {
+                    withAnimation(.easeInOut) {
+                        controlsHidden.toggle()
+                        showLocationPanel = false
+                    }
+                }
+                .tag(index)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+}
+
+struct MediaShareButton: View {
+    @Binding var shareState: ShareState
+    let onShare: () -> Void
+    let hasValidItem: Bool
+
+    private var canShare: Bool {
+        if case .idle = shareState { return hasValidItem }
+        return false
+    }
+
+    var body: some View {
+        Button(action: onShare) {
+            if case .loading = shareState {
+                ProgressView().tint(.white)
+            } else {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+        .disabled(!canShare)
+    }
+}
+
+// MARK: - Share Sheet Helper
+
 struct ActivityViewControllerRepresentable: UIViewControllerRepresentable {
     var activityItems: [Any]
     var applicationActivities: [UIActivity]? = nil
-    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities) }
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: applicationActivities
+        )
+    }
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 

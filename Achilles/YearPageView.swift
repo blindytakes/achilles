@@ -1,75 +1,81 @@
 import SwiftUI
+import Photos
 
+/// YearPageView orchestrates the per-year loading states and displays
+/// the appropriate view for each: a skeleton placeholder, loaded content,
+/// empty state, or error view. It reads from a shared PhotoViewModel
+/// and triggers page load and prefetch on appear.
+///
+/// Usage:
+/// ```swift
+/// YearPageView(viewModel: photoViewModel, yearsAgo: 3)
+/// ```
 struct YearPageView: View {
+    // MARK: - Properties
+    /// The shared ViewModel containing page states and load logic
     @ObservedObject var viewModel: PhotoViewModel
+    /// The offset in years for this page (0 = this year, 1 = last year, etc.)
     let yearsAgo: Int
-    
-    // Add transition state management
-    @State private var isAppearing = false
 
     var body: some View {
-        // Get the state for the current year, default to idle if not found yet
+        // Determine current page state or default to .idle
         let state = viewModel.pageStateByYear[yearsAgo] ?? .idle
 
-        // Switch over the state to display the correct view
-        VStack(spacing: 0) { // Use spacing: 0 if subviews handle their own padding
+        VStack(spacing: 0) {
             switch state {
             case .idle, .loading:
-                // Show SkeletonView while loading or before first load attempt
+                // Show a skeleton placeholder while idle or loading
                 SkeletonView()
+                    .transition(.opacity.animation(.easeInOut))
 
-            case .loaded(let featured, let grid):
-                // Show the actual content when loaded
+            case .loaded:
+                // Display the loaded grid and featured content
                 LoadedYearContentView(
                     viewModel: viewModel,
-                    yearsAgo: yearsAgo,
-                    featuredItem: featured,
-                    gridItems: grid
+                    yearsAgo: yearsAgo
                 )
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.4)))
 
             case .empty:
-                // Show the view for when no media was found
+                // Show empty state when no content is available
                 EmptyYearView()
-                .transition(.opacity)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.4)))
 
             case .error(let message):
-                // Show the error view with a retry option
+                // Show error view with retry capability
                 ErrorYearView(
                     viewModel: viewModel,
                     yearsAgo: yearsAgo,
                     errorMessage: message
                 )
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             }
         }
-        // Apply modifiers consistently to the VStack or the content views as needed
-        .frame(maxWidth: .infinity, maxHeight: .infinity) // Ensure it fills the page
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .opacity(isAppearing ? 1.0 : 0.5)
-        .animation(.easeInOut(duration: 0.3), value: isAppearing)
         .onAppear {
-            // Smooth fade-in on appear
-            withAnimation(.easeInOut(duration: 0.3)) {
-                isAppearing = true
-            }
-            
-            // Trigger initial load *only if idle*
-            // Pre-fetching might already trigger loading, but this ensures it happens
-            // if the user lands on a page that wasn't pre-fetched and is still .idle
-            if case .idle = state {
-                 print("Page for \(yearsAgo) appeared in idle state, triggering load.")
-                 Task { await viewModel.loadPage(yearsAgo: yearsAgo) }
-            }
+            // Trigger initial load and prefetch when this page appears
+            print("➡️ Page for \(yearsAgo) appeared, loading data.")
+            viewModel.loadPage(yearsAgo: yearsAgo)
 
-            // Always trigger prefetch for adjacent pages when this page appears
-            // (ViewModel handles checking if prefetch is actually needed)
-            print("Page for \(yearsAgo) appeared. Triggering prefetch.")
+            print("➡️ Page for \(yearsAgo) appeared, triggering prefetch.")
             viewModel.triggerPrefetch(around: yearsAgo)
         }
         .onDisappear {
-            isAppearing = false
+            // Optionally cancel in-flight loads when scrolled off-screen
+            // print("⬅️ Page for \(yearsAgo) disappeared, canceling load.")
+            // viewModel.cancelLoad(yearsAgo: yearsAgo)
         }
     }
 }
 
+#if DEBUG
+struct YearPageView_Previews: PreviewProvider {
+    static var previews: some View {
+        // Provide a real or mock PhotoViewModel for previews
+        YearPageView(viewModel: PhotoViewModel(), yearsAgo: 1)
+            .frame(width: 300, height: 600)
+            .background(Color(.systemBackground))
+    }
+}
+#endif

@@ -1,20 +1,35 @@
+// ErrorYearView.swift
+//
+// This view provides error feedback when loading photos for a specific year fails,
+// displaying an error message and offering a retry option.
+//
+// Key features:
+// - Shows a visual error indicator with an exclamation triangle icon
+// - Displays both a generic error title and the specific error message
+// - Provides a retry button that triggers the viewModel to attempt reloading
+// - Uses a full-screen layout to replace the normal content view
+//
+// The view maintains a reference to both the viewModel (for retry functionality)
+// and the specific year that failed to load, enabling targeted reload attempts.
+
+
 import SwiftUI
+import Photos
 
 struct ErrorYearView: View {
-    // Pass in the ViewModel to trigger retry
+
+    // <<< CHANGE: Observe PhotoViewModel instead of YearLoader >>>
     @ObservedObject var viewModel: PhotoViewModel
-    // Pass in the specific year that failed
-    let yearsAgo: Int
-    // Pass in the error message to display
+    let yearsAgo: Int // Keep for context
     let errorMessage: String
 
     var body: some View {
         VStack(spacing: 20) {
-            Spacer() // Pushes content to center vertically
+            Spacer()
 
-            Image(systemName: "exclamationmark.triangle.fill") // Or "wifi.exclamationmark" etc.
+            Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 50))
-                .foregroundColor(.orange) // Use a warning color
+                .foregroundColor(.orange)
 
             Text("Load Failed")
                 .font(.title2)
@@ -26,32 +41,17 @@ struct ErrorYearView: View {
                 .padding(.horizontal)
 
             Button("Retry") {
-                // Action: Tell the ViewModel to try loading this page again
-                print("Retry button tapped for \(yearsAgo) years ago.")
-                Task {
-                    await viewModel.loadPage(yearsAgo: yearsAgo)
-                }
+                // <<< CHANGE: Call retryLoad on the ViewModel >>>
+                print("🔁 Retry button tapped for \(yearsAgo) years ago.")
+                viewModel.retryLoad(yearsAgo: yearsAgo) // Use ViewModel's retry
             }
             .buttonStyle(.bordered)
             .padding(.top)
 
-            Spacer() // Pushes content to center vertically
+            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity) // Ensure it fills the space
-        .transition(.opacity) // Optional: Fade in/out
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(.opacity)
     }
 }
 
-// MARK: - Preview
-
-struct ErrorYearView_Previews: PreviewProvider {
-    static var previews: some View {
-        ErrorYearView(
-            viewModel: PhotoViewModel(), // Use a dummy VM for preview
-            yearsAgo: 3,
-            errorMessage: "Could not connect to the server. Please check your network connection."
-        )
-        .padding()
-        .previewLayout(.sizeThatFits)
-    }
-}
