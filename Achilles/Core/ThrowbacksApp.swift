@@ -83,21 +83,26 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 }
 
 @main
-struct AchillesApp: App {
+struct ThrowbaksApp: App {  // Changed app name to match your new branding
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
   @StateObject private var authVM: AuthViewModel
-  @State private var photoStatus = PHPhotoLibrary.authorizationStatus()
+  @State private var photoStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     
     init() {
       FirebaseApp.configure()
-      // 1) Create one single instance…
+      
+      // TEMPORARY: Create AuthViewModel and immediately sign out for testing
       let vm = AuthViewModel()
-      // 2) Initialize the StateObject from *that* instance
+      vm.signOut() // Force sign out for testing
+      
+      // Continue with your existing initialization
       _authVM = StateObject(wrappedValue: vm)
-      // 3) Give the delegate the same instance, *without* ever reading authVM
-      appDelegate.authVM = vm
+      
+      // Give the delegate the same instance, *without* ever reading authVM
+      // Note: We need to use the property wrapper's projectedValue here
+      // because we're in the initializer
+      _appDelegate.wrappedValue.authVM = vm
     }
-    
     
   var body: some Scene {
     WindowGroup {
@@ -110,22 +115,21 @@ struct AchillesApp: App {
     }
   }
   
-  @ViewBuilder
-  private var rootView: some View {
-    if authVM.user == nil {
-      LoginView()
-    } else if !authVM.onboardingComplete {
-      OnboardingView()
-    } else if authVM.dailyWelcomeNeeded {
-      DailyWelcomeView()
-    } else if photoStatus != .authorized {
-      AuthorizationRequiredView(status: photoStatus) {
-        PHPhotoLibrary.requestAuthorization { new in
-          DispatchQueue.main.async { photoStatus = new }
+    @ViewBuilder
+    private var rootView: some View {
+        if authVM.user == nil {
+            // Use the new WelcomeView for authentication and initial onboarding
+            WelcomeView()
+        } else if photoStatus != .authorized && photoStatus != .limited {
+            // Show photo permission screen if needed
+            AuthorizationRequiredView(status: photoStatus) {
+                PHPhotoLibrary.requestAuthorization(for: .readWrite) { new in
+                    DispatchQueue.main.async { photoStatus = new }
+                }
+            }
+        } else {
+            // Main app content
+            ContentView()
         }
-      }
-    } else {
-      ContentView()
     }
-  }
-}
+    }
