@@ -1,45 +1,50 @@
-// Throwbaks/Achilles/Views/YearPageView.swift
 import SwiftUI
 import Photos
 
+/// YearPageView orchestrates the per-year loading states and displays
+/// the appropriate view for each: a skeleton placeholder, loaded content,
+/// empty state, or error view. It reads from a shared PhotoViewModel
+/// and triggers page load and prefetch on appear.
+///
+/// Usage:
+/// ```swift
+/// YearPageView(viewModel: photoViewModel, yearsAgo: 3)
+/// ```
 struct YearPageView: View {
-    // Use the ViewModel directly now
-    @ObservedObject var viewModel: PhotoViewModel // Renamed from photoViewModel for clarity
-    let yearsAgo: Int // Pass yearsAgo explicitly
-
-    // Removed ObservedObject for YearLoader as it's no longer used directly here
+    // MARK: - Properties
+    /// The shared ViewModel containing page states and load logic
+    @ObservedObject var viewModel: PhotoViewModel
+    /// The offset in years for this page (0 = this year, 1 = last year, etc.)
+    let yearsAgo: Int
 
     var body: some View {
-        // Read the state directly from the main ViewModel's dictionary
-        let state = viewModel.pageStateByYear[yearsAgo] ?? .idle // Default to idle if not found
+        // Determine current page state or default to .idle
+        let state = viewModel.pageStateByYear[yearsAgo] ?? .idle
 
         VStack(spacing: 0) {
             switch state {
-            case .idle:
+            case .idle, .loading:
+                // Show a skeleton placeholder while idle or loading
                 SkeletonView()
-                 .transition(.opacity.animation(.easeInOut)) // Add transition
+                    .transition(.opacity.animation(.easeInOut))
 
-            case .loading:
-                SkeletonView()
-                 .transition(.opacity.animation(.easeInOut)) // Add transition
-
-            // <<< CHANGE HERE: Pass only viewModel and yearsAgo >>>
-            case .loaded: // We don't need to extract featured/grid here anymore
+            case .loaded:
+                // Display the loaded grid and featured content
                 LoadedYearContentView(
-                    viewModel: viewModel, // Pass the main ViewModel
-                    yearsAgo: yearsAgo    // Pass the specific year
-                    // featuredItem and gridItems are removed
+                    viewModel: viewModel,
+                    yearsAgo: yearsAgo
                 )
                 .transition(.opacity.animation(.easeInOut(duration: 0.4)))
 
             case .empty:
+                // Show empty state when no content is available
                 EmptyYearView()
-                .transition(.opacity.animation(.easeInOut(duration: 0.4)))
+                    .transition(.opacity.animation(.easeInOut(duration: 0.4)))
 
             case .error(let message):
-                // Pass the ViewModel and yearsAgo for the retry action
+                // Show error view with retry capability
                 ErrorYearView(
-                    viewModel: viewModel, // Pass the main ViewModel
+                    viewModel: viewModel,
                     yearsAgo: yearsAgo,
                     errorMessage: message
                 )
@@ -49,21 +54,28 @@ struct YearPageView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .onAppear {
-            // Trigger load on the main ViewModel instance
-            print("➡️ Page for \(yearsAgo) appeared, telling ViewModel to load.")
-            viewModel.loadPage(yearsAgo: yearsAgo) // Call ViewModel's load method
+            // Trigger initial load and prefetch when this page appears
+            print("➡️ Page for \(yearsAgo) appeared, loading data.")
+            viewModel.loadPage(yearsAgo: yearsAgo)
 
-            // Trigger prefetch check on the main ViewModel
-            print("➡️ Page for \(yearsAgo) appeared. Triggering prefetch.")
+            print("➡️ Page for \(yearsAgo) appeared, triggering prefetch.")
             viewModel.triggerPrefetch(around: yearsAgo)
         }
         .onDisappear {
-             // Optional: Cancel load if desired when page scrolls away
-             // print("⬅️ Page for \(yearsAgo) disappeared. Cancelling load.")
-             // viewModel.cancelLoad(yearsAgo: yearsAgo)
+            // Optionally cancel in-flight loads when scrolled off-screen
+            // print("⬅️ Page for \(yearsAgo) disappeared, canceling load.")
+            // viewModel.cancelLoad(yearsAgo: yearsAgo)
         }
     }
 }
 
-
-
+#if DEBUG
+struct YearPageView_Previews: PreviewProvider {
+    static var previews: some View {
+        // Provide a real or mock PhotoViewModel for previews
+        YearPageView(viewModel: PhotoViewModel(), yearsAgo: 1)
+            .frame(width: 300, height: 600)
+            .background(Color(.systemBackground))
+    }
+}
+#endif
