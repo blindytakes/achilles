@@ -1,4 +1,13 @@
-// Throwbaks/Achilles/ViewModels/PhotoViewModel.swift
+// MARK: - PhotoViewModel Summary
+
+// This ViewModel manages the display and interaction with photos and videos from the user's Photo Library.
+// It handles authorization, phased scanning of years with media, loading content for specific years (featured and grid views),
+// pre-fetching of adjacent year content (thumbnails and featured images), image and Live Photo caching,
+// cancellation and retrying of loading tasks, and cleanup. It publishes UI-related state such as
+// page loading states, available years, authorization status, and animation completion flags.
+// It utilizes a PhotoLibraryService for interacting with Photos framework, a FeaturedSelectorService
+// to pick featured items, an ImageCacheService for in-memory caching, and a MediaItemFactory to create
+// MediaItem objects from PHAssets. It also includes functionality for reverse geocoding asset locations.
 
 import SwiftUI
 import Photos
