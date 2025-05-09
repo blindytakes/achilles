@@ -398,29 +398,149 @@ class PhotoViewModel: ObservableObject {
 
     // Trigger pre-fetching for adjacent years
     func triggerPrefetch(around centerYearsAgo: Int) {
+        // Only proceed if initial scan is complete
         guard initialYearScanComplete else { return }
-        let yearsToCheck = [centerYearsAgo + 1, centerYearsAgo - 1].filter { $0 > 0 }; print("⚡️ Triggering prefetch check around \(centerYearsAgo). Checking: \(yearsToCheck)")
+
+        // Determine which adjacent years to check (avoid negative years)
+        let yearsToCheck = [centerYearsAgo + 1, centerYearsAgo - 1].filter { $0 > 0 }
+        print("⚡️ Triggering prefetch check around \(centerYearsAgo). Checking: \(yearsToCheck)")
+
+        // Process each year
         for yearToPrefetch in yearsToCheck {
-            guard availableYearsAgo.contains(yearToPrefetch) else { continue }
-            let currentState = pageStateByYear[yearToPrefetch] ?? .idle; guard case .idle = currentState else { continue }
-            guard activeLoadTasks[yearToPrefetch] == nil else { continue }
-            print("⚡️ Prefetching page for \(yearToPrefetch) years ago."); loadPage(yearsAgo: yearToPrefetch)
-            if activePrefetchThumbnailTasks[yearToPrefetch] == nil {
-                 print("⚡️ Starting thumbnail prefetch task for \(yearToPrefetch).")
-                 let thumbnailTask = Task {
-                     do { let initialItems = try await fetchMediaItems(yearsAgo: yearToPrefetch, limit: Constants.initialFetchLimitForLoadPage); try Task.checkCancellation(); guard !initialItems.isEmpty else { return }; print("⚡️ Requesting \(initialItems.count) thumbnails proactively for \(yearToPrefetch)..."); for item in initialItems { try Task.checkCancellation(); requestImage(for: item.asset, targetSize: Constants.prefetchThumbnailSize) { _ in } }; print("⚡️ Thumbnail requests initiated for \(yearToPrefetch).") }
-                     catch is CancellationError { print("🚫 Thumbnail prefetch task cancelled for \(yearToPrefetch).") } catch { print("❌ Error during thumbnail prefetch task for \(yearToPrefetch): \(error.localizedDescription)") }
-                     await MainActor.run { activePrefetchThumbnailTasks[yearToPrefetch] = nil }
-                 }; activePrefetchThumbnailTasks[yearToPrefetch] = thumbnailTask
-            } else { print("⚡️ Thumbnail prefetch task already active for \(yearToPrefetch).") }
-            if activeFeaturedPrefetchTasks[yearToPrefetch] == nil && preloadedFeaturedImages[yearToPrefetch] == nil {
-                 print("⚡️ Starting featured image prefetch task for \(yearToPrefetch).")
-                 let featuredTask = Task { [weak self] in guard let self = self else { return }; do { let initialItems = try await self.fetchMediaItems(yearsAgo: yearToPrefetch, limit: Constants.initialFetchLimitForLoadPage); try Task.checkCancellation(); guard let featured = self.selector.pickFeaturedItem(from: initialItems) else { print("⚡️ No featured item found to preload for \(yearToPrefetch)."); return }; try Task.checkCancellation(); print("⚡️ Requesting full-size image for featured item \(featured.id) for year \(yearToPrefetch)..."); self.requestFullSizeImage(for: featured.asset) { image in Task { await MainActor.run { guard !Task.isCancelled else { print("🚫 Featured prefetch task cancelled before storing image for \(yearToPrefetch)."); return }; if let loadedImage = image { print("✅ Featured image preloaded successfully for \(yearToPrefetch). Storing."); self.preloadedFeaturedImages[yearToPrefetch] = loadedImage } else { print("⚠️ Featured image preloading returned nil for \(yearToPrefetch).") } } } } }
-                     catch is CancellationError { print("🚫 Featured prefetch task cancelled for \(yearToPrefetch).") } catch { print("❌ Error during featured prefetch task for \(yearToPrefetch): \(error.localizedDescription)") }
-                     await MainActor.run { self.activeFeaturedPrefetchTasks[yearToPrefetch] = nil }
-                 }; activeFeaturedPrefetchTasks[yearToPrefetch] = featuredTask
-            } else { print("⚡️ Featured image prefetch task already active or image already preloaded for \(yearToPrefetch).") }
+            prefetchIfNeeded(forYear: yearToPrefetch)
         }
+    }
+
+    private func prefetchIfNeeded(forYear yearToPrefetch: Int) {
+        // Skip years that aren't available
+        guard availableYearsAgo.contains(yearToPrefetch) else { return }
+
+        // Only prefetch if the page is idle
+        let currentState = pageStateByYear[yearToPrefetch] ?? .idle
+        guard case .idle = currentState else { return }
+
+        // Skip if already loading the page
+        guard activeLoadTasks[yearToPrefetch] == nil else { return }
+
+        // Initiate page load
+        print("⚡️ Prefetching page for \(yearToPrefetch) years ago.")
+        loadPage(yearsAgo: yearToPrefetch)
+
+        // Start thumbnail prefetch if not active
+        if activePrefetchThumbnailTasks[yearToPrefetch] == nil {
+            startThumbnailPrefetchTask(for: yearToPrefetch)
+        } else {
+            print("⚡️ Thumbnail prefetch task already active for \(yearToPrefetch).")
+        }
+
+        // Start featured image prefetch if not active and image not preloaded
+        if activeFeaturedPrefetchTasks[yearToPrefetch] == nil && preloadedFeaturedImages[yearToPrefetch] == nil {
+            startFeaturedImagePrefetchTask(for: yearToPrefetch)
+        } else {
+            print("⚡️ Featured image prefetch task already active or image already preloaded for \(yearToPrefetch).")
+        }
+    }
+    
+    // Helper method for thumbnail prefetch
+    private func startThumbnailPrefetchTask(for yearToPrefetch: Int) {
+        print("⚡️ Starting thumbnail prefetch task for \(yearToPrefetch).")
+        
+        let thumbnailTask = Task {
+            do {
+                // Fetch initial items
+                let initialItems = try await fetchMediaItems(
+                    yearsAgo: yearToPrefetch,
+                    limit: Constants.initialFetchLimitForLoadPage
+                )
+                
+                try Task.checkCancellation()
+                
+                // Skip if no items found
+                guard !initialItems.isEmpty else { return }
+                
+                print("⚡️ Requesting \(initialItems.count) thumbnails proactively for \(yearToPrefetch)...")
+                
+                // Request thumbnails for each item
+                for item in initialItems {
+                    try Task.checkCancellation()
+                    requestImage(for: item.asset, targetSize: Constants.prefetchThumbnailSize) { _ in }
+                }
+                
+                print("⚡️ Thumbnail requests initiated for \(yearToPrefetch).")
+            } catch is CancellationError {
+                print("🚫 Thumbnail prefetch task cancelled for \(yearToPrefetch).")
+            } catch {
+                print("❌ Error during thumbnail prefetch task for \(yearToPrefetch): \(error.localizedDescription)")
+            }
+            
+            // Clear the task reference
+            await MainActor.run {
+                activePrefetchThumbnailTasks[yearToPrefetch] = nil
+            }
+        }
+        
+        // Store the task reference
+        activePrefetchThumbnailTasks[yearToPrefetch] = thumbnailTask
+    }
+
+    // Helper method for featured image prefetch
+    private func startFeaturedImagePrefetchTask(for yearToPrefetch: Int) {
+        print("⚡️ Starting featured image prefetch task for \(yearToPrefetch).")
+        
+        let featuredTask = Task { [weak self] in
+            guard let self = self else { return }
+            
+            do {
+                // Fetch initial items
+                let initialItems = try await fetchMediaItems(
+                    yearsAgo: yearToPrefetch,
+                    limit: Constants.initialFetchLimitForLoadPage
+                )
+                
+                try Task.checkCancellation()
+                
+                // Pick featured item
+                guard let featured = self.selector.pickFeaturedItem(from: initialItems) else {
+                    print("⚡️ No featured item found to preload for \(yearToPrefetch).")
+                    return
+                }
+                
+                try Task.checkCancellation()
+                
+                print("⚡️ Requesting full-size image for featured item \(featured.id) for year \(yearToPrefetch)...")
+                
+                // Request the full-size image
+                self.requestFullSizeImage(for: featured.asset) { image in
+                    Task {
+                        await MainActor.run {
+                            guard !Task.isCancelled else {
+                                print("🚫 Featured prefetch task cancelled before storing image for \(yearToPrefetch).")
+                                return
+                            }
+                            
+                            if let loadedImage = image {
+                                print("✅ Featured image preloaded successfully for \(yearToPrefetch). Storing.")
+                                self.preloadedFeaturedImages[yearToPrefetch] = loadedImage
+                            } else {
+                                print("⚠️ Featured image preloading returned nil for \(yearToPrefetch).")
+                            }
+                        }
+                    }
+                }
+            } catch is CancellationError {
+                print("🚫 Featured prefetch task cancelled for \(yearToPrefetch).")
+            } catch {
+                print("❌ Error during featured prefetch task for \(yearToPrefetch): \(error.localizedDescription)")
+            }
+            
+            // Clear the task reference
+            await MainActor.run {
+                self.activeFeaturedPrefetchTasks[yearToPrefetch] = nil
+            }
+        }
+        
+        // Store the task reference
+        activeFeaturedPrefetchTasks[yearToPrefetch] = featuredTask
     }
 
     // Function to get preloaded featured image
@@ -444,7 +564,7 @@ class PhotoViewModel: ObservableObject {
         // Configure request options
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = isHighRes ? .highQualityFormat : .opportunistic
+        options.deliveryMode = isHighRes ? .highQualityFormat : .highQualityFormat
         options.resizeMode = isHighRes ? .none : .fast
         options.isSynchronous = false
         options.version = .current
