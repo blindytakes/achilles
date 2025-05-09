@@ -332,14 +332,50 @@ class PhotoViewModel: ObservableObject {
 
     // Helper to fetch MediaItems
     private func fetchMediaItems(yearsAgo: Int, limit: Int?) async throws -> [MediaItem] {
-        let calendar = Calendar.current; let today = Date()
-        guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else { throw PhotoError.dateCalculationError(details: "Target date range for \(yearsAgo) years ago") }
-        let options = PHFetchOptions(); options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", argumentArray: [dateRange.start, dateRange.end]); options.sortDescriptors = [ NSSortDescriptor(key: "creationDate", ascending: false) ]
-        if let limit = limit, limit > 0 { options.fetchLimit = limit }
-        let fetchResult = PHAsset.fetchAssets(with: options); try Task.checkCancellation()
-        var items = [MediaItem](); var cancelledDuringEnumeration = false
-        fetchResult.enumerateObjects { asset, _, stopPointer in if Task.isCancelled { stopPointer.pointee = true; cancelledDuringEnumeration = true; return }; items.append(self.factory.createMediaItem(from: asset)) }
-        if cancelledDuringEnumeration { try Task.checkCancellation() }; return items
+        let calendar = Calendar.current
+        let today = Date()
+        
+        // Get date range for the specified year
+        guard let dateRange = calculateDateRange(yearsAgo: yearsAgo, calendar: calendar, today: today) else {
+            throw PhotoError.dateCalculationError(details: "Target date range for \(yearsAgo) years ago")
+        }
+        
+        // Configure fetch options
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(
+            format: "creationDate >= %@ AND creationDate < %@",
+            argumentArray: [dateRange.start, dateRange.end]
+        )
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        
+        // Apply limit if provided
+        if let limit = limit, limit > 0 {
+            options.fetchLimit = limit
+        }
+        
+        // Fetch assets and check for cancellation
+        let fetchResult = PHAsset.fetchAssets(with: options)
+        try Task.checkCancellation()
+        
+        // Convert assets to media items
+        var items = [MediaItem]()
+        var cancelledDuringEnumeration = false
+        
+        fetchResult.enumerateObjects { asset, _, stopPointer in
+            if Task.isCancelled {
+                stopPointer.pointee = true
+                cancelledDuringEnumeration = true
+                return
+            }
+            items.append(self.factory.createMediaItem(from: asset))
+        }
+        
+        // Final cancellation check
+        if cancelledDuringEnumeration {
+            try Task.checkCancellation()
+        }
+        
+        return items
     }
 
     // Cancel loading for a specific year
@@ -392,32 +428,174 @@ class PhotoViewModel: ObservableObject {
         return preloadedFeaturedImages[yearsAgo]
     }
 
-    // MARK: - Image & Video Fetching
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
-        let assetIdentifier = asset.localIdentifier; let isHighRes = targetSize == PHImageManagerMaximumSize
-        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) { print("✅ Using cached \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)"); completion(cachedImage); return }
+        let assetIdentifier = asset.localIdentifier
+        let isHighRes = targetSize == PHImageManagerMaximumSize
+        
+        // Check cache first
+        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
+            print("✅ Using cached \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
+            completion(cachedImage)
+            return
+        }
+        
         print("⬆️ Requesting \(isHighRes ? "high-res" : "thumbnail") image for asset: \(assetIdentifier)")
-        let options = PHImageRequestOptions(); options.isNetworkAccessAllowed = true; options.deliveryMode = isHighRes ? .highQualityFormat : .opportunistic; options.resizeMode = isHighRes ? .none : .fast; options.isSynchronous = false; options.version = .current; cancelActiveRequest(for: assetIdentifier)
-        options.progressHandler = { [weak self] progress, error, stop, info in guard let self = self else { return }; if let error = error { print("❌ Image loading error (progress): \(error.localizedDescription) for \(assetIdentifier)"); if progress < Constants.fullProgress { print("🔄 Retrying image request due to progress error for \(assetIdentifier)"); self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion) }; stop.pointee = true } }
-        let requestID = imageManager.requestImage(for: asset, targetSize: targetSize, contentMode: .aspectFit, options: options) { [weak self] image, info in guard let self = self else { return }; if self.activeRequests[assetIdentifier] == info?[PHImageResultRequestIDKey] as? PHImageRequestID { self.activeRequests.removeValue(forKey: assetIdentifier) }; let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false; if isCancelled { print("🚫 Image request cancelled for \(assetIdentifier)."); completion(nil); return }; if let error = info?[PHImageErrorKey] as? Error { print("❌ Image loading error (completion): \(error.localizedDescription) for \(assetIdentifier)"); completion(nil); return }; if let image = image { print("✅ Image loaded successfully for \(assetIdentifier)"); self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes); DispatchQueue.main.async { completion(image) } } else { print("⚠️ Image was nil, but no error reported for asset \(assetIdentifier)"); DispatchQueue.main.async { completion(nil) } } }
-        activeRequests[assetIdentifier] = requestID; print("⏳ Stored request ID \(requestID) for asset \(assetIdentifier)")
+        
+        // Configure request options
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = isHighRes ? .highQualityFormat : .opportunistic
+        options.resizeMode = isHighRes ? .none : .fast
+        options.isSynchronous = false
+        options.version = .current
+        
+        // Cancel any existing request
+        cancelActiveRequest(for: assetIdentifier)
+        
+        // Configure progress handler
+        options.progressHandler = { [weak self] progress, error, stop, info in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ Image loading error (progress): \(error.localizedDescription) for \(assetIdentifier)")
+                if progress < Constants.fullProgress {
+                    print("🔄 Retrying image request due to progress error for \(assetIdentifier)")
+                    self.retryImageRequest(for: asset, targetSize: targetSize, completion: completion)
+                }
+                stop.pointee = true
+            }
+        }
+        
+        // Make the request
+        let requestID = imageManager.requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { [weak self] image, info in
+            guard let self = self else { return }
+            
+            // Clean up the request
+            if self.activeRequests[assetIdentifier] == info?[PHImageResultRequestIDKey] as? PHImageRequestID {
+                self.activeRequests.removeValue(forKey: assetIdentifier)
+            }
+            
+            // Check for cancellation
+            let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
+            if isCancelled {
+                print("🚫 Image request cancelled for \(assetIdentifier).")
+                completion(nil)
+                return
+            }
+            
+            // Check for errors
+            if let error = info?[PHImageErrorKey] as? Error {
+                print("❌ Image loading error (completion): \(error.localizedDescription) for \(assetIdentifier)")
+                completion(nil)
+                return
+            }
+            
+            // Process the result
+            if let image = image {
+                print("✅ Image loaded successfully for \(assetIdentifier)")
+                self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
+                DispatchQueue.main.async {
+                    completion(image)
+                }
+            } else {
+                print("⚠️ Image was nil, but no error reported for asset \(assetIdentifier)")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+            }
+        }
+        
+        // Store the request ID
+        activeRequests[assetIdentifier] = requestID
+        print("⏳ Stored request ID \(requestID) for asset \(assetIdentifier)")
     }
 
     private func retryImageRequest(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
-        print("🔄 Executing retry logic for asset \(asset.localIdentifier)"); let assetIdentifier = asset.localIdentifier; let isHighRes = targetSize == PHImageManagerMaximumSize
-        let retryOptions = PHImageRequestOptions(); retryOptions.isNetworkAccessAllowed = true; retryOptions.deliveryMode = .highQualityFormat; retryOptions.resizeMode = .none; retryOptions.isSynchronous = false; retryOptions.version = .current; cancelActiveRequest(for: assetIdentifier)
-        let requestID = imageManager.requestImage(for: asset, targetSize: targetSize, contentMode: .aspectFit, options: retryOptions) { [weak self] retryImage, retryInfo in guard let self = self else { return }; if self.activeRequests[assetIdentifier] == retryInfo?[PHImageResultRequestIDKey] as? PHImageRequestID { self.activeRequests.removeValue(forKey: assetIdentifier) }; let isCancelled = retryInfo?[PHImageCancelledKey] as? Bool ?? false; if isCancelled { print("🚫 Retry request cancelled for \(assetIdentifier)."); completion(nil); return }; if let retryError = retryInfo?[PHImageErrorKey] as? Error { print("❌❌ Retry failed for asset \(assetIdentifier): \(retryError.localizedDescription)"); DispatchQueue.main.async { completion(nil) }; return }; if let retryImage = retryImage { print("✅✅ Retry successful for asset \(assetIdentifier)"); self.imageCacheService.cacheImage(retryImage, for: assetIdentifier, isHighRes: isHighRes); DispatchQueue.main.async { completion(retryImage) } } else { print("⚠️⚠️ Retry resulted in nil image for asset \(assetIdentifier)"); DispatchQueue.main.async { completion(nil) } } }
-        activeRequests[assetIdentifier] = requestID; print("⏳ Stored retry request ID \(requestID) for asset \(assetIdentifier)")
+        let assetIdentifier = asset.localIdentifier
+        let isHighRes = targetSize == PHImageManagerMaximumSize
+        
+        print("🔄 Executing retry logic for asset \(asset.localIdentifier)")
+        
+        // Configure retry options
+        let retryOptions = PHImageRequestOptions()
+        retryOptions.isNetworkAccessAllowed = true
+        retryOptions.deliveryMode = .highQualityFormat
+        retryOptions.resizeMode = .none
+        retryOptions.isSynchronous = false
+        retryOptions.version = .current
+        
+        // Cancel any existing request
+        cancelActiveRequest(for: assetIdentifier)
+        
+        // Make the retry request
+        let requestID = imageManager.requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: retryOptions
+        ) { [weak self] retryImage, retryInfo in
+            guard let self = self else { return }
+            
+            // Clean up the request
+            if self.activeRequests[assetIdentifier] == retryInfo?[PHImageResultRequestIDKey] as? PHImageRequestID {
+                self.activeRequests.removeValue(forKey: assetIdentifier)
+            }
+            
+            // Check for cancellation
+            let isCancelled = retryInfo?[PHImageCancelledKey] as? Bool ?? false
+            if isCancelled {
+                print("🚫 Retry request cancelled for \(assetIdentifier).")
+                completion(nil)
+                return
+            }
+            
+            // Check for errors
+            if let retryError = retryInfo?[PHImageErrorKey] as? Error {
+                print("❌❌ Retry failed for asset \(assetIdentifier): \(retryError.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
+            
+            // Process the result
+            if let retryImage = retryImage {
+                print("✅✅ Retry successful for asset \(assetIdentifier)")
+                self.imageCacheService.cacheImage(retryImage, for: assetIdentifier, isHighRes: isHighRes)
+                DispatchQueue.main.async {
+                    completion(retryImage)
+                }
+            } else {
+                print("⚠️⚠️ Retry resulted in nil image for asset \(assetIdentifier)")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+            }
+        }
+        
+        // Store the request ID
+        activeRequests[assetIdentifier] = requestID
+        print("⏳ Stored retry request ID \(requestID) for asset \(assetIdentifier)")
     }
 
     private func cancelActiveRequest(for assetIdentifier: String) {
-        if let existingRequestID = activeRequests[assetIdentifier] { print("🚫 Cancelling existing request \(existingRequestID) for asset \(assetIdentifier)"); imageManager.cancelImageRequest(existingRequestID); activeRequests.removeValue(forKey: assetIdentifier) }
+        if let existingRequestID = activeRequests[assetIdentifier] {
+            print("🚫 Cancelling existing request \(existingRequestID) for asset \(assetIdentifier)")
+            imageManager.cancelImageRequest(existingRequestID)
+            activeRequests.removeValue(forKey: assetIdentifier)
+        }
     }
-
+    
     internal func clearImageCache() {
-        print("🧹 Clearing preloaded featured images along with cache."); preloadedFeaturedImages.removeAll(); imageCacheService.clearCache()
+        print("🧹 Clearing preloaded featured images along with cache.")
+        preloadedFeaturedImages.removeAll()
+        imageCacheService.clearCache()
     }
-
 
     func requestLivePhoto(for asset: PHAsset,
                           targetSize: CGSize = PHImageManagerMaximumSize, // Default to full size
@@ -498,15 +676,122 @@ class PhotoViewModel: ObservableObject {
     
     
     func requestFullImageData(for asset: PHAsset) async -> Data? {
-        return await withCheckedContinuation { continuation in let options = PHImageRequestOptions(); options.version = .current; options.deliveryMode = .highQualityFormat; options.isNetworkAccessAllowed = true; options.resizeMode = .none; options.isSynchronous = false; print("⬆️ Requesting full image data for sharing asset \(asset.localIdentifier)"); imageManager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in if let error = info?[PHImageErrorKey] as? Error { print("❌ Error fetching full image data: \(error.localizedDescription)"); continuation.resume(returning: nil) } else if let data = data { print("✅ Full image data fetched for \(asset.localIdentifier)"); continuation.resume(returning: data) } else { print("⚠️ Full image data was nil for \(asset.localIdentifier)"); continuation.resume(returning: nil) } } }
+        return await withCheckedContinuation { continuation in
+            // Configure options
+            let options = PHImageRequestOptions()
+            options.version = .current
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = true
+            options.resizeMode = .none
+            options.isSynchronous = false
+            
+            print("⬆️ Requesting full image data for sharing asset \(asset.localIdentifier)")
+            
+            imageManager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
+                // Handle errors
+                if let error = info?[PHImageErrorKey] as? Error {
+                    print("❌ Error fetching full image data: \(error.localizedDescription)")
+                    continuation.resume(returning: nil)
+                }
+                // Handle successful data
+                else if let data = data {
+                    print("✅ Full image data fetched for \(asset.localIdentifier)")
+                    continuation.resume(returning: data)
+                }
+                // Handle nil data with no error
+                else {
+                    print("⚠️ Full image data was nil for \(asset.localIdentifier)")
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
     }
 
     func requestVideoURL(for asset: PHAsset) async -> URL? {
-        guard asset.mediaType == .video else { return nil }; return await withCheckedContinuation { continuation in let options = PHVideoRequestOptions(); options.version = .current; options.isNetworkAccessAllowed = true; options.deliveryMode = .automatic; print("⬆️ Requesting AVAsset for video \(asset.localIdentifier)"); imageManager.requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in if let error = info?[PHImageErrorKey] as? Error { print("❌ Error requesting AVAsset for \(asset.localIdentifier): \(error)"); continuation.resume(returning: nil); return }; guard let urlAsset = avAsset as? AVURLAsset else { print("⚠️ Requested AVAsset is not AVURLAsset for \(asset.localIdentifier)"); continuation.resume(returning: nil); return }; print("✅ AVAsset URL fetched for \(asset.localIdentifier)"); continuation.resume(returning: urlAsset.url) } }
+        // Only proceed if it's a video asset
+        guard asset.mediaType == .video else { return nil }
+        
+        return await withCheckedContinuation { continuation in
+            // Configure options
+            let options = PHVideoRequestOptions()
+            options.version = .current
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .automatic
+            
+            print("⬆️ Requesting AVAsset for video \(asset.localIdentifier)")
+            
+            imageManager.requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
+                // Handle errors
+                if let error = info?[PHImageErrorKey] as? Error {
+                    print("❌ Error requesting AVAsset for \(asset.localIdentifier): \(error)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Check if asset is URL-based
+                guard let urlAsset = avAsset as? AVURLAsset else {
+                    print("⚠️ Requested AVAsset is not AVURLAsset for \(asset.localIdentifier)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                print("✅ AVAsset URL fetched for \(asset.localIdentifier)")
+                continuation.resume(returning: urlAsset.url)
+            }
+        }
     }
 
     func requestFullSizeImage(for asset: PHAsset, completion: @escaping (UIImage?) -> Void) {
-        let assetIdentifier = asset.localIdentifier; let isHighRes = true; if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) { print("✅ [VM] Using cached full-size image for asset: \(assetIdentifier)"); completion(cachedImage); return }; print("⬆️ [VM] Requesting full-size image data for \(assetIdentifier)"); let options = PHImageRequestOptions(); options.isNetworkAccessAllowed = true; options.deliveryMode = .highQualityFormat; options.resizeMode = .none; options.isSynchronous = false; options.version = .current; options.progressHandler = { _,_,_,_ in }; let _ = imageManager.requestImageDataAndOrientation(for: asset, options: options) { [weak self] data, _, _, info in guard let self = self else { return }; let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false; if isCancelled { print("🚫 [VM] Full-size request cancelled for \(assetIdentifier)."); completion(nil); return }; if let error = info?[PHImageErrorKey] as? Error { print("❌ [VM] Error loading full-size image: \(error.localizedDescription)"); completion(nil); return }; guard let data = data, let image = UIImage(data: data) else { print("⚠️ [VM] Full-size image data invalid for asset \(assetIdentifier)"); completion(nil); return }; print("✅ [VM] Full-size image loaded successfully for \(assetIdentifier)"); self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes); completion(image) }
+        let assetIdentifier = asset.localIdentifier
+        let isHighRes = true
+        
+        // Check cache first
+        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: isHighRes) {
+            print("✅ [VM] Using cached full-size image for asset: \(assetIdentifier)")
+            completion(cachedImage)
+            return
+        }
+        
+        print("⬆️ [VM] Requesting full-size image data for \(assetIdentifier)")
+        
+        // Configure request options
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .none
+        options.isSynchronous = false
+        options.version = .current
+        options.progressHandler = { _,_,_,_ in }
+        
+        let _ = imageManager.requestImageDataAndOrientation(for: asset, options: options) { [weak self] data, _, _, info in
+            guard let self = self else { return }
+            
+            // Check for cancellation
+            let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
+            if isCancelled {
+                print("🚫 [VM] Full-size request cancelled for \(assetIdentifier).")
+                completion(nil)
+                return
+            }
+            
+            // Check for errors
+            if let error = info?[PHImageErrorKey] as? Error {
+                print("❌ [VM] Error loading full-size image: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            
+            // Process the data
+            guard let data = data, let image = UIImage(data: data) else {
+                print("⚠️ [VM] Full-size image data invalid for asset \(assetIdentifier)")
+                completion(nil)
+                return
+            }
+            
+            print("✅ [VM] Full-size image loaded successfully for \(assetIdentifier)")
+            self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
+            completion(image)
+        }
     }
 
     // MARK: - Limited Library Handling
@@ -550,15 +835,68 @@ class PhotoViewModel: ObservableObject {
     }
 
     private func calculateDateRange(yearsAgo: Int, calendar: Calendar, today: Date) -> (start: Date, end: Date)? {
-        var components = calendar.dateComponents([.year, .month, .day], from: today); components.year = (components.year ?? calendar.component(.year, from: today)) - yearsAgo; guard let targetDate = calendar.date(from: components) else { print("❌ Error: Could not calculate target date for \(yearsAgo) years ago."); return nil }; let startOfDay = calendar.startOfDay(for: targetDate); guard let endOfDay = calendar.date(byAdding: .day, value: Constants.daysToAddForDateRangeEnd, to: startOfDay) else { print("❌ Error: Could not calculate end of day for target date."); return nil }; return (startOfDay, endOfDay)
+        // Extract year, month, day from today
+        var components = calendar.dateComponents([.year, .month, .day], from: today)
+        
+        // Calculate target year
+        components.year = (components.year ?? calendar.component(.year, from: today)) - yearsAgo
+        
+        // Create target date
+        guard let targetDate = calendar.date(from: components) else {
+            print("❌ Error: Could not calculate target date for \(yearsAgo) years ago.")
+            return nil
+        }
+        
+        // Get start of the target day
+        let startOfDay = calendar.startOfDay(for: targetDate)
+        
+        // Calculate end of the target day (typically next day's start)
+        guard let endOfDay = calendar.date(
+            byAdding: .day,
+            value: Constants.daysToAddForDateRangeEnd,
+            to: startOfDay
+        ) else {
+            print("❌ Error: Could not calculate end of day for target date.")
+            return nil
+        }
+        
+        return (startOfDay, endOfDay)
     }
 
     // This function MUST be called from the MainActor (e.g., view's onDisappear)
     func performCleanup() {
-        print("🧹 Performing ViewModel cleanup (cancelling tasks and clearing state)..."); print("🚫 Cancelling load tasks..."); activeLoadTasks.values.forEach { $0.cancel() }; activeLoadTasks.removeAll(); print("🚫 Cancelling grid load tasks..."); activeGridLoadTasks.values.forEach { $0.cancel() }; activeGridLoadTasks.removeAll(); print("🚫 Cancelling thumbnail prefetch tasks..."); activePrefetchThumbnailTasks.values.forEach { $0.cancel() }; activePrefetchThumbnailTasks.removeAll(); print("🚫 Cancelling featured prefetch tasks..."); activeFeaturedPrefetchTasks.values.forEach { $0.cancel() }; activeFeaturedPrefetchTasks.removeAll(); print("🚫 Cancelling background year scan task..."); backgroundYearScanTask?.cancel(); backgroundYearScanTask = nil; print("🧹 ViewModel cleanup complete.")
-        // <<< FIX: Add removal of preloaded images here >>>
+        print("🧹 Performing ViewModel cleanup (cancelling tasks and clearing state)...")
+        
+        // Cancel load tasks
+        print("🚫 Cancelling load tasks...")
+        activeLoadTasks.values.forEach { $0.cancel() }
+        activeLoadTasks.removeAll()
+        
+        // Cancel grid load tasks
+        print("🚫 Cancelling grid load tasks...")
+        activeGridLoadTasks.values.forEach { $0.cancel() }
+        activeGridLoadTasks.removeAll()
+        
+        // Cancel thumbnail prefetch tasks
+        print("🚫 Cancelling thumbnail prefetch tasks...")
+        activePrefetchThumbnailTasks.values.forEach { $0.cancel() }
+        activePrefetchThumbnailTasks.removeAll()
+        
+        // Cancel featured prefetch tasks
+        print("🚫 Cancelling featured prefetch tasks...")
+        activeFeaturedPrefetchTasks.values.forEach { $0.cancel() }
+        activeFeaturedPrefetchTasks.removeAll()
+        
+        // Cancel background scan task
+        print("🚫 Cancelling background year scan task...")
+        backgroundYearScanTask?.cancel()
+        backgroundYearScanTask = nil
+        
+        // Clear cached images
         print("🧹 Clearing preloaded featured images during cleanup.")
         preloadedFeaturedImages.removeAll()
+        
+        print("🧹 ViewModel cleanup complete.")
     }
 
     // --- DEINIT ---
