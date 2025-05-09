@@ -96,34 +96,29 @@ struct PagedYearsView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @Binding var selectedYearsAgo: Int?
 
-    // MARK: - Constants
-    // Constants remain the same as before
-    private struct Constants {
-        static let transitionDuration: Double = 0.3
-    }
-
-    // MARK: - Body
     var body: some View {
+        // 1️⃣ Define the TabView and its selection binding
         TabView(selection: $selectedYearsAgo) {
             ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
                 YearPageView(viewModel: viewModel, yearsAgo: yearsAgo)
-                    .tag(Optional(yearsAgo))
+                    .tag(yearsAgo)
             }
         }
-        .tabViewStyle(
-            PageTabViewStyle(indexDisplayMode: .never)
-        )
+        // 2️⃣ Immediately disable *all* animations on this TabView
+        .transaction { tx in
+            tx.animation = nil
+        }
+        // 3️⃣ Then apply your PageTabViewStyle and any other modifiers
+        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: Constants.transitionDuration), value: selectedYearsAgo)
-        // Remove conditional logic and always hide the navigation bar
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("")
-        .toolbar(.hidden, for: .navigationBar) // Always hide
+        .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedYearsAgo) { _, newValue in
-            if let currentYearsAgo = newValue {
-                print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
-                viewModel.triggerPrefetch(around: currentYearsAgo)
+            if let year = newValue {
+                viewModel.triggerPrefetch(around: year)
             }
         }
     }
 }
+
