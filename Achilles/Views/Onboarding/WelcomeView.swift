@@ -69,98 +69,105 @@ struct WelcomeView: View {
     var body: some View {
         ZStack {
             // Background gradient
-            LinearGradient(gradient: Gradient(colors: [BrandColors.lightGreen, BrandColors.lightYellow]),
-                           startPoint: .top,
-                           endPoint: .bottom)
-                .ignoresSafeArea()
+            LinearGradient(
+                gradient: Gradient(colors: [BrandColors.lightGreen, BrandColors.lightYellow]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
-            VStack {
-                // Main content card
-                VStack(spacing: 0) {
-                    // Header
-                    Text("Welcome to Your Throwbaks")
-                        .font(.title2.bold())
-                        .foregroundColor(BrandColors.darkGreen)
-                        .padding()
+            // Card content - improved spacing
+            VStack(spacing: 0) {
+                // Header
+                Text("Welcome to Your Throwbaks")
+                    .font(.title2.bold())
+                    .foregroundColor(BrandColors.darkGreen)
+                    .padding(.top, 20)
+                    .padding(.bottom, 10)
 
-                    // Progress indicators
-                    StepIndicator(currentStep: currentStep.rawValue, totalSteps: OnboardingStep.allCases.count)
-                        .padding(.vertical)
+                // Step indicator
+                StepIndicator(
+                    currentStep: currentStep.rawValue,
+                    totalSteps: OnboardingStep.allCases.count
+                )
+                .padding(.vertical, 12)
 
-                    // Content based on current step
-                    Group {
-                        switch currentStep {
-                        case .name:
-                            nameEntryView
-                        case .authentication:
-                            credentialsView
-                        case .photoPermission:
-                            photoPermissionView
-                        case .success:
-                            successView
-                        }
-                    }
-                    .padding()
-
-                    // Error message
-                    if let error = errorMessage ?? authVM.errorMessage {
-                        Text(error)
-                            .foregroundColor(.red)
-                            .font(.subheadline)
-                            .padding(.horizontal)
-                    }
-
-                    // Buttons
-                    if currentStep != .success {
-                        // Only show continue button on steps 1 and 2
-                        // For step 3, the buttons are in the photo permission view
-                        if currentStep != .photoPermission {
-                            Button {
-                                continueButtonTapped()
-                            } label: {
-                                HStack {
-                                    Text(currentStep == .authentication && authState.isLoginMode ? "Sign In" : "Continue")
-                                    Image(systemName: "arrow.right")
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(BrandColors.accentYellow)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                            }
-                            .disabled(!isStepValid)
-                            .padding()
-                        }
-                    } else {
-                        Button {
-                            finishButtonTapped()
-                        } label: {
-                            Text("Relive Your Memories")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(BrandColors.successGreen)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                        }
-                        .padding()
+                // Main content for each step
+                Group {
+                    switch currentStep {
+                        case .name:          nameEntryView
+                        case .authentication: credentialsView
+                        case .photoPermission: photoPermissionView
+                        case .success:       successView
                     }
                 }
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(16)
-                .shadow(radius: 5)
-                .padding(.horizontal)
-                .padding(.vertical, 30)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+
+                // Error message
+                if let error = errorMessage ?? authVM.errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.subheadline)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                }
+
+                // Button area
+                if currentStep != .success {
+                    if currentStep != .photoPermission {
+                        Spacer(minLength: 0) // Push content up, button down
+                        
+                        Button {
+                            continueButtonTapped()
+                        } label: {
+                            HStack {
+                                Text(currentStep == .authentication && authState.isLoginMode
+                                    ? "Sign In"
+                                    : "Continue")
+                                Image(systemName: "arrow.right")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(BrandColors.darkGreen)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .disabled(!isStepValid)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                        .padding(.top, 10)
+                    }
+                } else {
+                    Spacer(minLength: 0)
+                    
+                    Button {
+                        finishButtonTapped()
+                    } label: {
+                        Text("Relive Your Memories")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(BrandColors.successGreen)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                    .padding(.top, 10)
+                }
             }
+            .background(BrandColors.lightGreen)
+            .cornerRadius(16)
+            .shadow(radius: 5)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 20)
         }
         .onChange(of: authVM.user) { _, newValue in
-            // When auth succeeds, move to next step
             if newValue != nil && currentStep == .authentication {
                 goToNextStep()
             }
         }
-        .onAppear {
-            initialize()
-        }
+        .onAppear { initialize() }
     }
     
     // MARK: - Lifecycle Methods
@@ -209,7 +216,7 @@ struct WelcomeView: View {
             if authState.isLoginMode {
                 Task {
                     do {
-                        try await authVM.signIn(email: authState.email, password: authState.password)  // Added try here
+                        try await authVM.signIn(email: authState.email, password: authState.password)
                         // Store email for future sessions
                         UserDefaults.standard.set(authState.email, forKey: "lastUsedEmail")
                         // Note: Auto-advances via onChange of authVM.user
@@ -221,7 +228,7 @@ struct WelcomeView: View {
             } else {
                 Task {
                     do {
-                        try await authVM.signUp(email: authState.email, password: authState.password, displayName: username) // Added try here
+                        try await authVM.signUp(email: authState.email, password: authState.password, displayName: username)
                         // Store email for future sessions
                         UserDefaults.standard.set(authState.email, forKey: "lastUsedEmail")
                         // Note: Auto-advances via onChange of authVM.user
@@ -245,11 +252,12 @@ struct WelcomeView: View {
         // Complete onboarding and navigate to main app
         authVM.markOnboardingDone()
     }
+    
     private func goToNextStep() {
         // Find the next step
         let allSteps = OnboardingStep.allCases
         if let currentIndex = allSteps.firstIndex(of: currentStep),
-            currentIndex + 1 < allSteps.count {
+           currentIndex + 1 < allSteps.count {
             currentStep = allSteps[currentIndex + 1]
         }
     }
@@ -280,7 +288,7 @@ struct WelcomeView: View {
     // MARK: - Sub Views
     
     private var nameEntryView: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
             Text("Let's get started!")
                 .font(.title3.bold())
                 .foregroundColor(BrandColors.darkGreen)
@@ -293,15 +301,16 @@ struct WelcomeView: View {
 
                 TextField("Enter your name", text: $username)
                     .padding()
-                    .background(Color(UIColor.tertiarySystemBackground))
+                    .background(Color.white.opacity(0.2))
                     .cornerRadius(8)
+                    .foregroundColor(.primary)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             }
 
-            // Add "Already have an account" option
+            // "Already have an account" option
             Button {
                 authState.isLoginMode = true
                 currentStep = .authentication
@@ -311,12 +320,13 @@ struct WelcomeView: View {
                     .foregroundColor(BrandColors.darkGreen)
             }
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 16)
+            
+            Spacer(minLength: 0) // Push content to top
         }
     }
 
     private var credentialsView: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
             Text(authState.isLoginMode ? "Sign in to your account" : "Create your account")
                 .font(.title3.bold())
                 .foregroundColor(BrandColors.darkGreen)
@@ -328,6 +338,7 @@ struct WelcomeView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             
+            // Email field
             VStack(alignment: .leading, spacing: 8) {
                 Text("Email Address")
                     .font(.headline)
@@ -348,8 +359,11 @@ struct WelcomeView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
+                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+
             }
             
+            // Password field
             VStack(alignment: .leading, spacing: 8) {
                 Text("Password")
                     .font(.headline)
@@ -376,7 +390,7 @@ struct WelcomeView: View {
                     }
                 }
                 .padding()
-                .background(BrandColors.darkGreen)
+                .background(Color(UIColor.tertiarySystemBackground))
                 .cornerRadius(8)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
@@ -384,29 +398,32 @@ struct WelcomeView: View {
                 )
             }
             
-            // Switch between login and signup
-            Button {
-                authState.isLoginMode.toggle()
-            } label: {
-                Text(authState.isLoginMode ? "Need an account? Sign up" : "Already have an account? Sign in")
-                    .font(.footnote)
-                    .foregroundColor(BrandColors.darkGreen)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 8)
-            
-            // Forgot password option (only in login mode)
-            if authState.isLoginMode {
+            // Account options with consistent, compact spacing
+            VStack(spacing: 12) {
+                // Switch between login and signup
                 Button {
-                    showResetPassword = true
+                    authState.isLoginMode.toggle()
                 } label: {
-                    Text("Forgot password?")
+                    Text(authState.isLoginMode ? "Need an account? Sign up" : "Already have an account? Sign in")
                         .font(.footnote)
                         .foregroundColor(BrandColors.darkGreen)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 8)
+                
+                // Forgot password option (only in login mode)
+                if authState.isLoginMode {
+                    Button {
+                        showResetPassword = true
+                    } label: {
+                        Text("Forgot password?")
+                            .font(.footnote)
+                            .foregroundColor(BrandColors.darkGreen)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
+            
+            Spacer(minLength: 0) // Push content to top
         }
         .sheet(isPresented: $showResetPassword) {
             ResetPasswordView()
@@ -415,7 +432,7 @@ struct WelcomeView: View {
     }
     
     private var photoPermissionView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             Text("Photo Access")
                 .font(.title3.bold())
                 .foregroundColor(BrandColors.darkGreen)
@@ -424,14 +441,15 @@ struct WelcomeView: View {
             Text("Throwbaks needs access to your photo library to help you rediscover your memories.")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 60))
                 .foregroundColor(BrandColors.darkGreen)
-                .padding()
+                .padding(.vertical, 10)
             
             if photoAuthStatus == .notDetermined {
-                VStack(spacing: 16) {
+                VStack(spacing: 15) {
                     Button {
                         requestPhotoPermission()
                     } label: {
@@ -442,7 +460,7 @@ struct WelcomeView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(BrandColors.accentYellow)
+                        .background(BrandColors.darkGreen)
                         .foregroundColor(.white)
                         .cornerRadius(8)
                     }
@@ -456,7 +474,7 @@ struct WelcomeView: View {
                     }
                 }
             } else {
-                VStack(spacing: 16) {
+                VStack(spacing: 15) {
                     if photoAuthStatus == .authorized || photoAuthStatus == .limited {
                         VStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
@@ -472,6 +490,7 @@ struct WelcomeView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
                                 
                                 Button {
                                     if let rootVC = UIApplication.shared.windows.first?.rootViewController {
@@ -499,6 +518,7 @@ struct WelcomeView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                             
                             Button {
                                 if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
@@ -522,18 +542,20 @@ struct WelcomeView: View {
                         Text("Continue")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(BrandColors.accentYellow)
+                            .background(BrandColors.darkGreen)
                             .foregroundColor(.white)
                             .cornerRadius(8)
                     }
                 }
             }
+            
+            Spacer(minLength: 0) // Push content to top
         }
         .padding(.horizontal, 8)
     }
     
     private var successView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             Text("You're All Set!")
                 .font(.title3.bold())
                 .foregroundColor(BrandColors.darkGreen)
@@ -542,16 +564,21 @@ struct WelcomeView: View {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 80))
                 .foregroundColor(BrandColors.successGreen)
-                .padding()
+                .padding(.vertical, 10)
             
-            Text("Thanks, \(username)! Your account is ready to use.")
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
+            VStack(spacing: 10) {
+                Text("Thanks, \(username)! Your account is ready to use.")
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                Text("Prepare to rediscover your favorite moments.")
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             
-            Text("Prepare to rediscover your favorite moments.")
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .padding(.bottom, 24)
+            Spacer(minLength: 0) // Push content to top
         }
     }
 }
@@ -563,13 +590,13 @@ struct StepIndicator: View {
     let totalSteps: Int
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) { // Reduced spacing
             ForEach(1...totalSteps, id: \.self) { step in
                 ZStack {
-                    // Background circle
+                    // Background circle - smaller
                     Circle()
                         .fill(step <= currentStep ? Color(red: 0.13, green: 0.55, blue: 0.13) : Color.gray.opacity(0.3))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
                     
                     // Step number
                     if step >= currentStep {
@@ -590,11 +617,10 @@ struct StepIndicator: View {
                 if step < totalSteps {
                     Rectangle()
                         .fill(step < currentStep ? Color(red: 0.13, green: 0.55, blue: 0.13) : Color.gray.opacity(0.3))
-                        .frame(width: 20, height: 2)
+                        .frame(width: 15, height: 2) // Shorter line
                 }
             }
         }
-        .padding(.vertical, 8)
     }
 }
 
@@ -604,4 +630,3 @@ struct StepIndicator: View {
     WelcomeView()
         .environmentObject(AuthViewModel())
 }
-

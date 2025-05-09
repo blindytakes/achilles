@@ -92,9 +92,7 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
       FirebaseApp.configure()
       
       // TEMPORARY: Create AuthViewModel and immediately sign out for testing
-      let vm = AuthViewModel()
-      vm.signOut() // Force sign out for testing
-      
+      let vm = AuthViewModel()      
       // Continue with your existing initialization
       _authVM = StateObject(wrappedValue: vm)
       
