@@ -1,26 +1,10 @@
-// ItemDisplayView.swift
-//
-// This view handles the display of individual media items (photos, live photos, and videos)
-// in a detail view with interactive features.
-//
-// Key features:
-// - Supports multiple media types (static images, live photos, videos)
-// - Provides zooming capability for photos with gesture support
-// - Shows location data when available with an interactive map button
-// - Displays a location info panel that can be shown/hidden
-// - Handles tap gestures to show/hide controls
-// - Manages efficient media loading with proper state handling
-//
-// The view adjusts its presentation based on media type and maintains proper
-// lifecycle management with memory warnings handling and notification observers.
-// It coordinates with the parent view for state changes like showing/hiding UI elements
-// and provides appropriate loading and error states.
+// Achilles/Views/Media/ItemDisplayView.swift
 
 import SwiftUI
 import Photos
 import AVKit
-import UIKit            // For Share Sheet
-import PhotosUI        // For PHLivePhotoViewRepresentable
+import UIKit // For Share Sheet
+import PhotosUI // For PHLivePhotoViewRepresentable
 
 // MARK: - State Enum
 fileprivate enum DetailViewState {
@@ -35,94 +19,64 @@ struct ItemDisplayView: View {
     // MARK: - Inputs
     @ObservedObject var viewModel: PhotoViewModel
     let item: MediaItem
-    let player: AVPlayer?
+    let player: AVPlayer? // For video
     @Binding var showInfoPanel: Bool
     @Binding var controlsHidden: Bool
     let onSingleTap: () -> Void
 
     // MARK: - Internal State
     @State private var viewState: DetailViewState = .loading
-    @State private var zoomScale: CGFloat = 1.0
-    
-    
+    @State private var currentZoomScale: CGFloat = 1.0 // Local state for zoom, bound to ZoomableScrollView
+
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Constants
-    private let locationButtonBottomPadding: CGFloat = 1425
-    private let contentZIndex: Double = 0
-    private let locationButtonZIndex: Double = 1
-    private let locationPanelZIndex: Double = 2
-
-    private let panelSpringResponse: Double = 0.4
-    private let panelSpringDamping: Double = 0.75
-
-    private let locationPanelHorizontalMargin: CGFloat = 12
-    private let locationPanelHeightFactor: Double = 0.65
-    private let locationPanelMaxHeight: CGFloat = 400
-    private let locationPanelPositionXFactor: CGFloat = 0.5
-    private let locationPanelPositionYFactor: CGFloat = 0.45
-
-    private let mapIconHeight: CGFloat = 24
-    private let mapPinIconSize: CGFloat = 26
-    private let mapPinShadowOpacity: Double = 0.25
-    private let mapPinShadowRadius: Double = 1
-    private let mapPinShadowYOffset: Double = 1
-
-    private let mapLabelFontSize: CGFloat = 12
-    private let mapLabelVStackSpacing: CGFloat = 4
-    private let locationButtonSize: CGFloat = 60
-    private let locationButtonCornerRadius: CGFloat = 12
-    private let locationButtonBackgroundOpacity: Double = 0.85
-    private let locationButtonShadowOpacity: Double = 0.25
-    private let locationButtonShadowRadius: CGFloat = 4
-    private let locationButtonShadowYOffset: CGFloat = 2
-    private let locationButtonStrokeOpacity: Double = 0.3
-    private let locationButtonStrokeWidth: CGFloat = 1
+    private struct ViewConstants {
+        static let zoomSlightlyAboveMinimum: CGFloat = 1.01
+        static let panelSpringResponse: Double = 0.4
+        static let panelSpringDamping: Double = 0.75
+    }
 
     // MARK: - Body
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .center) {
-                // 1) Main content (image / live photo / video)
                 mainContentSwitchView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .zIndex(contentZIndex)
+                    .zIndex(0)
 
-                // 2) Map button overlay
                 if item.asset.location != nil && !showInfoPanel && !controlsHidden {
                     locationButton
-                        .transition(.opacity)
+                        .transition(.opacity.animation(.easeInOut))
                         .position(x: geometry.size.width / 2,
-                                         y: locationButtonBottomPadding)
-                        .zIndex(locationButtonZIndex)
+                                  y: geometry.size.height - (geometry.safeAreaInsets.bottom - 50 ))
+                        .zIndex(1)
                 }
-                // 3) Location info panel
                 if showInfoPanel, let location = item.asset.location {
                     LocationInfoPanelView(
                       asset: item.asset,
                       viewModel: viewModel,
                       onDismiss: {
-                        // hide the panel when user taps the “X”
-                        withAnimation {
+                        withAnimation(.spring(response: ViewConstants.panelSpringResponse, dampingFraction: ViewConstants.panelSpringDamping)) {
                           showInfoPanel = false
                         }
                       }
                     )
-                        .transition(.opacity.combined(with: .offset(y: geometry.size.height * 0.1)))
-                        .zIndex(locationPanelZIndex)
+                    .transition(.opacity.combined(with: .offset(y: geometry.size.height * 0.1)))
+                    .zIndex(2)
                 }
             }
             .background(Color.black)
             .id(item.id)
             .ignoresSafeArea(.all)
-            // ← Only one tap handler, applies to both photo & video
             .simultaneousGesture(
                 TapGesture(count: 1)
                     .onEnded {
-                        let isZoomed = zoomScale > 1.0
-                        if item.asset.mediaType == .video || !isZoomed {
+                        if currentZoomScale <= (ViewConstants.zoomSlightlyAboveMinimum + 0.01) && !showInfoPanel {
                             onSingleTap()
+                        } else if showInfoPanel {
+                             withAnimation { showInfoPanel = false }
                         }
                     }
             )
@@ -130,10 +84,10 @@ struct ItemDisplayView: View {
         .task(id: item.id) {
             await loadMediaData()
         }
-        .onChange(of: item.id) { _, _ in
+        .onChange(of: item.id) { _, newId in
+            print("ItemDisplayView: item.id changed to \(newId). Resetting local state.")
             showInfoPanel = false
-            controlsHidden = false
-            zoomScale = 1.0
+            currentZoomScale = 1.0
         }
         .onAppear {
             setupNotificationObservers()
@@ -146,41 +100,32 @@ struct ItemDisplayView: View {
     // MARK: - Location Button
     private var locationButton: some View {
         Button {
-            withAnimation(.spring(response: panelSpringResponse,
-                                  dampingFraction: panelSpringDamping)) {
+            withAnimation(.spring(response: ViewConstants.panelSpringResponse, dampingFraction: ViewConstants.panelSpringDamping)) {
                 showInfoPanel = true
             }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: locationButtonCornerRadius)
-                    .fill(Color(.systemBackground).opacity(locationButtonBackgroundOpacity))
-                    .shadow(color: .black.opacity(locationButtonShadowOpacity),
-                            radius: locationButtonShadowRadius,
-                            x: 0, y: locationButtonShadowYOffset)
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemBackground).opacity(0.85))
+                    .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
                     .overlay(
-                        RoundedRectangle(cornerRadius: locationButtonCornerRadius)
-                            .stroke(Color.white.opacity(locationButtonStrokeOpacity),
-                                    lineWidth: locationButtonStrokeWidth)
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
                     )
-
-                VStack(spacing: mapLabelVStackSpacing) {
+                VStack(spacing: 4) {
                     Image(systemName: "mappin.circle.fill")
-                        .font(.system(size: mapPinIconSize, weight: .semibold))
+                        .font(.system(size: 26, weight: .semibold))
                         .foregroundColor(.red)
-                        .shadow(color: .black.opacity(mapPinShadowOpacity),
-                                radius: mapPinShadowRadius,
-                                x: 0, y: mapPinShadowYOffset)
-                        .frame(height: mapIconHeight)
-
+                        .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
+                        .frame(height: 24)
                     Text("Map")
-                        .font(.system(size: mapLabelFontSize, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.primary)
                 }
             }
-            .frame(width: locationButtonSize, height: locationButtonSize)
+            .frame(width: 60, height: 60)
         }
-        .padding(.bottom, locationButtonBottomPadding)
     }
 
     // MARK: - Main Content Switcher
@@ -189,51 +134,34 @@ struct ItemDisplayView: View {
         switch item.asset.mediaType {
         case .image where item.asset.mediaSubtypes.contains(.photoLive):
             livePhotoView()
-
         case .image:
             staticImageView()
-
         case .video:
-            if let activePlayer = player {
-                VideoPlayer(player: activePlayer)
-                    .ignoresSafeArea()
-            } else {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .scaleEffect(1.5)
-            }
-
+            if let activePlayer = player { VideoPlayer(player: activePlayer).ignoresSafeArea() }
+            else { ProgressView().progressViewStyle(.circular).scaleEffect(1.5) }
         default:
             unsupportedView(message: "Unsupported Media Type")
         }
     }
 
-
     // MARK: - Live‑Photo Content
     @ViewBuilder
     private func livePhotoView() -> some View {
         switch viewState {
-        case .loading:
-            ProgressView()
-                .progressViewStyle(.circular)
-                .scaleEffect(1.5)
-
+        case .loading: ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
         case .livePhoto(let livePhoto):
             ZoomableScrollView(
+                contentId: item.id,
                 contentType: .livePhoto,
                 showInfoPanel: $showInfoPanel,
                 controlsHidden: $controlsHidden,
-                zoomScale: $zoomScale,
+                zoomScale: $currentZoomScale,
                 dismissAction: { dismiss() }
             ) {
                 PHLivePhotoViewRepresentable(livePhoto: livePhoto)
             }
-
-        case .error(let msg):
-            errorView(message: msg)
-
-        default:
-            errorView(message: "Internal state error")
+        case .error(let msg): errorView(message: msg)
+        default: errorView(message: "Internal state error (LivePhoto)")
         }
     }
 
@@ -241,68 +169,55 @@ struct ItemDisplayView: View {
     @ViewBuilder
     private func staticImageView() -> some View {
         switch viewState {
-        case .loading:
-            ProgressView()
-                .progressViewStyle(.circular)
-                .scaleEffect(1.5)
-
+        case .loading: ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
         case .image(let uiImage):
             ZoomableScrollView(
+                contentId: item.id,
                 contentType: .image,
                 showInfoPanel: $showInfoPanel,
                 controlsHidden: $controlsHidden,
-                zoomScale: $zoomScale,
+                zoomScale: $currentZoomScale,
                 dismissAction: { dismiss() }
             ) {
-                GeometryReader { geometry in
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height
-                        )
-                        .position(
-                            x: geometry.size.width / 2,
-                            y: geometry.size.height / 2 - 20
-                        )
-                        .background(Color.black)
-                }
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
             }
-
-        case .error(let msg):
-            errorView(message: msg)
-
-        default:
-            errorView(message: "Internal state error")
+        case .error(let msg): errorView(message: msg)
+        default: errorView(message: "Internal state error (Image)")
         }
     }
-
 
     // MARK: - Data Loading
     @MainActor
     private func loadMediaData() async {
+        let currentItemID = item.asset.localIdentifier
+        
         if item.asset.mediaType != .video {
-            viewState = .loading
-        } else {
-            return
-        }
+            if case .loading = viewState { /* Potentially check if it's for currentItemID */ }
+            else { viewState = .loading }
+        } else { return }
 
-        let id = item.asset.localIdentifier
         if item.asset.mediaSubtypes.contains(.photoLive) {
-            viewModel.requestLivePhoto(for: item.asset) { fetched in
-                guard self.item.asset.localIdentifier == id else { return }
-                viewState = fetched.map { .livePhoto(displayLivePhoto: $0) }
+            viewModel.requestLivePhoto(for: item.asset) { fetchedLivePhoto in // Removed [weak self]
+                // `self` is implicitly captured. Check against currentItemID.
+                guard self.item.asset.localIdentifier == currentItemID else {
+                    return
+                }
+                self.viewState = fetchedLivePhoto.map { .livePhoto(displayLivePhoto: $0) }
                                ?? .error("Failed to load Live Photo")
             }
         } else if item.asset.mediaType == .image {
-            viewModel.requestFullSizeImage(for: item.asset) { img in
-                guard self.item.asset.localIdentifier == id else { return }
-                viewState = img.map { .image(displayImage: $0) }
+            viewModel.requestFullSizeImage(for: item.asset) { fetchedImage in // Removed [weak self]
+                // `self` is implicitly captured. Check against currentItemID.
+                guard self.item.asset.localIdentifier == currentItemID else {
+                    return
+                }
+                self.viewState = fetchedImage.map { .image(displayImage: $0) }
                              ?? .error("Failed to load image")
             }
-        } else {
+        } else if item.asset.mediaType != .video {
             viewState = .unsupported
         }
     }
@@ -310,21 +225,15 @@ struct ItemDisplayView: View {
     // MARK: - Helper Views
     @ViewBuilder private func errorView(message: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.largeTitle).foregroundColor(.orange)
+            Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
             Text("Error Loading Media").font(.headline).foregroundColor(.white)
-            Text(message)
-                .font(.caption)
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+            Text(message).font(.caption).foregroundColor(.gray).multilineTextAlignment(.center).padding(.horizontal)
         }
     }
 
     @ViewBuilder private func unsupportedView(message: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "questionmark.diamond.fill")
-                .font(.largeTitle).foregroundColor(.orange)
+            Image(systemName: "questionmark.diamond.fill").font(.largeTitle).foregroundColor(.orange)
             Text(message).font(.headline).foregroundColor(.white)
         }
     }
@@ -332,20 +241,15 @@ struct ItemDisplayView: View {
     // MARK: - Notification Observers
     private func setupNotificationObservers() {
         NotificationCenter.default.addObserver(
-            forName: Notification.Name("DismissMapPanel"),
-            object: nil,
-            queue: .main
+            forName: Notification.Name("DismissMapPanel"), object: nil, queue: .main
         ) { _ in
-            withAnimation(.spring(response: panelSpringResponse,
-                                  dampingFraction: panelSpringDamping)) {
-                showInfoPanel = false
+            withAnimation(.spring(response: ViewConstants.panelSpringResponse, dampingFraction: ViewConstants.panelSpringDamping)) {
+                self.showInfoPanel = false // Explicit self for clarity in closure
             }
         }
         NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification,
-            object: nil,
-            queue: .main
-        ) { [weak viewModel] _ in
+            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
+        ) { [weak viewModel] _ in // [weak viewModel] is fine as viewModel is a class (ObservableObject)
             Task { @MainActor in
                 viewModel?.clearImageCache()
             }
@@ -353,12 +257,8 @@ struct ItemDisplayView: View {
     }
 
     private func removeNotificationObservers() {
-        NotificationCenter.default.removeObserver(self,
-                                                  name: Notification.Name("DismissMapPanel"),
-                                                  object: nil)
-        NotificationCenter.default.removeObserver(self,
-                                                  name: UIApplication.didReceiveMemoryWarningNotification,
-                                                  object: nil)
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
     }
 }
 
@@ -374,4 +274,3 @@ struct PHLivePhotoViewRepresentable: UIViewRepresentable {
         uiView.livePhoto = livePhoto
     }
 }
-

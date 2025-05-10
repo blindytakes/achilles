@@ -23,6 +23,7 @@ import Photos // For PHAuthorizationStatus
 import UIKit // Needed for UIApplication below
 
 struct ContentView: View {
+    @EnvironmentObject var authVM: AuthViewModel // <<<< ADD THIS LINE
     @StateObject private var viewModel = PhotoViewModel()
     @State private var selectedYearsAgo: Int?
 
@@ -30,53 +31,75 @@ struct ContentView: View {
     private let defaultTargetYear: Int = 1
 
     var body: some View {
-        NavigationView {
+        NavigationView { // Your existing NavigationView
             Group {
                 switch viewModel.authorizationStatus {
                 case .notDetermined:
-                    // Pass the checkAuthorization function as the onRequest closure
                     AuthorizationRequiredView(
                         status: .notDetermined,
-                        onRequest: viewModel.checkAuthorization // Pass function directly
+                        onRequest: viewModel.checkAuthorization
                     )
+                    .environmentObject(authVM) // Pass down if needed by AuthRequiredView
 
                 case .restricted, .denied, .limited:
-                    // Pass the status. Actions are handled internally by AuthorizationRequiredView
                     AuthorizationRequiredView(
                         status: viewModel.authorizationStatus,
-                        onRequest: {} // Empty closure needed
+                        onRequest: {}
                     )
+                    .environmentObject(authVM) // Pass down if needed
 
                 case .authorized:
                     if viewModel.initialYearScanComplete {
                         if viewModel.availableYearsAgo.isEmpty {
-                            // Message when no content found after scan
                             Text("No past memories found for today's date.")
                                 .foregroundColor(.secondary)
-                                .navigationTitle("Memories") // Keep consistent title
+                                .navigationTitle("Memories") // Set title for this specific state
                         } else {
-                            // Main content view
                             PagedYearsView(viewModel: viewModel, selectedYearsAgo: $selectedYearsAgo)
-                                .navigationTitle("Memories") // Apply title here too
+                                // .navigationTitle("Memories") // PagedYearsView handles its own title/toolbar hiding
+                                // If PagedYearsView or its children need authVM, pass via .environmentObject()
+                                // .environmentObject(authVM)
                         }
                     } else {
-                        // Loading state while scanning
-                        VStack(spacing: 8) { // Add some spacing
+                        VStack(spacing: 8) {
                             ProgressView("Scanning Library...")
                             Text("Finding relevant years...")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .navigationTitle("Memories") // Keep consistent title
+                        .navigationTitle("Memories") // Set title for loading state
                     }
 
                 @unknown default:
                     Text("An unexpected error occurred with permissions.")
-                        .foregroundColor(.red) // Indicate error visually
-                        .navigationTitle("Error")
+                        .foregroundColor(.red)
+                        .navigationTitle("Error") // Set title for error state
                 }
             }
-        }
+            // Add the toolbar item to the NavigationView's content (the Group)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) { // Or .navigationBarLeading
+                    Button("TEMP SIGN OUT") {
+                        print("ContentView: TEMP SIGN OUT toolbar button tapped.")
+                        authVM.signOut()
+                    }
+                    .foregroundColor(.red) // Make it stand out
+                }
+            }
+            // If PagedYearsView isn't setting a title, and you want a consistent one
+            // for when PagedYearsView is shown, you might need to adjust title logic slightly.
+            // PagedYearsView current sets .navigationTitle("") and .toolbar(.hidden, for: .navigationBar)
+            // so this toolbar item might only appear if PagedYearsView is NOT visible or if you
+            // remove the .toolbar(.hidden) from PagedYearsView.
+
+            // Alternative if PagedYearsView hides the toolbar:
+            // You could put the sign-out button directly in PagedYearsView's toolbar,
+            // or make ContentView's toolbar always visible.
+
+        } // End of NavigationView
+        // This style is good if ContentView itself provides the main navigation structure
+        // .navigationViewStyle(.stack) // Uncomment if you prefer a specific style
+
         // Initialize selection once years are available
         .onReceive(viewModel.$availableYearsAgo) { availableYears in
              // Only set default if selection is currently nil AND years are available
@@ -118,7 +141,7 @@ struct PagedYearsView: View {
         // Remove conditional logic and always hide the navigation bar
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("")
-        .toolbar(.hidden, for: .navigationBar) // Always hide
+       // .toolbar(.hidden, for: .navigationBar) // Always hide
         .onChange(of: selectedYearsAgo) { _, newValue in
             if let currentYearsAgo = newValue {
                 print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")

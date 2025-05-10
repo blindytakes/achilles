@@ -113,21 +113,21 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
     }
   }
   
+    // In Achilles/Core/ThrowbacksApp.swift
     @ViewBuilder
     private var rootView: some View {
-        if authVM.user == nil {
-            // Use the new WelcomeView for authentication and initial onboarding
+        if authVM.user == nil { // Check if user is authenticated
             WelcomeView()
-        } else if photoStatus != .authorized && photoStatus != .limited {
-            // Show photo permission screen if needed
-            AuthorizationRequiredView(status: photoStatus) {
-                PHPhotoLibrary.requestAuthorization(for: .readWrite) { new in
-                    DispatchQueue.main.async { photoStatus = new }
-                }
-            }
         } else {
-            // Main app content
-            ContentView()
+            // If user is authenticated, proceed to the main part of your app.
+            // This is where you'd check for dailyWelcomeNeeded, photoStatus, onboardingComplete (new meaning) etc.
+            // For now, let's simplify to go to ContentView if logged in.
+            // We'll refine this post-auth flow later.
+            if authVM.dailyWelcomeNeeded { // Example: Still handle daily welcome
+                 DailyWelcomeView()
+            } else {
+                 ContentView() // Your main app view
+            }
         }
     }
-    }
+}
