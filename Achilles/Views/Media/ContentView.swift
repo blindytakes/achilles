@@ -76,25 +76,6 @@ struct ContentView: View {
                         .navigationTitle("Error") // Set title for error state
                 }
             }
-            // Add the toolbar item to the NavigationView's content (the Group)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) { // Or .navigationBarLeading
-                    Button("TEMP SIGN OUT") {
-                        print("ContentView: TEMP SIGN OUT toolbar button tapped.")
-                        authVM.signOut()
-                    }
-                    .foregroundColor(.red) // Make it stand out
-                }
-            }
-            // If PagedYearsView isn't setting a title, and you want a consistent one
-            // for when PagedYearsView is shown, you might need to adjust title logic slightly.
-            // PagedYearsView current sets .navigationTitle("") and .toolbar(.hidden, for: .navigationBar)
-            // so this toolbar item might only appear if PagedYearsView is NOT visible or if you
-            // remove the .toolbar(.hidden) from PagedYearsView.
-
-            // Alternative if PagedYearsView hides the toolbar:
-            // You could put the sign-out button directly in PagedYearsView's toolbar,
-            // or make ContentView's toolbar always visible.
 
         } // End of NavigationView
         // This style is good if ContentView itself provides the main navigation structure
@@ -141,7 +122,7 @@ struct PagedYearsView: View {
         // Remove conditional logic and always hide the navigation bar
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("")
-       // .toolbar(.hidden, for: .navigationBar) // Always hide
+        .toolbar(.hidden, for: .navigationBar) // Always hide
         .onChange(of: selectedYearsAgo) { _, newValue in
             if let currentYearsAgo = newValue {
                 print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
