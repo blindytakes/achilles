@@ -26,11 +26,7 @@ struct GridItemView: View {
 
     @State private var thumbnail: UIImage?
     @State private var isPressed = false
-    @State private var showImage = false
-
-    private var isLivePhoto: Bool {
-      item.asset.mediaSubtypes.contains(.photoLive)
-    }
+    @State private var isLoadingThumbnail = false
 
     private let itemFrameSize: CGFloat = 190
 
@@ -88,7 +84,7 @@ struct GridItemView: View {
             }
         }
         .onAppear {
-            if thumbnail == nil {
+            if thumbnail == nil && !isLoadingThumbnail { // Only load if not already loaded and not currently loading
                 loadThumbnail()
             }
         }
@@ -96,13 +92,16 @@ struct GridItemView: View {
 
     // MARK: - Helpers
     private func loadThumbnail() {
+        isLoadingThumbnail = true // <<<< SET LOADING STATE >>>>
         let scale = UIScreen.main.scale
-        let size = CGSize(width: 300 * scale, height: 300 * scale)
-
+        let targetPointSize = 200.0 // Matches your prefetchThumbnailSize point width
+        let size = CGSize(width: targetPointSize * scale, height: targetPointSize * scale)
         viewModel.requestImage(for: item.asset, targetSize: size) { image in
             DispatchQueue.main.async {
                 self.thumbnail = image
             }
+            self.isLoadingThumbnail = false // <<<< RESET LOADING STATE >>>>
+
         }
     }
 

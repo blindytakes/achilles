@@ -30,7 +30,7 @@ class PhotoViewModel: ObservableObject {
         static let defaultThumbnailSize = CGSize(width: 250, height: 250)
         static let prefetchThumbnailSize = CGSize(width: 200, height: 200) // Use this for proactive thumbnail loading
 
-        // Date Calculations
+        // Date Calculationsc
         static let daysToAddForDateRangeEnd: Int = 1
 
         // Other Logic
@@ -63,7 +63,9 @@ class PhotoViewModel: ObservableObject {
     private var activePrefetchThumbnailTasks: [Int: Task<Void, Never>] = [:]
     private var activeFeaturedPrefetchTasks: [Int: Task<Void, Never>] = [:]
     private var backgroundYearScanTask: Task<Void, Never>? = nil // Task for Phase 2 scan
+    private var memoryWarningObserver: NSObjectProtocol?
 
+    
     // Preloaded Data Storage
     private var preloadedFeaturedImages: [Int: UIImage] = [:]
 
@@ -84,6 +86,20 @@ class PhotoViewModel: ObservableObject {
         self.imageCacheService = imageCacheService
         self.factory = factory
         checkAuthorization()
+        
+        // In the init() method, update the memory warning observer:
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            print("PhotoViewModel: UIApplication.didReceiveMemoryWarningNotification OBSERVED!")
+            
+            // Fix for main actor isolation
+            Task { @MainActor in
+                self?.clearImageCache()
+            }
+        }
     }
 
     // MARK: - Animation State Handling
@@ -721,6 +737,7 @@ class PhotoViewModel: ObservableObject {
     }
     
     internal func clearImageCache() {
+        print("PhotoViewModel: MEMORY WARNING RECEIVED (or manual clear) - Starting clearImageCache()")
         print("🧹 Clearing preloaded featured images along with cache.")
         preloadedFeaturedImages.removeAll()
         imageCacheService.clearCache()
@@ -1028,8 +1045,14 @@ class PhotoViewModel: ObservableObject {
         print("🧹 ViewModel cleanup complete.")
     }
 
-    // --- DEINIT ---
-    deinit { print("🗑️ PhotoViewModel deinit finished."); backgroundYearScanTask?.cancel() } // Keep simple
-
-} // End of PhotoViewModel class
-
+    deinit {
+        print("🗑️ PhotoViewModel deinit finished.")
+        backgroundYearScanTask?.cancel()
+        
+        // ADD THIS: Remove memory warning observer
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
+            print("PhotoViewModel: Removed memory warning observer.")
+        }
+    }
+}

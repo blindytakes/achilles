@@ -283,68 +283,60 @@ struct FeaturedYearFullScreenView: View {
                 .transition(.opacity)
             }
         }
-        .onAppear {
-            // Set initial visual state
-            imageBrightness = initialImageBrightness
-            imageScale = initialImageScale
-
-            // --- Conditional Image Loading using ViewModel ---
-            if preloadedImage == nil && imageLoadTask == nil { // <<< Check if task is already running
-                print("🖼️ FeaturedYearFullScreenView: No preloaded image for \(yearsAgo), starting VM load task...")
-                isLoadingImage = true // Ensure loading indicator shows
-
-                // <<< Launch Task to call ViewModel's async function >>>
-                imageLoadTask = Task {
-                    // Call the async function on the ViewModel
-                    let imageData = await viewModel.requestFullImageData(for: item.asset)
-
-                    // Check for cancellation after await
-                    guard !Task.isCancelled else {
-                        print("🚫 Image load task cancelled after fetch for \(yearsAgo).")
-                        // Don't need to set isLoadingImage = false here, onDisappear handles it
-                        return
-                    }
-
-                    var loadedUIImage: UIImage? = nil
-                    if let data = imageData {
-                        loadedUIImage = UIImage(data: data) // Attempt to create image
-                    }
-
-                    // Update state on main thread
-                    await MainActor.run {
-                        if let uiImage = loadedUIImage {
-                            print("✅ Featured image loaded via VM Task for \(yearsAgo)")
-                            withAnimation(.easeIn(duration: imageLoadFadeDuration)) {
-                                self.image = uiImage
-                            }
-                        } else {
-                            print("⚠️ Featured image loaded via VM Task returned nil/invalid data for \(yearsAgo)")
-                            // Optionally set an error state or leave placeholder
-                        }
-                        self.isLoadingImage = false // Mark loading as complete
-                        self.imageLoadTask = nil // Clear task reference on completion
-                    }
-                } // End of Task
-            } else if preloadedImage != nil {
-                print("🖼️ FeaturedYearFullScreenView: Using preloaded image for \(yearsAgo).")
-                isLoadingImage = false // Ensure loading is off
-            } else {
-                 print("🖼️ FeaturedYearFullScreenView: Image load task already running for \(yearsAgo).")
+        
+        .task(id: item.id) { // <<<< KEY CHANGE: Use .task modifier tied to item.id
+            if image != nil && preloadedImage != nil { // Already have an image (likely preloaded)
+                print("🖼️ FeaturedYearFullScreenView: Using existing or preloaded image for \(yearsAgo). No new load needed in .task.")
+                return
             }
-        }
-        .onDisappear {
-            showLoadingTransition = false
-            // <<< Cancel the image loading task if it's running >>>
-            if let task = imageLoadTask {
-                print("🚫 FeaturedYearFullScreenView disappearing, cancelling image load task for \(yearsAgo).")
-                task.cancel()
-                imageLoadTask = nil
-                // Also reset loading indicator state if task was cancelled mid-load
-                if isLoadingImage {
-                     isLoadingImage = false
+
+            // If image is nil, it means preloadedImage was also nil or we need to load fresh
+            if preloadedImage != nil {
+                print("🖼️ FeaturedYearFullScreenView: Assigning preloaded image for \(yearsAgo) in .task.")
+                self.image = preloadedImage
+                 // After assigning preloadedImage, no further loading is needed from this task.
+                return
+            }
+
+            print("🖼️ FeaturedYearFullScreenView.task: No preloaded image for \(yearsAgo), starting VM load...")
+            // Call the async function on the ViewModel
+            let imageData = await viewModel.requestFullImageData(for: item.asset)
+
+            // Check for cancellation (SwiftUI's .task handles this if the view disappears or id changes)
+            if Task.isCancelled {
+                print("🚫 FeaturedYearFullScreenView.task: Image load task cancelled for \(yearsAgo).")
+                return
+            }
+
+            var loadedUIImage: UIImage? = nil
+            if let data = imageData {
+                loadedUIImage = UIImage(data: data)
+            }
+
+            if let uiImage = loadedUIImage {
+                print("✅ FeaturedYearFullScreenView.task: Featured image loaded for \(yearsAgo)")
+                withAnimation(.easeIn(duration: imageLoadFadeDuration)) {
+                    self.image = uiImage
                 }
+            } else {
+                print("⚠️ FeaturedYearFullScreenView.task: Featured image data returned nil/invalid for \(yearsAgo)")
+                // Optionally set an error state or leave placeholder
             }
         }
-    }
-
-}
+        
+        .onAppear { // This onAppear is now ONLY for non-loading related setup if any
+                   // Set initial visual state for effects (if not already handled by image effects onAppear)
+                   if image == nil { // Reset if item changed and image is not yet loaded
+                       imageBrightness = initialImageBrightness
+                       imageScale = initialImageScale
+                   }
+                   // The original onAppear that called imageLoadTask should be removed or its content moved to the .task modifier
+               }
+               .onDisappear {
+                   showLoadingTransition = false
+                   // The .task modifier automatically handles cancellation of the Task when the view disappears or item.id changes.
+                   // So, manual cancellation of imageLoadTask is no longer needed here.
+                   print("🚫 FeaturedYearFullScreenView disappearing for \(yearsAgo). .task will handle cancellation.")
+               }
+           }
+       }

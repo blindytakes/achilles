@@ -247,18 +247,10 @@ struct ItemDisplayView: View {
                 self.showInfoPanel = false // Explicit self for clarity in closure
             }
         }
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
-        ) { [weak viewModel] _ in // [weak viewModel] is fine as viewModel is a class (ObservableObject)
-            Task { @MainActor in
-                viewModel?.clearImageCache()
-            }
-        }
     }
 
     private func removeNotificationObservers() {
         NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
-        NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
     }
 }
 

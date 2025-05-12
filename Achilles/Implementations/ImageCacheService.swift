@@ -28,12 +28,12 @@ class ImageCacheService: ImageCacheServiceProtocol {
     private struct CacheConstants {
         // UIImage Cache Limits
         static let imageCacheCountLimit: Int = 50 // Thumbnail cache
-        static let imageCacheMaxCostMB: Int = 80 // In Megabytes
+        static let imageCacheMaxCostMB: Int = 120 // In Megabytes
         static let highResCacheCountLimit: Int = 15 // High-res UIImage cache
-        static let highResCacheMaxCostMB: Int = 250 // In Megabytes
+        static let highResCacheMaxCostMB: Int = 300 // In Megabytes
 
         // NEW: PHLivePhoto Cache Limits
-        static let livePhotoCacheCountLimit: Int = 10 // Keep fewer Live Photos due to size
+        static let livePhotoCacheCountLimit: Int = 12 // Keep fewer Live Photos due to size
 
         // Cost Calculation Helpers
         static let bytesPerMegabyte: Int = 1024 * 1024
@@ -115,6 +115,7 @@ class ImageCacheService: ImageCacheServiceProtocol {
     // --- Clear Cache Method (Updated) ---
 
     func clearCache() {
+        print("ImageCacheService: Received call to clear ALL caches.")
         print("🧹 [SVC] Clearing ALL caches (thumbnails, high-res images, live photos)...")
         imageCache.removeAllObjects()
         highResCache.removeAllObjects()
