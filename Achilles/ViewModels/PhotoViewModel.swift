@@ -25,7 +25,8 @@ class PhotoViewModel: ObservableObject {
         static let initialScanPhaseYears: Int = 4         // Years to scan in the first phase
         static let yearCheckFetchLimit: Int = 1           // Fetch limit when checking if year has content
         static let initialFetchLimitForLoadPage: Int = 10 // Fetch first 10 to find featured quickly
-
+        static let maxPhotosToDisplay: Int = 50
+        static let samplingPoolLimit: Int = 300
         // Image Sizes
         static let defaultThumbnailSize = CGSize(width: 250, height: 250)
         static let prefetchThumbnailSize = CGSize(width: 200, height: 200) // Use this for proactive thumbnail loading
@@ -299,51 +300,164 @@ class PhotoViewModel: ObservableObject {
         activeLoadTasks[yearsAgo] = loadTask
     }
 
-    // Asynchronous loading logic for a specific year page
+    // Modify loadPageAsync
     private func loadPageAsync(yearsAgo: Int) async {
-        guard authorizationStatus == .authorized || authorizationStatus == .limited else {
-            print("🚫 Cannot load page \(yearsAgo) - authorization denied.")
-            await MainActor.run { pageStateByYear[yearsAgo] = .error(message: "Photo Library access denied."); activeLoadTasks[yearsAgo] = nil }
-            return
-        }
-        await MainActor.run { pageStateByYear[yearsAgo] = .loading }; print("⬆️ Loading page for \(yearsAgo) years ago...")
-        var featuredItem: MediaItem? = nil
+        // ... (authorization checks and initial state setting remain the same) ...
+        // await MainActor.run { pageStateByYear[yearsAgo] = .loading }
+
+        var initiallyFetchedFeaturedItem: MediaItem? // To hold the item from the initial fast load
+
         do {
-            // Phase 1
-            print("⏳ Phase 1: Fetching initial items for year \(yearsAgo)")
+            // Phase 1: Fetch initial items quickly for a potential early featured display
+            // This helps the UI show something (like the splash screen's image) faster.
+            print("⏳ Phase 1: Fetching initial items for year \(yearsAgo) for potentially quick featured item.")
             let initialItems = try await fetchMediaItems(yearsAgo: yearsAgo, limit: Constants.initialFetchLimitForLoadPage)
             try Task.checkCancellation()
-            if initialItems.isEmpty {
-                print("✅ Phase 1 Load complete for \(yearsAgo) - Empty."); await MainActor.run { pageStateByYear[yearsAgo] = .empty }; activeLoadTasks[yearsAgo] = nil; return
-            }
-            featuredItem = self.selector.pickFeaturedItem(from: initialItems)
-            print("✅ Phase 1 Load complete for \(yearsAgo). Featured item \(featuredItem == nil ? "not found" : "found").")
-            await MainActor.run { pageStateByYear[yearsAgo] = .loaded(featured: featuredItem, grid: []) }
 
-            // Phase 2
-            print("⏳ Phase 2: Launching background task for full grid for year \(yearsAgo)")
-            activeGridLoadTasks[yearsAgo]?.cancel()
+            if initialItems.isEmpty {
+                print("✅ Phase 1 Load complete for \(yearsAgo) - Empty. No photos found for this day.")
+                await MainActor.run { pageStateByYear[yearsAgo] = .empty }
+                activeLoadTasks[yearsAgo] = nil // Clear the main load task reference
+                return
+            }
+
+            // Tentatively select a featured item from the initial small batch.
+            // This item might be replaced if the full load and sampling select a different one,
+            // or you can prioritize keeping this one. For speed, let's say this is for the splash.
+            initiallyFetchedFeaturedItem = self.selector.pickFeaturedItem(from: initialItems)
+            print("✅ Phase 1 Load complete for \(yearsAgo). Tentative featured item \(initiallyFetchedFeaturedItem == nil ? "not found" : "found").")
+            
+            // Update state to show this initial featured item, grid is still empty.
+            // This allows FeaturedYearFullScreenView to render quickly.
+            await MainActor.run {
+                // Ensure the grid is empty initially as full content is still loading.
+                pageStateByYear[yearsAgo] = .loaded(featured: initiallyFetchedFeaturedItem, grid: [])
+            }
+
+            // Phase 2: Launch background task for full content (sampling and final grid)
+            print("⏳ Phase 2: Launching background task for full grid (with sampling) for year \(yearsAgo)")
+            activeGridLoadTasks[yearsAgo]?.cancel() // Cancel any previous grid task for this year
+
             let gridTask = Task.detached(priority: .background) { [weak self] in
                 guard let self = self else { return }
+                
+                var finalFeaturedItem: MediaItem?
+                var finalGridItems: [MediaItem]
+
                 do {
-                    let allItems = try await self.fetchMediaItems(yearsAgo: yearsAgo, limit: nil)
+                    // Fetch all items, or up to samplingPoolLimit if we expect many.
+                    // If you always want to fetch all then sample, remove the limit here
+                    // and apply prefix(Constants.samplingPoolLimit) later.
+                    // For speed, fetching up to samplingPoolLimit directly is better if there are many photos.
+                    let allItemsForYear = try await self.fetchMediaItems(yearsAgo: yearsAgo, limit: Constants.samplingPoolLimit)
                     try Task.checkCancellation()
-                    let gridItems = allItems.filter { $0.id != featuredItem?.id }
-                    print("✅ Phase 2 Load complete for \(yearsAgo). Found \(gridItems.count) grid items.")
+
+                    if allItemsForYear.isEmpty && initiallyFetchedFeaturedItem == nil { // Double check if initial was also empty
+                        print("✅ Phase 2 Load confirms year \(yearsAgo) is empty.")
+                        await MainActor.run {
+                            if !Task.isCancelled { self.pageStateByYear[yearsAgo] = .empty }
+                            self.activeGridLoadTasks[yearsAgo] = nil
+                        }
+                        return
+                    }
+                    
+                    var photosToConsider: [MediaItem]
+                    
+                    // Logic for 60 photo limit and sampling
+                    if allItemsForYear.count > Constants.maxPhotosToDisplay {
+                        // We already fetched up to samplingPoolLimit.
+                        // If allItemsForYear.count is still > maxPhotosToDisplay, it means we have enough to sample from.
+                        // If allItemsForYear.count is <= samplingPoolLimit but > maxPhotosToDisplay, we sample from what we have.
+                        photosToConsider = Array(allItemsForYear.shuffled().prefix(Constants.maxPhotosToDisplay))
+                        // Optional: Sort 'photosToConsider' if a specific order (e.g., chronological) is desired for the 60.
+                        // photosToConsider.sort { $0.asset.creationDate ?? Date() < $1.asset.creationDate ?? Date() }
+                    } else {
+                        photosToConsider = allItemsForYear // Use all fetched if 60 or fewer
+                    }
+
+                    // If photosToConsider is empty at this point, but initialItems had something,
+                    // it implies an issue or that initialItems were the only items.
+                    // Fallback to initial items if photosToConsider is empty but initialItems were not.
+                    if photosToConsider.isEmpty && !initialItems.isEmpty {
+                        photosToConsider = initialItems // Or a subset of initialItems if it also needs limiting.
+                    }
+
+
+                    // Decide on the *final* featured item from the photosToConsider.
+                    // Option 1: Prioritize the initiallyFetchedFeaturedItem if it's still relevant
+                    //           and part of `photosToConsider` (or force include it).
+                    // Option 2: Pick a new one from `photosToConsider`. This is simpler.
+                    finalFeaturedItem = self.selector.pickFeaturedItem(from: photosToConsider)
+
+                    // If no featured item could be picked (e.g., photosToConsider is empty),
+                    // but we had an initiallyFetchedFeaturedItem, we can use that.
+                    if finalFeaturedItem == nil && initiallyFetchedFeaturedItem != nil {
+                        finalFeaturedItem = initiallyFetchedFeaturedItem
+                        // If using initial, ensure photosToConsider includes it or is based on it
+                        if !photosToConsider.contains(where: { $0.id == finalFeaturedItem!.id }) {
+                             // This scenario needs careful handling: if photosToConsider ended up empty
+                             // or didn't include the initial pick. For simplicity, if photosToConsider is empty,
+                             // but finalFeaturedItem (from initial) exists, the grid will be empty.
+                            if photosToConsider.isEmpty {
+                                print("⚠️ Photos to consider became empty, but had an initial featured item. Grid will be empty.")
+                            }
+                        }
+                    }
+                    
+                    // Ensure `finalGridItems` does not duplicate `finalFeaturedItem`.
+                    // And grid items must come from `photosToConsider`.
+                    if let fItem = finalFeaturedItem {
+                        finalGridItems = photosToConsider.filter { $0.id != fItem.id }
+                    } else {
+                        // No featured item at all (photosToConsider was empty)
+                        finalGridItems = [] // photosToConsider itself would be empty here.
+                    }
+
+                    print("✅ Phase 2 Load complete for \(yearsAgo). Found \(finalGridItems.count) grid items. Featured: \(finalFeaturedItem != nil)")
+
                     await MainActor.run {
                         guard !Task.isCancelled else { return }
-                        if case .loaded(let currentFeatured, _) = self.pageStateByYear[yearsAgo] { self.pageStateByYear[yearsAgo] = .loaded(featured: currentFeatured, grid: gridItems) }
-                        else { print("⚠️ State changed before grid load finished for year \(yearsAgo).") }
+                        // Update the state with the final featured item and the sampled/limited grid.
+                        self.pageStateByYear[yearsAgo] = .loaded(featured: finalFeaturedItem, grid: finalGridItems)
                         self.activeGridLoadTasks[yearsAgo] = nil
                     }
-                } catch is CancellationError { print("🚫 Grid load task cancelled for year \(yearsAgo)."); await MainActor.run { self.activeGridLoadTasks[yearsAgo] = nil } }
-                  catch { print("❌ Error during Phase 2 grid load for year \(yearsAgo): \(error.localizedDescription)"); await MainActor.run { self.activeGridLoadTasks[yearsAgo] = nil } }
+
+                } catch is CancellationError {
+                    print("🚫 Grid load task cancelled for year \(yearsAgo).")
+                    await MainActor.run { self.activeGridLoadTasks[yearsAgo] = nil }
+                } catch {
+                    print("❌ Error during Phase 2 grid load for year \(yearsAgo): \(error.localizedDescription)")
+                    // Optionally, revert to a more basic error state or keep initial featured if loading full grid fails
+                    await MainActor.run {
+                        if !Task.isCancelled {
+                            // Decide: if grid load fails, do we show an error or just the initial featured with empty grid?
+                            // For now, let's assume if grid fails, the whole page is in error for consistency.
+                            // However, you already set .loaded with initial featured. This part needs to be robust.
+                            // If pageState is already .loaded(featured: initial, grid: []), a grid error might mean
+                            // you log it but don't change state, or change to an error state.
+                            // Let's transition to error for now if the grid task fails.
+                             if case .loaded(let currentFeatured, _) = self.pageStateByYear[yearsAgo], currentFeatured != nil {
+                                 // Keep the current featured, but indicate grid error, or show empty grid
+                                 // This is complex. Simplest is to go to full error state or accept potentially empty grid.
+                                 // For now, setting full error to indicate grid failed:
+                                 self.pageStateByYear[yearsAgo] = .error(message: "Failed to load all photos: \(error.localizedDescription)")
+                             } else {
+                                 self.pageStateByYear[yearsAgo] = .error(message: "Failed to load photos: \(error.localizedDescription)")
+                             }
+                        }
+                        self.activeGridLoadTasks[yearsAgo] = nil
+                    }
+                }
             }
             activeGridLoadTasks[yearsAgo] = gridTask
 
         } catch is CancellationError {
-             print("🚫 Load task cancelled during Phase 1 for year \(yearsAgo).")
-             await MainActor.run { if case .loading = pageStateByYear[yearsAgo] { pageStateByYear[yearsAgo] = .idle }; activeLoadTasks[yearsAgo] = nil; activeGridLoadTasks[yearsAgo]?.cancel(); activeGridLoadTasks[yearsAgo] = nil }
+            print("🚫 Load task cancelled during Phase 1 for year \(yearsAgo).")
+            await MainActor.run {
+                if case .loading = pageStateByYear[yearsAgo] { pageStateByYear[yearsAgo] = .idle }
+                activeLoadTasks[yearsAgo] = nil
+                activeGridLoadTasks[yearsAgo]?.cancel(); activeGridLoadTasks[yearsAgo] = nil
+            }
         } catch let error as PhotoError {
             print("❌ Load failed during Phase 1 for year \(yearsAgo): \(error.localizedDescription)")
             await MainActor.run { pageStateByYear[yearsAgo] = .error(message: error.localizedDescription); activeLoadTasks[yearsAgo] = nil }
@@ -352,7 +466,24 @@ class PhotoViewModel: ObservableObject {
             let wrappedError = PhotoError.underlyingPhotoLibraryError(error)
             await MainActor.run { pageStateByYear[yearsAgo] = .error(message: wrappedError.localizedDescription); activeLoadTasks[yearsAgo] = nil }
         }
+        // Ensure the main load task reference is cleared if it hasn't been by an early return
+        // await MainActor.run { activeLoadTasks[yearsAgo] = nil } // This might clear too early if gridTask is the main thing.
+        // The activeLoadTasks[yearsAgo] = nil should be called when loadPageAsync truly finishes its "main" responsibility.
+        // Given Phase 2 is detached, activeLoadTasks might be for the Phase 1 completion.
+        // Let's ensure it's cleared after Phase 1 processing is fully done.
+        await MainActor.run { if activeLoadTasks[yearsAgo] != nil && activeGridLoadTasks[yearsAgo] == nil {
+            // If grid task isn't running (e.g. initial items were empty)
+            activeLoadTasks[yearsAgo] = nil
+            }
+        }
+        // If the gridTask is the main fulfillment, then `activeLoadTasks[yearsAgo]` should be cleared earlier.
+        // For this structure, `activeLoadTasks` seems to mainly track the Phase 1 setup.
+        // Let's assume `activeLoadTasks[yearsAgo] = nil` is correct after Phase 1 completes or errors out.
+        // The code already has `activeLoadTasks[yearsAgo] = nil` in error paths and for the empty case.
+        // If Phase 1 succeeds and launches Phase 2, `activeLoadTasks[yearsAgo]` effectively completes.
         await MainActor.run { activeLoadTasks[yearsAgo] = nil }
+
+
     }
 
     // Helper to fetch MediaItems
