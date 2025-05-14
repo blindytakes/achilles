@@ -265,7 +265,12 @@ class PhotoViewModel: ObservableObject {
                 print("⚠️ Skipping year \(yearsAgoValue) due to date calculation error."); continue
             }
             let fetchOptions = PHFetchOptions()
-            fetchOptions.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", targetDateRange.start as NSDate, targetDateRange.end as NSDate)
+            let predicates = [
+                NSPredicate(format: "creationDate >= %@ AND creationDate < %@", targetDateRange.start as NSDate, targetDateRange.end as NSDate),
+                NSPredicate(format: "isHidden == NO") // Exclude hidden photos
+            ]
+            fetchOptions.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+
             fetchOptions.fetchLimit = Constants.yearCheckFetchLimit
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions) // This is synchronous but fast enough for check
             if fetchResult.firstObject != nil {
@@ -498,10 +503,14 @@ class PhotoViewModel: ObservableObject {
         
         // Configure fetch options
         let options = PHFetchOptions()
-        options.predicate = NSPredicate(
+        
+        let basePredicate = NSPredicate(
             format: "creationDate >= %@ AND creationDate < %@",
             argumentArray: [dateRange.start, dateRange.end]
         )
+        let hiddenPredicate = NSPredicate(format: "isHidden == NO") // Exclude hidden photos
+        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [basePredicate, hiddenPredicate])
+
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         
         // Apply limit if provided
