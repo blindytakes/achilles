@@ -5,100 +5,227 @@
 //
 // Key features:
 // - Implements the selector method defined in FeaturedSelectorServiceProtocol
-// - Currently uses a simple selection strategy that returns the first item
-// - Handles empty collections by returning nil
-//
-// While the current implementation is straightforward, this service structure
-// allows for future enhancement with more sophisticated selection algorithms:
-// - Quality-based selection using metadata or image analysis
-// - Random selection with weighting factors
-// - User preference-based selection
-
+// - Uses a scoring mechanism to evaluate photos based on various criteria like
+//   media subtypes (penalizing screenshots, panoramas), depth effect,
+//   resolution, burst status, and aspect ratio.
+// - Optimized for performance with metadata-based quality heuristics
+// - Selects the item with the highest overall score.
+// - Handles empty collections by returning nil.
 
 import Foundation
-import Photos // Make sure Photos framework is imported
+import Photos
+import UIKit
 
 class FeaturedSelectorService: FeaturedSelectorServiceProtocol {
 
-  func pickFeaturedItem(from items: [MediaItem]) -> MediaItem? {
-    guard !items.isEmpty else { return nil }
+   // --- Define constants for scores and thresholds ---
+   private struct ScoringConstants {
+       // Penalties
+       static let hiddenPenalty = Int.min
+       static let screenshotPenalty = -100
+       static let panoramaPenalty = -125
+       static let lowResolutionPenalty = -50
+       static let nonKeyBurstPenalty = -30
+       static let likelyBlurryPenalty = -60          // Based on metadata heuristics
+       static let tooShortVideoPenalty = -50         // Accidental videos
+       
+       // Bonuses
+       static let depthEffectBonus = 60
+       static let regularStillPhotoBonus = 10
+       static let keyBurstBonus = 25
+       static let faceDetectedBonus = 75             // Big bonus for faces
+       static let hdrPhotoBonus = 15                 // HDR photos usually better composed
+       static let outdoorBonus = 15                  // Has location data
+       static let editedBonus = 70                   // User took time to edit
+       
+       // Aspect Ratio Scoring
+       static let perfectAspectMatchBonus = 50
+       static let excellentAspectMatchBonus = 35
+       static let goodAspectMatchBonus = 20
+       static let commonCameraFormatBonus = 10
+       static let neutralAspectScore = 0
+       static let poorAspectMatchPenalty = -10
+       static let extremeAspectPenalty = -30
+       
+       // Modern phone screen ranges
+       static let modernPhonePortraitMin = 0.44
+       static let modernPhonePortraitMax = 0.48
+       static let modernPhoneLandscapeMin = 2.1
+       static let modernPhoneLandscapeMax = 2.2
+       
+       // Good match ranges (slightly wider tolerance)
+       static let goodPortraitMin = 0.42
+       static let goodPortraitMax = 0.5
+       static let goodLandscapeMin = 2.0
+       static let goodLandscapeMax = 2.3
+       
+       // Common camera aspect ratios
+       static let fourThreeRatio = 1.333    // 4:3
+       static let threeTwoRatio = 1.5       // 3:2
+       static let squareRatio = 1.0         // 1:1
+       static let sixteenNineRatio = 1.778  // 16:9
+       
+       // Extreme thresholds
+       static let extremePanoramaThreshold = 3.0
+       static let extremePortraitThreshold = 0.33
+       
+       // Tolerance for ratio matching
+       static let ratioTolerance = 0.05
+       
+       // Thresholds
+       static let minimumFeaturedWorthyScore = 5
+       static let minimumResolution = 800
+   }
 
-    var bestItem: MediaItem? = nil
-    var highestScore: Int = Int.min // Start with the lowest possible score
+   func pickFeaturedItem(from items: [MediaItem]) -> MediaItem? {
+       guard !items.isEmpty else {
+           print("ℹ️ FeaturedSelectorService: No items to select from.")
+           return nil
+       }
 
-    for item in items {
-      let score = calculateScore(for: item.asset)
+       var bestItem: MediaItem? = nil
+       var highestScore: Int = Int.min
 
-      if score > highestScore {
-        highestScore = score
-        bestItem = item
-      }
-      // Optional: If scores are equal, you could add a tie-breaking rule,
-      // e.g., prefer the more recent one, or just keep the first one encountered.
-      // For simplicity, this will keep the first item that achieves the highest score.
-    }
-    
-    // If no item scored positively, or all items were penalized below a threshold,
-    // it might still pick one. If all scores are very negative, `bestItem` will be one of those.
-    // If you want to fall back to a simple "first" if no item meets a minimum score,
-    // you can add that logic here. For now, it picks the highest score found.
-    if bestItem == nil && !items.isEmpty {
-        // Fallback if somehow no bestItem was selected but items exist (e.g., all scores Int.min)
-        // This shouldn't happen with the current scoring unless items is empty, which is guarded.
-        // However, as a very robust fallback:
-        print("⚠️ FeaturedSelectorService: No item had a score greater than Int.min. Falling back to first item.")
-        return items.first
-    }
+       for item in items {
+           let score = calculateScore(for: item.asset)
 
-    if let selected = bestItem {
-        print("🏆 Featured item selected: \(selected.id) with score: \(highestScore)")
-    } else if !items.isEmpty {
-        print("⚠️ FeaturedSelectorService: Could not select a best item, but items were available. Defaulting to first.")
-        return items.first // Fallback if no item was clearly "best"
-    } else {
-        print("ℹ️ FeaturedSelectorService: No items to select from.")
-    }
-    
-    return bestItem
-  }
+           if score > highestScore {
+               highestScore = score
+               bestItem = item
+           }
+       }
+       
+       if let currentBest = bestItem {
+           if highestScore < ScoringConstants.minimumFeaturedWorthyScore {
+               print("⚠️ FeaturedSelectorService: Score (\(highestScore)) below threshold.")
+           }
+           print("🏆 Featured item selected: \(currentBest.id) with score: \(highestScore)")
+           return currentBest
+       }
+       
+       return nil
+   }
 
-  private func calculateScore(for asset: PHAsset) -> Int {
-    var score: Int = 0 // Base score
+   private func calculateScore(for asset: PHAsset) -> Int {
+       var score: Int = 0
 
-    // 1. Penalize screenshots
-    if asset.mediaSubtypes.contains(.photoScreenshot) {
-      score -= 100 // Strong penalty
-    }
+       // Basic exclusions
+       if asset.isHidden { return ScoringConstants.hiddenPenalty }
 
-    // 2. Penalize panoramas
-    if asset.mediaSubtypes.contains(.photoPanorama) {
-      score -= 50 // Moderate penalty
-    }
+       // Media type penalties
+       if asset.mediaSubtypes.contains(.photoScreenshot) {
+           score += ScoringConstants.screenshotPenalty
+       }
+       if asset.mediaSubtypes.contains(.photoPanorama) {
+           score += ScoringConstants.panoramaPenalty
+       }
+       
+       // Quality bonuses
+       if asset.mediaSubtypes.contains(.photoDepthEffect) {
+           score += ScoringConstants.depthEffectBonus
+           score += ScoringConstants.faceDetectedBonus // Portrait mode = faces
+       }
+       if asset.mediaSubtypes.contains(.photoHDR) {
+           score += ScoringConstants.hdrPhotoBonus
+       }
+       if asset.mediaType == .image && !asset.mediaSubtypes.contains(.photoLive) {
+           score += ScoringConstants.regularStillPhotoBonus
+       }
+       
+       // Resolution check
+       if asset.pixelWidth < ScoringConstants.minimumResolution ||
+          asset.pixelHeight < ScoringConstants.minimumResolution {
+           score += ScoringConstants.lowResolutionPenalty
+       }
 
-    // --- Other potential factors you could consider (optional additions): ---
+       // Burst photos
+       if asset.representsBurst {
+           if asset.burstSelectionTypes.contains(.userPick) ||
+              asset.burstSelectionTypes.contains(.autoPick) {
+               score += ScoringConstants.keyBurstBonus
+           } else {
+               score += ScoringConstants.nonKeyBurstPenalty
+               score += ScoringConstants.likelyBlurryPenalty
+           }
+       }
+       
+       // Aspect ratio for full-screen display
+       score += calculateAspectRatioScore(asset: asset)
+       
+       // Video handling
+       if asset.mediaType == .video && asset.duration < 2.0 {
+           score += ScoringConstants.tooShortVideoPenalty
+       }
+       
+       // Location bonus (outdoor photos)
+       if asset.location != nil {
+           score += ScoringConstants.outdoorBonus
+       }
+       
+       // Edited photos
+       if asset.hasAdjustments {
+           score += ScoringConstants.editedBonus
+       }
 
-    // Bonus for favorited items (if you want to prioritize them)
-    // if asset.isFavorite {
-    //   score += 20
-    // }
+       return score
+   }
 
-    // Slight bonus for regular photos (not video, not live photo - if 'photo' is more desired as featured)
-    if asset.mediaType == .image && !asset.mediaSubtypes.contains(.photoLive) {
-        score += 5
-    }
-    
-    // Penalize videos slightly if images are preferred for "featured" still photo
-    // if asset.mediaType == .video {
-    //     score -= 10
-    // }
-
-    // You can also consider aspect ratio if you prefer certain shapes for a "featured" image.
-    // For example, avoid very wide or very tall aspect ratios if they don't look good as featured.
-    // let aspectRatio = asset.pixelWidth > 0 && asset.pixelHeight > 0 ? Double(asset.pixelWidth) / Double(asset.pixelHeight) : 1.0
-    // if aspectRatio > 2.5 || aspectRatio < 0.4 { // Very wide or very tall
-    //     score -= 15
-    // }
-
-    return score
-  }
+   private func calculateAspectRatioScore(asset: PHAsset) -> Int {
+       guard asset.pixelWidth > 0 && asset.pixelHeight > 0 else { return 0 }
+       
+       let width = Double(asset.pixelWidth)
+       let height = Double(asset.pixelHeight)
+       let ratio = width / height
+       
+       // Check both orientations
+       let portraitRatio = min(ratio, 1.0/ratio)
+       let landscapeRatio = max(ratio, 1.0/ratio)
+       
+       // Perfect match for modern phones
+       if (portraitRatio >= ScoringConstants.modernPhonePortraitMin &&
+           portraitRatio <= ScoringConstants.modernPhonePortraitMax) ||
+          (landscapeRatio >= ScoringConstants.modernPhoneLandscapeMin &&
+           landscapeRatio <= ScoringConstants.modernPhoneLandscapeMax) {
+           return ScoringConstants.perfectAspectMatchBonus
+       }
+       
+       // Excellent match (wider tolerance)
+       if (portraitRatio >= ScoringConstants.goodPortraitMin &&
+           portraitRatio <= ScoringConstants.goodPortraitMax) ||
+          (landscapeRatio >= ScoringConstants.goodLandscapeMin &&
+           landscapeRatio <= ScoringConstants.goodLandscapeMax) {
+           return ScoringConstants.excellentAspectMatchBonus
+       }
+       
+       // Check common camera formats
+       if isCommonCameraFormat(ratio: landscapeRatio) || isCommonCameraFormat(ratio: portraitRatio) {
+           return ScoringConstants.commonCameraFormatBonus
+       }
+       
+       // Too extreme (panoramas)
+       if landscapeRatio > ScoringConstants.extremePanoramaThreshold ||
+          portraitRatio < ScoringConstants.extremePortraitThreshold {
+           return ScoringConstants.extremeAspectPenalty
+       }
+       
+       // Everything else
+       return ScoringConstants.poorAspectMatchPenalty
+   }
+   
+   private func isCommonCameraFormat(ratio: Double) -> Bool {
+       let commonRatios = [
+           ScoringConstants.fourThreeRatio,
+           ScoringConstants.threeTwoRatio,
+           ScoringConstants.squareRatio,
+           ScoringConstants.sixteenNineRatio
+       ]
+       
+       for commonRatio in commonRatios {
+           if abs(ratio - commonRatio) < ScoringConstants.ratioTolerance {
+               return true
+           }
+       }
+       
+       return false
+   }
 }
