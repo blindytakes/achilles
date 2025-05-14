@@ -14,6 +14,8 @@ class AuthViewModel: ObservableObject {
     @Published var onboardingComplete = false
     @Published var dailyWelcomeNeeded = false
     @Published var isInitializing = true
+    @Published var showMainApp = false
+
 
     // MARK: - Private Props
     private var listener: ListenerRegistration?
@@ -121,6 +123,10 @@ class AuthViewModel: ObservableObject {
         authTask?.cancel()
     }
 
+    func navigateToMainApp() {
+        showMainApp = true
+    }
+    
     // MARK: - Firestore featureFlags Listener
     func subscribeToUserDoc() {
         listener?.remove()

@@ -95,40 +95,40 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
       _appDelegate.wrappedValue.authVM = vm
     }
     
-  var body: some Scene {
-    WindowGroup {
-      rootView
-        .environmentObject(authVM)
+    // In ThrowbacksApp.swift, add this to the WindowGroup
+    var body: some Scene {
+        WindowGroup {
+            rootView
+                .environmentObject(authVM)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+                    // Reset the flag when app goes to background
+                    authVM.showMainApp = false
+                }
+        }
+        .onChange(of: photoStatus) {
+            // Access photoStatus directly inside the closure
+            print("📸 Photo-library status is now \(photoStatus)")
+        }
     }
-    .onChange(of: photoStatus) {
-      // Access photoStatus directly inside the closure
-      print("📸 Photo-library status is now \(photoStatus)")
-    }
-  }
   
     @ViewBuilder
     private var rootView: some View {
         if authVM.isInitializing {
-            // Show a loading view while Firebase initializes
+            // Show loading while Firebase initializes
             ZStack {
                 Color.white.ignoresSafeArea()
                 ProgressView("Loading...")
                     .progressViewStyle(CircularProgressViewStyle())
             }
         } else if authVM.user == nil {
+            // Not logged in - show welcome/login screen
             WelcomeView()
-        } else if !authVM.onboardingComplete {
-            // Skip onboarding for now
+        } else if authVM.showMainApp {
+            // User has clicked through daily welcome
             ContentView()
-                .onAppear {
-                    authVM.markOnboardingDone()
-                }
-        } else if authVM.dailyWelcomeNeeded {
-            DailyWelcomeView()
         } else {
-            ContentView()
+            // User is logged in - show daily welcome every time
+            DailyWelcomeView()
         }
     }
-    
-    
 }
