@@ -28,12 +28,12 @@ class ImageCacheService: ImageCacheServiceProtocol {
     private struct CacheConstants {
         // UIImage Cache Limits
         static let imageCacheCountLimit: Int = 50 // Thumbnail cache
-        static let imageCacheMaxCostMB: Int = 120 // In Megabytes
-        static let highResCacheCountLimit: Int = 15 // High-res UIImage cache
-        static let highResCacheMaxCostMB: Int = 300 // In Megabytes
+        static let imageCacheMaxCostMB: Int = 350 // In Megabytes
+        static let highResCacheCountLimit: Int = 20 // High-res UIImage cache
+        static let highResCacheMaxCostMB: Int = 350 // In Megabytes
 
         // NEW: PHLivePhoto Cache Limits
-        static let livePhotoCacheCountLimit: Int = 12 // Keep fewer Live Photos due to size
+        static let livePhotoCacheCountLimit: Int = 25
 
         // Cost Calculation Helpers
         static let bytesPerMegabyte: Int = 1024 * 1024

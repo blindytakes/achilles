@@ -1,112 +1,156 @@
-// ContentView.swift
-//
-// This is the main entry point view for the app, handling photo library authorization
-// and displaying the appropriate content based on the current state.
-//
-// Key features:
-// - Manages photo library access permissions with different views for each state:
-//   - Request access when permissions aren't determined
-//   - Show instructions when access is denied/restricted
-//   - Display content when fully authorized
-// - Handles the initial photo library scan to find memories from past years
-// - Shows appropriate loading states during scanning
-// - Provides empty state feedback when no memories are found
-// - Includes the PagedYearsView component for navigating between years when memories exist
-//
-// The view coordinates with PhotoViewModel to handle authorization requests,
-// determine available content years, and select a default year (preferring 1 year ago).
-// It also manages the navigation UI and paging behavior between different years of memories.
-
-
 import SwiftUI
-import Photos // For PHAuthorizationStatus
-import UIKit // Needed for UIApplication below
+import Photos
+import UIKit
 
 struct ContentView: View {
-    @EnvironmentObject var authVM: AuthViewModel // <<<< ADD THIS LINE
+    @EnvironmentObject var authVM: AuthViewModel
     @StateObject private var viewModel = PhotoViewModel()
     @State private var selectedYearsAgo: Int?
+    @State private var showingSettings = false
 
-    // Constant for default year check
     private let defaultTargetYear: Int = 1
 
     var body: some View {
-        NavigationView { // Your existing NavigationView
-            Group {
-                switch viewModel.authorizationStatus {
-                case .notDetermined:
-                    AuthorizationRequiredView(
-                        status: .notDetermined,
-                        onRequest: viewModel.checkAuthorization
-                    )
-                    .environmentObject(authVM) // Pass down if needed by AuthRequiredView
-
-                case .restricted, .denied, .limited:
-                    AuthorizationRequiredView(
-                        status: viewModel.authorizationStatus,
-                        onRequest: {}
-                    )
-                    .environmentObject(authVM) // Pass down if needed
-
-                case .authorized:
-                    if viewModel.initialYearScanComplete {
-                        if viewModel.availableYearsAgo.isEmpty {
-                            Text("No past memories found for today's date.")
-                                .foregroundColor(.secondary)
-                                .navigationTitle("Memories") // Set title for this specific state
-                        } else {
-                            PagedYearsView(viewModel: viewModel, selectedYearsAgo: $selectedYearsAgo)
-                                // .navigationTitle("Memories") // PagedYearsView handles its own title/toolbar hiding
-                                // If PagedYearsView or its children need authVM, pass via .environmentObject()
-                                // .environmentObject(authVM)
-                        }
-                    } else {
-                        VStack(spacing: 8) {
-                            ProgressView("Scanning Library...")
-                            Text("Finding relevant years...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .navigationTitle("Memories") // Set title for loading state
-                    }
-
-                @unknown default:
-                    Text("An unexpected error occurred with permissions.")
-                        .foregroundColor(.red)
-                        .navigationTitle("Error") // Set title for error state
+        ZStack(alignment: .topTrailing) {
+            NavigationView {
+                contentForAuthorizationStatus
+            }
+            
+            // Settings button overlay
+            if viewModel.authorizationStatus == .authorized {
+                Button(action: {
+                    showingSettings = true
+                }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                        .shadow(radius: 3)
+                }
+                .padding()
+                .sheet(isPresented: $showingSettings) {
+                    SettingsView()
+                        .environmentObject(authVM)
                 }
             }
-
-        } // End of NavigationView
-        // This style is good if ContentView itself provides the main navigation structure
-        // .navigationViewStyle(.stack) // Uncomment if you prefer a specific style
-
-        // Initialize selection once years are available
+        }
         .onReceive(viewModel.$availableYearsAgo) { availableYears in
-             // Only set default if selection is currently nil AND years are available
-             if selectedYearsAgo == nil, !availableYears.isEmpty {
-                 // Prefer 1 year ago if available, otherwise first available year
-                 let defaultYear = availableYears.contains(defaultTargetYear)
-                                     ? defaultTargetYear
-                                     : availableYears.first! // Force unwrap safe due to !isEmpty check
-                 selectedYearsAgo = defaultYear
-                 print("Setting initial selected year to: \(defaultYear)")
-             }
-         }
+            if selectedYearsAgo == nil, !availableYears.isEmpty {
+                let defaultYear = availableYears.contains(defaultTargetYear)
+                                    ? defaultTargetYear
+                                    : availableYears.first!
+                selectedYearsAgo = defaultYear
+                print("Setting initial selected year to: \(defaultYear)")
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var contentForAuthorizationStatus: some View {
+        switch viewModel.authorizationStatus {
+        case .notDetermined:
+            AuthorizationRequiredView(
+                status: .notDetermined,
+                onRequest: viewModel.checkAuthorization
+            )
+            .environmentObject(authVM)
+
+        case .restricted, .denied, .limited:
+            AuthorizationRequiredView(
+                status: viewModel.authorizationStatus,
+                onRequest: {}
+            )
+            .environmentObject(authVM)
+
+        case .authorized:
+            if viewModel.initialYearScanComplete {
+                if viewModel.availableYearsAgo.isEmpty {
+                    Text("No past memories found for today's date.")
+                        .foregroundColor(.secondary)
+                        .navigationTitle("Memories")
+                } else {
+                    PagedYearsView(viewModel: viewModel, selectedYearsAgo: $selectedYearsAgo)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    ProgressView("Scanning Library...")
+                    Text("Finding relevant years...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .navigationTitle("Memories")
+            }
+
+        @unknown default:
+            Text("An unexpected error occurred with permissions.")
+                .foregroundColor(.red)
+                .navigationTitle("Error")
+        }
     }
 }
-// --- Separate View for the Paged TabView ---
+
+// Settings View
+struct SettingsView: View {
+    @EnvironmentObject var authVM: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                if let user = authVM.user {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Account")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        Text(user.email ?? "No email")
+                            .font(.body)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                }
+                
+                Button(action: {
+                    authVM.signOut()
+                    dismiss()
+                }) {
+                    Text("Sign Out")
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Separated PagedYearsView
 struct PagedYearsView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @Binding var selectedYearsAgo: Int?
 
-    // MARK: - Constants
-    // Constants remain the same as before
     private struct Constants {
         static let transitionDuration: Double = 0.3
     }
 
-    // MARK: - Body
     var body: some View {
         TabView(selection: $selectedYearsAgo) {
             ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
@@ -114,15 +158,12 @@ struct PagedYearsView: View {
                     .tag(Optional(yearsAgo))
             }
         }
-        .tabViewStyle(
-            PageTabViewStyle(indexDisplayMode: .never)
-        )
+        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: Constants.transitionDuration), value: selectedYearsAgo)
-        // Remove conditional logic and always hide the navigation bar
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("")
-        .toolbar(.hidden, for: .navigationBar) // Always hide
+        .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedYearsAgo) { _, newValue in
             if let currentYearsAgo = newValue {
                 print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")

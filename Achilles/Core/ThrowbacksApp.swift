@@ -90,15 +90,8 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
     
     init() {
       FirebaseApp.configure()
-      
-      // TEMPORARY: Create AuthViewModel and immediately sign out for testing
-      let vm = AuthViewModel()      
-      // Continue with your existing initialization
+      let vm = AuthViewModel()
       _authVM = StateObject(wrappedValue: vm)
-      
-      // Give the delegate the same instance, *without* ever reading authVM
-      // Note: We need to use the property wrapper's projectedValue here
-      // because we're in the initializer
       _appDelegate.wrappedValue.authVM = vm
     }
     
@@ -113,21 +106,27 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
     }
   }
   
-    // In Achilles/Core/ThrowbacksApp.swift
     @ViewBuilder
     private var rootView: some View {
-        if authVM.user == nil { // Check if user is authenticated
-            WelcomeView()
-        } else {
-            // If user is authenticated, proceed to the main part of your app.
-            // This is where you'd check for dailyWelcomeNeeded, photoStatus, onboardingComplete (new meaning) etc.
-            // For now, let's simplify to go to ContentView if logged in.
-            // We'll refine this post-auth flow later.
-            if authVM.dailyWelcomeNeeded { // Example: Still handle daily welcome
-                 DailyWelcomeView()
-            } else {
-                 ContentView() // Your main app view
+        if authVM.isInitializing {
+            // Show a loading view while Firebase initializes
+            ZStack {
+                Color.white.ignoresSafeArea()
+                ProgressView("Loading...")
+                    .progressViewStyle(CircularProgressViewStyle())
             }
+        } else if authVM.user == nil {
+            WelcomeView()
+        } else if !authVM.onboardingComplete {
+            // Skip onboarding for now
+            ContentView()
+                .onAppear {
+                    authVM.markOnboardingDone()
+                }
+        } else if authVM.dailyWelcomeNeeded {
+            DailyWelcomeView()
+        } else {
+            ContentView()
         }
     }
     

@@ -142,8 +142,8 @@ struct AuthFormView: View {
         print("AuthFormView: Password length being sent: \(password.count)")
 
         Task {
-            var authAttemptSuccessful = false // Local flag for the current attempt
-
+            var authAttemptSuccessful = false
+            
             if authScreenMode == .signUp {
                 if password != confirmPassword {
                     print("AuthFormView: Passwords do not match.")
@@ -165,18 +165,19 @@ struct AuthFormView: View {
             print("AuthFormView: Firebase call completed. Current attempt success: \(authAttemptSuccessful)")
             
             if authAttemptSuccessful {
-                // Even if the attempt was "successful" according to the function,
-                // we should rely on the AuthStateDidChangeListener to update authVM.user.
-                // However, the success of the function call itself is a good indicator.
-                print("AuthFormView: ✅ Auth function reported success. User UID (from authVM.user, possibly updated by listener): \(authVM.user?.uid ?? "Still nil or old user after attempt!"). Email: \(authVM.user?.email ?? "N/A")")
+                print("AuthFormView: ✅ Auth function reported success.")
                 UserDefaults.standard.set(email, forKey: "lastUsedEmail")
+                
+                // Wait a moment for the auth state to update
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                
                 print("AuthFormView: Calling onAuthenticationSuccess to dismiss sheet.")
                 onAuthenticationSuccess()
             } else if let errorFromVM = authVM.errorMessage {
-                print("AuthFormView: 🚨 Auth function reported failure OR error set in AuthViewModel! Error: \(errorFromVM)")
+                print("AuthFormView: 🚨 Auth function reported failure! Error: \(errorFromVM)")
                 formErrorMessage = errorFromVM
             } else {
-                print("AuthFormView: ⚠️ Auth function reported failure, but no error message from AuthViewModel. This is unexpected.")
+                print("AuthFormView: ⚠️ Auth function reported failure, but no error message.")
                 formErrorMessage = "An unexpected authentication error occurred."
             }
         }
