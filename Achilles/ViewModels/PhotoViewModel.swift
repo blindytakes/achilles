@@ -25,7 +25,7 @@ class PhotoViewModel: ObservableObject {
         static let initialScanPhaseYears: Int = 4         // Years to scan in the first phase
         static let yearCheckFetchLimit: Int = 1           // Fetch limit when checking if year has content
         static let initialFetchLimitForLoadPage: Int = 10 // Fetch first 10 to find featured quickly
-        static let maxPhotosToDisplay: Int = 25
+        static let maxPhotosToDisplay: Int = 20
         static let samplingPoolLimit: Int = 300
         // Image Sizes
         static let defaultThumbnailSize = CGSize(width: 200, height: 200)

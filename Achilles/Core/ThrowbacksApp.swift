@@ -31,6 +31,9 @@ import FirebaseMessaging   // brings in `Messaging`
 import FirebaseFirestore   // if you're using Firestore anywhere
 import UserNotifications
 import PhotosUI            // for `PHPhotoLibrary`
+import SplunkOtel
+import SplunkOtelCrashReporting
+
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
   // Add a reference to AuthViewModel
@@ -90,6 +93,19 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
     
     init() {
       FirebaseApp.configure()
+        // — new Splunk RUM setup (➋) —
+        SplunkRumBuilder(
+          realm:       "us1",                     // ← your realm
+          rumAuth:     "L6lXNT6-fbQFAQRU35-MYA"    // ← your real RUM token
+        )
+        .debug(enabled: true)
+        .deploymentEnvironment(environment: "dev")
+        .setApplicationName("Throwbacks")
+        .build()
+        
+        SplunkRumCrashReporting.start()
+
+
       let vm = AuthViewModel()
       _authVM = StateObject(wrappedValue: vm)
       _appDelegate.wrappedValue.authVM = vm

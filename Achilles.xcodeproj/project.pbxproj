@@ -13,6 +13,7 @@
 		2A8232862DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232842DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf */; };
 		2A8232872DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */; };
 		2A953FAC2DD57E720084047E /* SplunkOtel in Frameworks */ = {isa = PBXBuildFile; productRef = 2A953FAB2DD57E720084047E /* SplunkOtel */; };
+		2A953FAF2DD580B00084047E /* SplunkOtelCrashReporting in Frameworks */ = {isa = PBXBuildFile; productRef = 2A953FAE2DD580B00084047E /* SplunkOtelCrashReporting */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +104,7 @@
 			files = (
 				2A2F7E172DCA5B220035B532 /* FirebaseMessaging in Frameworks */,
 				2A2F7E072DCA4C700035B532 /* FirebaseAuth in Frameworks */,
+				2A953FAF2DD580B00084047E /* SplunkOtelCrashReporting in Frameworks */,
 				2A2F7E092DCA4CBE0035B532 /* FirebaseFirestore in Frameworks */,
 				2A953FAC2DD57E720084047E /* SplunkOtel in Frameworks */,
 			);
@@ -180,6 +182,7 @@
 				2A2F7E082DCA4CBE0035B532 /* FirebaseFirestore */,
 				2A2F7E162DCA5B220035B532 /* FirebaseMessaging */,
 				2A953FAB2DD57E720084047E /* SplunkOtel */,
+				2A953FAE2DD580B00084047E /* SplunkOtelCrashReporting */,
 			);
 			productName = Achilles;
 			productReference = 2A8092ED2D98827F00EED088 /* Achilles.app */;
@@ -260,6 +263,7 @@
 			packageReferences = (
 				2A2F7E052DCA4C700035B532 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				2A953FAA2DD57E720084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios" */,
+				2A953FAD2DD580B00084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios-crashreporting" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2A8092EE2D98827F00EED088 /* Products */;
@@ -655,6 +659,14 @@
 				minimumVersion = 0.12.0;
 			};
 		};
+		2A953FAD2DD580B00084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios-crashreporting" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/signalfx/splunk-otel-ios-crashreporting";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -677,6 +689,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2A953FAA2DD57E720084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios" */;
 			productName = SplunkOtel;
+		};
+		2A953FAE2DD580B00084047E /* SplunkOtelCrashReporting */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2A953FAD2DD580B00084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios-crashreporting" */;
+			productName = SplunkOtelCrashReporting;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
