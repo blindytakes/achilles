@@ -12,6 +12,7 @@
 		2A2F7E172DCA5B220035B532 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 2A2F7E162DCA5B220035B532 /* FirebaseMessaging */; };
 		2A8232862DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232842DA0BCF000D759FB /* PlayfairDisplay-Italic-VariableFont_wght.ttf */; };
 		2A8232872DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */; };
+		2A953FAC2DD57E720084047E /* SplunkOtel in Frameworks */ = {isa = PBXBuildFile; productRef = 2A953FAB2DD57E720084047E /* SplunkOtel */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +104,7 @@
 				2A2F7E172DCA5B220035B532 /* FirebaseMessaging in Frameworks */,
 				2A2F7E072DCA4C700035B532 /* FirebaseAuth in Frameworks */,
 				2A2F7E092DCA4CBE0035B532 /* FirebaseFirestore in Frameworks */,
+				2A953FAC2DD57E720084047E /* SplunkOtel in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -177,6 +179,7 @@
 				2A2F7E062DCA4C700035B532 /* FirebaseAuth */,
 				2A2F7E082DCA4CBE0035B532 /* FirebaseFirestore */,
 				2A2F7E162DCA5B220035B532 /* FirebaseMessaging */,
+				2A953FAB2DD57E720084047E /* SplunkOtel */,
 			);
 			productName = Achilles;
 			productReference = 2A8092ED2D98827F00EED088 /* Achilles.app */;
@@ -256,6 +259,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				2A2F7E052DCA4C700035B532 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				2A953FAA2DD57E720084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2A8092EE2D98827F00EED088 /* Products */;
@@ -459,7 +463,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Achilles/Achilles.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_ASSET_PATHS = "\"Achilles/Preview Content\"";
 				DEVELOPMENT_TEAM = 6QNXZ3RS35;
 				ENABLE_PREVIEWS = YES;
@@ -477,7 +482,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = plzwork.Achilles;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -493,7 +498,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Achilles/Achilles.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"Achilles/Preview Content\"";
 				DEVELOPMENT_TEAM = 6QNXZ3RS35;
 				ENABLE_PREVIEWS = YES;
@@ -511,7 +516,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = plzwork.Achilles;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -642,6 +647,14 @@
 				minimumVersion = 11.12.0;
 			};
 		};
+		2A953FAA2DD57E720084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/signalfx/splunk-otel-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.12.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -659,6 +672,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2A2F7E052DCA4C700035B532 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseMessaging;
+		};
+		2A953FAB2DD57E720084047E /* SplunkOtel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2A953FAA2DD57E720084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios" */;
+			productName = SplunkOtel;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

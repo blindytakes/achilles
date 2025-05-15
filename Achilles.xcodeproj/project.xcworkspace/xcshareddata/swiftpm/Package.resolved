@@ -1,5 +1,5 @@
 {
-  "originHash" : "a1569f9895aa2be8e24832f98525d5da4eb90b5d158a82691c15b47eb72a13d7",
+  "originHash" : "40d8cadde6eeddb9285c7321b9e547386f5891052fa8001f7a692228b8544c76",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -107,6 +107,15 @@
       "state" : {
         "revision" : "540318ecedd63d883069ae7f1ed811a2df00b6ac",
         "version" : "2.4.0"
+      }
+    },
+    {
+      "identity" : "splunk-otel-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/signalfx/splunk-otel-ios",
+      "state" : {
+        "revision" : "fb25e65069e8be42b1ca3017d16c32fbdb492d69",
+        "version" : "0.12.1"
       }
     },
     {

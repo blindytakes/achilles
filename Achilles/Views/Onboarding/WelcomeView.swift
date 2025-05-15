@@ -151,7 +151,7 @@ struct WelcomeView: View {
 
     private func prepareAndShowSheet() {
         print("WelcomeView: prepareAndShowSheet called. Mode: \(currentAuthScreenMode)")
-        // Reset form fields before showing the sheet
+        print("WelcomeView: Current authVM.user: \(authVM.user?.uid ?? "nil")")
         if currentAuthScreenMode == .signUp {
             email = "" // Clear email when switching to sign-up, unless you want to keep it if they toggle
         }

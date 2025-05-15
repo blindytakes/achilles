@@ -17,7 +17,8 @@ struct AuthFormView: View {
     var onAuthenticationSuccess: () -> Void // Closure to call when auth is successful
 
     @State private var showResetPasswordSheet = false
-
+    @State private var isLoading = false
+    
     // Using your existing BrandColors, or define locally if preferred
     private struct BrandColors {
         static let darkGreen = Color(red: 0.13, green: 0.55, blue: 0.13)
@@ -27,18 +28,22 @@ struct AuthFormView: View {
     }
 
     private var isFormValid: Bool {
-        guard !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              isValidEmail(email), // Add email format validation
-              password.count >= 6 else { // Firebase typically requires 6+ char passwords
-            return false
-        }
+        // Basic non-empty check for both modes
+        let nonEmpty = !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                       && !password.isEmpty
+        
         if authScreenMode == .signUp {
-            guard !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  password == confirmPassword else {
-                return false
-            }
+            // Sign up: stricter validation
+            return nonEmpty
+                   && isValidEmail(email)
+                   && password == confirmPassword
+                   && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                   && password.count >= 6
         }
-        return true
+        
+        // Sign in: only require non-empty fields
+        // This allows "cat" to be typed and the button to be enabled
+        return nonEmpty
     }
 
     var body: some View {
@@ -51,13 +56,17 @@ struct AuthFormView: View {
 
                 CustomTextField(placeholder: "Email", text: $email, iconName: "envelope")
                     .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress) // For autofill
+                    .textContentType(.emailAddress)
                     .autocapitalization(.none)
-
+                    .submitLabel(.go)
+                    .onSubmit {
+                        if isFormValid && !isLoading {
+                            handleAuthentication()
+                        }
+                    }
 
                 CustomSecureField(placeholder: "Password", text: $password, showPassword: $showPassword, iconName: "lock")
                      .textContentType(authScreenMode == .signUp ? .newPassword : .password) // For autofill
-
 
                 if authScreenMode == .signUp {
                     CustomSecureField(placeholder: "Confirm Password", text: $confirmPassword, showPassword: $showPassword, iconName: "lock.shield")
@@ -73,15 +82,24 @@ struct AuthFormView: View {
                 }
 
                 Button(action: handleAuthentication) {
-                    Text(authScreenMode == .signUp ? "Create Account" : "Log In")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(isFormValid ? BrandColors.buttonEnabled : BrandColors.buttonDisabled)
-                        .foregroundColor(.white)
-                        .font(.headline)
-                        .cornerRadius(10)
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    } else {
+                        Text(authScreenMode == .signUp ? "Create Account" : "Log In")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    }
                 }
-                .disabled(!isFormValid)
+                .background(isFormValid && !isLoading ? BrandColors.buttonEnabled : BrandColors.buttonDisabled)
+                .foregroundColor(.white)
+                .font(.headline)
+                .cornerRadius(10)
+                .disabled(!isFormValid || isLoading)
+                .opacity(isFormValid && !isLoading ? 1 : 0.6)
                 .padding(.top, 10)
 
                 if authScreenMode == .signIn {
@@ -134,14 +152,22 @@ struct AuthFormView: View {
         .accentColor(BrandColors.darkGreen) // Sets the tint for NavigationView elements like the Cancel button
     }
 
+    @MainActor
     private func handleAuthentication() {
         print("AuthFormView: handleAuthentication called. Mode: \(authScreenMode)")
         formErrorMessage = nil
         authVM.errorMessage = nil
-        print("AuthFormView: Attempting Firebase auth with Email: '\(email)'")
-        print("AuthFormView: Password length being sent: \(password.count)")
-
-        Task {
+        isLoading = true
+        
+        Task { @MainActor in  // This ensures all code inside runs on main thread
+            defer { isLoading = false }
+            
+            // Validate email for sign-in
+            if authScreenMode == .signIn && !isValidEmail(email) {
+                formErrorMessage = "Please enter a valid email address."
+                return
+            }
+            
             var authAttemptSuccessful = false
             
             if authScreenMode == .signUp {
@@ -161,8 +187,8 @@ struct AuthFormView: View {
                 print("AuthFormView: Calling authVM.signIn.")
                 authAttemptSuccessful = await authVM.signIn(email: email, password: password)
             }
-
-            print("AuthFormView: Firebase call completed. Current attempt success: \(authAttemptSuccessful)")
+            
+            print("AuthFormView: Firebase call completed. Success: \(authAttemptSuccessful)")
             
             if authAttemptSuccessful {
                 print("AuthFormView: ✅ Auth function reported success.")
@@ -182,6 +208,7 @@ struct AuthFormView: View {
             }
         }
     }
+    
     // Basic email validation helper
     private func isValidEmail(_ email: String) -> Bool {
         let emailRegEx = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
@@ -220,7 +247,6 @@ struct CustomSecureField: View {
     @Binding var text: String
     @Binding var showPassword: Bool
     var iconName: String? = nil // Optional SFSymbol name
-
 
     var body: some View {
         HStack {
