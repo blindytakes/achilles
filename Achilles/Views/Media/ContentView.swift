@@ -2,6 +2,39 @@ import SwiftUI
 import Photos
 import UIKit
 
+
+// Separated PagedYearsView
+struct PagedYearsView: View {
+    @ObservedObject var viewModel: PhotoViewModel
+    @Binding var selectedYearsAgo: Int?
+    
+    private struct Constants {
+        static let transitionDuration: Double = 0.3
+    }
+    
+    var body: some View {
+        TabView(selection: $selectedYearsAgo) {
+            ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
+                YearPageView(viewModel: viewModel, yearsAgo: yearsAgo)
+                    .tag(Optional(yearsAgo))
+            }
+        }
+        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: Constants.transitionDuration), value: selectedYearsAgo)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("")
+        .toolbar(.hidden, for: .navigationBar)
+        .onChange(of: selectedYearsAgo) { _, newValue in
+            if let currentYearsAgo = newValue {
+                print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
+                viewModel.triggerPrefetch(around: currentYearsAgo)
+            }
+        }
+    }
+}
+
+
 struct ContentView: View {
     @EnvironmentObject var authVM: AuthViewModel
     @StateObject private var viewModel = PhotoViewModel()
@@ -35,7 +68,7 @@ struct ContentView: View {
                 }
                 .padding()
                 .sheet(isPresented: $showingSettings) {
-                    SettingsView()
+                    SettingsView(photoViewModel: viewModel)
                         .environmentObject(authVM)
                 }
             }
@@ -99,81 +132,108 @@ struct ContentView: View {
 // Settings View
 struct SettingsView: View {
     @EnvironmentObject var authVM: AuthViewModel
+    @ObservedObject var photoViewModel: PhotoViewModel
     @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                if let user = authVM.user {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Account")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        
-                        Text(user.email ?? "No email")
-                            .font(.body)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-                }
-                
-                Button(action: {
-                    authVM.signOut()
-                    dismiss()
-                }) {
-                    Text("Sign Out")
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
+    @State private var sumOfPastPhotosOnThisDay: Int? = nil
 
-// Separated PagedYearsView
-struct PagedYearsView: View {
-    @ObservedObject var viewModel: PhotoViewModel
-    @Binding var selectedYearsAgo: Int?
-
-    private struct Constants {
-        static let transitionDuration: Double = 0.3
-    }
+    private let statisticsService = SettingsStatisticsService()
 
     var body: some View {
-        TabView(selection: $selectedYearsAgo) {
-            ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
-                YearPageView(viewModel: viewModel, yearsAgo: yearsAgo)
-                    .tag(Optional(yearsAgo))
-            }
-        }
-        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: Constants.transitionDuration), value: selectedYearsAgo)
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationTitle("")
-        .toolbar(.hidden, for: .navigationBar)
-        .onChange(of: selectedYearsAgo) { _, newValue in
-            if let currentYearsAgo = newValue {
-                print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
-                viewModel.triggerPrefetch(around: currentYearsAgo)
-            }
-        }
-    }
-}
+           NavigationView {
+               VStack(spacing: 20) { // Main content VStack
+
+                   // Account Info Section
+                   if let user = authVM.user {
+                       VStack(alignment: .leading, spacing: 8) {
+                           Text("Account")
+                               .font(.headline)
+                               .foregroundColor(.secondary)
+                           Text(user.email ?? "No email")
+                               .font(.body)
+                       }
+                       .frame(maxWidth: .infinity, alignment: .leading)
+                       .padding()
+                       .background(Color(.systemGray6))
+                       .cornerRadius(10)
+                   }
+                   
+                   // "Memories in Numbers" Section
+                   VStack(alignment: .center, spacing: 10) {
+                       Text("Memories in Numbers")
+                           .font(.system(.title2, design: .rounded))
+                           .fontWeight(.bold)
+                           .padding(.top)
+                       Text(Date().monthDayWithOrdinalAndYear())
+                           .font(.system(.headline, design: .rounded))
+                           .foregroundColor(.secondary)
+                           .padding(.bottom, 16)
+                       VStack(alignment: .leading, spacing: 12) {
+                           HStack {
+                               Image(systemName: "calendar.circle.fill")
+                                   .foregroundColor(.accentColor)
+                               Text("Total Past Years with Photos: \(photoViewModel.availableYearsAgo.count)")
+                           }
+                           .font(.body)
+                           Divider().padding(.horizontal, -8)
+                           HStack {
+                               Image(systemName: "photo.stack.fill")
+                                   .foregroundColor(.accentColor)
+                               if let totalSum = sumOfPastPhotosOnThisDay {
+                                   // Text changed slightly in your paste, from "(Past Years)" to ""
+                                   // Ensure it's what you intend:
+                                   Text("Total Photos on this Day : \(totalSum)")
+                               } else {
+                                   Text("Total Photos on this Day : ")
+                                   ProgressView()
+                               }
+                           }
+                           .font(.body)
+                       }
+                       .padding(.horizontal)
+                   }
+                   .frame(maxWidth: .infinity)
+                   .padding(.vertical)
+                   .background(Color(.systemGray6))
+                   .cornerRadius(12)
+
+                   Button(action: {
+                       authVM.signOut()
+                       dismiss()
+                   }) {
+                       Text("Sign Out")
+                           .foregroundColor(.red)
+                           .frame(maxWidth: .infinity)
+                           .padding()
+                           .background(Color(.systemGray6))
+                           .cornerRadius(10)
+                   }
+                   
+                   Spacer()
+               }
+               .padding()
+               .navigationTitle("Settings")
+               .navigationBarTitleDisplayMode(.inline)
+               .toolbar {
+                   ToolbarItem(placement: .navigationBarTrailing) {
+                       Button("Done") {
+                           dismiss()
+                       }
+                   }
+               }
+               .onAppear {
+                   // self.sumOfPastPhotosOnThisDay = nil // Optional
+                   let currentMonthDay = Calendar.current.dateComponents([.month, .day], from: Date())
+                   Task {
+                       let sum = await statisticsService.calculateTotalPhotosForCalendarDayFromPastYears(
+                           availablePastYearOffsets: photoViewModel.availableYearsAgo,
+                           currentMonthDayComponents: currentMonthDay
+                       )
+                       await MainActor.run {
+                           self.sumOfPastPhotosOnThisDay = sum
+                       }
+                   }
+               }
+           }
+       }
+   }
+
