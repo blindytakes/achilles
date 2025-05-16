@@ -33,13 +33,13 @@ class FeaturedSelectorService: FeaturedSelectorServiceProtocol {
        static let depthEffectBonus = 60
        static let regularStillPhotoBonus = 10
        static let keyBurstBonus = 25
-       static let faceDetectedBonus = 75             // Big bonus for faces
+       static let faceDetectedBonus = 200           // Big bonus for faces
        static let hdrPhotoBonus = 15                 // HDR photos usually better composed
        static let outdoorBonus = 15                  // Has location data
-       static let editedBonus = 70                   // User took time to edit
+       static let editedBonus = 150                   // User took time to edit
        
        // Aspect Ratio Scoring
-       static let perfectAspectMatchBonus = 50
+       static let perfectAspectMatchBonus = 100
        static let excellentAspectMatchBonus = 35
        static let goodAspectMatchBonus = 20
        static let commonCameraFormatBonus = 10
@@ -74,7 +74,7 @@ class FeaturedSelectorService: FeaturedSelectorServiceProtocol {
        
        // Thresholds
        static let minimumFeaturedWorthyScore = 5
-       static let minimumResolution = 800
+       static let minimumResolution = 1300
    }
 
    func pickFeaturedItem(from items: [MediaItem]) -> MediaItem? {

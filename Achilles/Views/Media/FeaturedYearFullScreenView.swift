@@ -106,7 +106,7 @@ struct FeaturedYearFullScreenView: View {
     @State private var isLoadingImage: Bool = false
     @State private var showLoadingTransition: Bool = false
     @State private var imageBrightness: Double = -0.1
-    @State private var imageScale: CGFloat = 1.05
+    @State private var imageScale: CGFloat = 1.09
     @State private var transitionOpacity: Double = 1.0 // For transition fade-out animation
     @State private var imageLoadTask: Task<Void, Never>? = nil
 
