@@ -138,7 +138,7 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
             }
         } else if authVM.user == nil {
             // Not logged in - show welcome/login screen
-            WelcomeView()
+            LoginSignupView()
         } else if authVM.showMainApp {
             // User has clicked through daily welcome
             ContentView()
@@ -148,3 +148,4 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
         }
     }
 }
+  
