@@ -156,8 +156,8 @@ struct LoadedYearContentView: View {
                 // Footer after splash
                 if hasDismissedSplash {
                     Text("Make More Memories!")
-                        .font(.subheadline)
-                        .padding(.vertical, 12)
+                      .font(.headline)    // ~17 pt
+                      .padding(.vertical, 12)
                 }
                 
                 Spacer()

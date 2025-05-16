@@ -16,8 +16,12 @@ struct ContentView: View {
                 contentForAuthorizationStatus
             }
             
-            // Settings button overlay
-            if viewModel.authorizationStatus == .authorized {
+            // Settings button overlay — only when we're on the last (max) year
+            if viewModel.authorizationStatus == .authorized,
+               let selected = selectedYearsAgo,
+               let lastYear = viewModel.availableYearsAgo.max(),
+               selected == lastYear
+            {
                 Button(action: {
                     showingSettings = true
                 }) {
@@ -46,6 +50,7 @@ struct ContentView: View {
             }
         }
     }
+
     
     @ViewBuilder
     private var contentForAuthorizationStatus: some View {
