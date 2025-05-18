@@ -90,7 +90,8 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
   @StateObject private var authVM: AuthViewModel
   @State private var photoStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    
+  @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDate: Double = 0.0
+
     init() {
       FirebaseApp.configure()
         // — new Splunk RUM setup (➋) —
@@ -111,22 +112,46 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
       _appDelegate.wrappedValue.authVM = vm
     }
     
-    // In ThrowbacksApp.swift, add this to the WindowGroup
+    private func shouldPlayIntroVideo() -> Bool {
+        // If never played (default value 0.0), should play.
+        if lastIntroVideoPlayDate == 0.0 {
+            print("Intro video: Never played before according to AppStorage. Should play.")
+            return true
+        }
+        // Convert the stored TimeInterval back to a Date.
+        let lastPlayDateTime = Date(timeIntervalSince1970: lastIntroVideoPlayDate)
+        // Check if the last play date is NOT today.
+        let shouldPlay = !Calendar.current.isDateInToday(lastPlayDateTime)
+        
+        if shouldPlay {
+            print("Intro video: Last played on a different day (\(lastPlayDateTime)). Should play today (\(Date())).")
+        } else {
+            print("Intro video: Already played today (Last played: \(lastPlayDateTime), Current time: \(Date())). Should NOT play.")
+        }
+        return shouldPlay
+    }
+    
     var body: some Scene {
         WindowGroup {
-            rootView
+            // MARK: 3. MODIFY The rootView usage (the definition of rootView below will be changed)
+            rootView // rootView will now use shouldPlayIntroVideo()
+            // END OF MODIFICATION 3. (No change to this specific line, but what `rootView` returns changes)
                 .environmentObject(authVM)
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                     // Reset the flag when app goes to background
+                    // This existing logic for authVM.showMainApp is related to the Firebase daily welcome,
+                    // not directly to the intro video logic we are adding. We can leave it as is.
+                    // The intro video logic is self-contained with `lastIntroVideoPlayDate`.
                     authVM.showMainApp = false
                 }
         }
-        .onChange(of: photoStatus) {
-            // Access photoStatus directly inside the closure
+        .onChange(of: photoStatus) { // Corrected: Removed `newStatus in` to use `photoStatus` directly
             print("📸 Photo-library status is now \(photoStatus)")
         }
     }
   
+
+    // MARK: 4. REPLACE the existing rootView computed property with this new version
     @ViewBuilder
     private var rootView: some View {
         if authVM.isInitializing {
@@ -139,13 +164,18 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
         } else if authVM.user == nil {
             // Not logged in - show welcome/login screen
             LoginSignupView()
-        } else if authVM.showMainApp {
-            // User has clicked through daily welcome
-            ContentView()
         } else {
-            // User is logged in - show daily welcome every time
-            DailyWelcomeView()
+            // User is logged in. Now decide based on intro video status AND authVM.showMainApp
+            // `authVM.showMainApp` is usually set to true by DailyWelcomeView after its own logic (e.g., Firebase daily check OR video plays)
+            // If video has ALREADY played today, we bypass DailyWelcomeView.
+            // OR if `authVM.showMainApp` is already true (meaning we're past any welcome sequence from a previous interaction),
+            // we also go to ContentView.
+            if !shouldPlayIntroVideo() || authVM.showMainApp {
+                ContentView()
+            } else {
+                // Video SHOULD play today AND we're not yet past the general welcome (authVM.showMainApp is false)
+                DailyWelcomeView()
+            }
         }
     }
 }
-  

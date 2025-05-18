@@ -168,7 +168,7 @@ struct SettingsView: View {
                     HStack {
                         Image(systemName: "calendar.circle.fill")
                             .foregroundColor(.accentColor)
-                        Text("Total Past Years with Photos: \(photoViewModel.availableYearsAgo.count)")
+                        Text("# of Years with Photos: \(photoViewModel.availableYearsAgo.count)")
                     }
                     .font(.body)
                     Divider().padding(.horizontal, -8)
@@ -176,9 +176,9 @@ struct SettingsView: View {
                         Image(systemName: "photo.stack.fill")
                             .foregroundColor(.accentColor)
                         if let totalSum = sumOfPastPhotosOnThisDay {
-                            Text("Total Photos on this Day : \(totalSum)")
+                            Text("# of Photos on this Day : \(totalSum)")
                         } else {
-                            Text("Total Photos on this Day : ")
+                            Text("# of Photos on this Day : ")
                             ProgressView()
                         }
                     }
