@@ -139,6 +139,9 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
             // END OF MODIFICATION 3. (No change to this specific line, but what `rootView` returns changes)
                 .environmentObject(authVM)
                 .environmentObject(photoViewModel) // Pass the PhotoViewModel to the view hierarchy
+                .background(Color.black)
+                .ignoresSafeArea()
+                .preferredColorScheme(.dark)
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                     // Reset the flag when app goes to background
                     // This existing logic for authVM.showMainApp is related to the Firebase daily welcome,
@@ -159,7 +162,7 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
         if authVM.isInitializing {
             // Show loading while Firebase initializes
             ZStack {
-                Color.white.ignoresSafeArea()
+                Color.black.ignoresSafeArea()
                 ProgressView("Loading...")
                     .progressViewStyle(CircularProgressViewStyle())
             }
