@@ -2,22 +2,29 @@ import SwiftUI
 import Photos
 import UIKit
 
-
 // Separated PagedYearsView
 struct PagedYearsView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @Binding var selectedYearsAgo: Int?
+    @EnvironmentObject var authVM: AuthViewModel
     
     private struct Constants {
         static let transitionDuration: Double = 0.3
+        static let settingsPageTag: Int = -999  // Special tag value for Settings page
     }
     
     var body: some View {
         TabView(selection: $selectedYearsAgo) {
+            // Year pages
             ForEach(viewModel.availableYearsAgo, id: \.self) { yearsAgo in
                 YearPageView(viewModel: viewModel, yearsAgo: yearsAgo)
                     .tag(Optional(yearsAgo))
             }
+            
+            // Settings page as the last page
+            SettingsView(photoViewModel: viewModel)
+                .environmentObject(authVM)
+                .tag(Optional(Constants.settingsPageTag))
         }
         .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -26,7 +33,7 @@ struct PagedYearsView: View {
         .navigationTitle("")
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedYearsAgo) { _, newValue in
-            if let currentYearsAgo = newValue {
+            if let currentYearsAgo = newValue, currentYearsAgo != Constants.settingsPageTag {
                 print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
                 viewModel.triggerPrefetch(around: currentYearsAgo)
             }
@@ -34,44 +41,16 @@ struct PagedYearsView: View {
     }
 }
 
-
 struct ContentView: View {
     @EnvironmentObject var authVM: AuthViewModel
     @StateObject private var viewModel = PhotoViewModel()
     @State private var selectedYearsAgo: Int?
-    @State private var showingSettings = false
 
     private let defaultTargetYear: Int = 1
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            NavigationView {
-                contentForAuthorizationStatus
-            }
-            
-            // Settings button overlay — only when we're on the last (max) year
-            if viewModel.authorizationStatus == .authorized,
-               let selected = selectedYearsAgo,
-               let lastYear = viewModel.availableYearsAgo.max(),
-               selected == lastYear
-            {
-                Button(action: {
-                    showingSettings = true
-                }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                        .shadow(radius: 3)
-                }
-                .padding()
-                .sheet(isPresented: $showingSettings) {
-                    SettingsView(photoViewModel: viewModel)
-                        .environmentObject(authVM)
-                }
-            }
+        NavigationView {
+            contentForAuthorizationStatus
         }
         .onReceive(viewModel.$availableYearsAgo) { availableYears in
             if selectedYearsAgo == nil, !availableYears.isEmpty {
@@ -83,51 +62,71 @@ struct ContentView: View {
             }
         }
     }
-
     
-    @ViewBuilder
-    private var contentForAuthorizationStatus: some View {
-        switch viewModel.authorizationStatus {
-        case .notDetermined:
-            AuthorizationRequiredView(
-                status: .notDetermined,
-                onRequest: viewModel.checkAuthorization
-            )
-            .environmentObject(authVM)
 
-        case .restricted, .denied, .limited:
-            AuthorizationRequiredView(
-                status: viewModel.authorizationStatus,
-                onRequest: {}
-            )
-            .environmentObject(authVM)
+        @ViewBuilder
+        private var contentForAuthorizationStatus: some View {
+            switch viewModel.authorizationStatus {
+            case .notDetermined:
+                AuthorizationRequiredView(
+                    status: .notDetermined,
+                    onRequest: viewModel.checkAuthorization
+                )
+                .environmentObject(authVM)
+                // Add modifiers for consistency
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground).ignoresSafeArea()) // Optional consistent background
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("")
+                .toolbar(.hidden, for: .navigationBar)
 
-        case .authorized:
-            if viewModel.initialYearScanComplete {
-                if viewModel.availableYearsAgo.isEmpty {
-                    Text("No past memories found for today's date.")
-                        .foregroundColor(.secondary)
-                        .navigationTitle("Memories")
-                } else {
+            case .restricted, .denied, .limited:
+                AuthorizationRequiredView(
+                    status: viewModel.authorizationStatus,
+                    onRequest: {} // No action needed here as user must go to Settings
+                )
+                .environmentObject(authVM)
+                // Add modifiers for consistency
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground).ignoresSafeArea()) // Optional consistent background
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("")
+                .toolbar(.hidden, for: .navigationBar)
+
+            case .authorized:
+                if viewModel.initialYearScanComplete {
+                    // ALWAYS show PagedYearsView if scan is complete and user is authorized.
+                    // PagedYearsView will internally handle the case of empty availableYearsAgo
+                    // by only showing the Settings page. Its own modifiers will hide the toolbar.
                     PagedYearsView(viewModel: viewModel, selectedYearsAgo: $selectedYearsAgo)
+                        .environmentObject(authVM)
+                } else {
+                    // This is the "Scanning Library..." state, already correctly modified
+                    VStack(spacing: 8) {
+                        ProgressView("Scanning Library...")
+                        Text("Finding relevant years...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemBackground).ignoresSafeArea())
+                    .navigationBarTitleDisplayMode(.inline)
+                    .navigationTitle("")
+                    .toolbar(.hidden, for: .navigationBar)
                 }
-            } else {
-                VStack(spacing: 8) {
-                    ProgressView("Scanning Library...")
-                    Text("Finding relevant years...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .navigationTitle("Memories")
-            }
 
-        @unknown default:
-            Text("An unexpected error occurred with permissions.")
-                .foregroundColor(.red)
-                .navigationTitle("Error")
+            @unknown default:
+                Text("An unexpected error occurred with permissions.")
+                    .foregroundColor(.red)
+                // Modify for consistency, or keep title if preferred for errors
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground).ignoresSafeArea()) // Optional consistent background
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("") // Changed from "Error" to empty for consistency
+                .toolbar(.hidden, for: .navigationBar) // Hide toolbar for consistency
+            }
         }
     }
-}
 
 // Settings View
 struct SettingsView: View {
@@ -139,101 +138,86 @@ struct SettingsView: View {
     private let statisticsService = SettingsStatisticsService()
 
     var body: some View {
-           NavigationView {
-               VStack(spacing: 20) { // Main content VStack
+        VStack(spacing: 20) { // Main content VStack
+            // Account Info Section
+            if let user = authVM.user {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Account")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text(user.email ?? "No email")
+                        .font(.body)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            }
+            
+            // "Memories in Numbers" Section
+            VStack(alignment: .center, spacing: 10) {
+                Text("Memories in Numbers")
+                    .font(.system(.title2, design: .rounded))
+                    .fontWeight(.bold)
+                    .padding(.top)
+                Text(Date().monthDayWithOrdinalAndYear())
+                    .font(.system(.headline, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 16)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "calendar.circle.fill")
+                            .foregroundColor(.accentColor)
+                        Text("Total Past Years with Photos: \(photoViewModel.availableYearsAgo.count)")
+                    }
+                    .font(.body)
+                    Divider().padding(.horizontal, -8)
+                    HStack {
+                        Image(systemName: "photo.stack.fill")
+                            .foregroundColor(.accentColor)
+                        if let totalSum = sumOfPastPhotosOnThisDay {
+                            Text("Total Photos on this Day : \(totalSum)")
+                        } else {
+                            Text("Total Photos on this Day : ")
+                            ProgressView()
+                        }
+                    }
+                    .font(.body)
+                }
+                .padding(.horizontal)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical)
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
 
-                   // Account Info Section
-                   if let user = authVM.user {
-                       VStack(alignment: .leading, spacing: 8) {
-                           Text("Account")
-                               .font(.headline)
-                               .foregroundColor(.secondary)
-                           Text(user.email ?? "No email")
-                               .font(.body)
-                       }
-                       .frame(maxWidth: .infinity, alignment: .leading)
-                       .padding()
-                       .background(Color(.systemGray6))
-                       .cornerRadius(10)
-                   }
-                   
-                   // "Memories in Numbers" Section
-                   VStack(alignment: .center, spacing: 10) {
-                       Text("Memories in Numbers")
-                           .font(.system(.title2, design: .rounded))
-                           .fontWeight(.bold)
-                           .padding(.top)
-                       Text(Date().monthDayWithOrdinalAndYear())
-                           .font(.system(.headline, design: .rounded))
-                           .foregroundColor(.secondary)
-                           .padding(.bottom, 16)
-                       VStack(alignment: .leading, spacing: 12) {
-                           HStack {
-                               Image(systemName: "calendar.circle.fill")
-                                   .foregroundColor(.accentColor)
-                               Text("Total Past Years with Photos: \(photoViewModel.availableYearsAgo.count)")
-                           }
-                           .font(.body)
-                           Divider().padding(.horizontal, -8)
-                           HStack {
-                               Image(systemName: "photo.stack.fill")
-                                   .foregroundColor(.accentColor)
-                               if let totalSum = sumOfPastPhotosOnThisDay {
-                                   // Text changed slightly in your paste, from "(Past Years)" to ""
-                                   // Ensure it's what you intend:
-                                   Text("Total Photos on this Day : \(totalSum)")
-                               } else {
-                                   Text("Total Photos on this Day : ")
-                                   ProgressView()
-                               }
-                           }
-                           .font(.body)
-                       }
-                       .padding(.horizontal)
-                   }
-                   .frame(maxWidth: .infinity)
-                   .padding(.vertical)
-                   .background(Color(.systemGray6))
-                   .cornerRadius(12)
-
-                   Button(action: {
-                       authVM.signOut()
-                       dismiss()
-                   }) {
-                       Text("Sign Out")
-                           .foregroundColor(.red)
-                           .frame(maxWidth: .infinity)
-                           .padding()
-                           .background(Color(.systemGray6))
-                           .cornerRadius(10)
-                   }
-                   
-                   Spacer()
-               }
-               .padding()
-               .navigationTitle("Settings")
-               .navigationBarTitleDisplayMode(.inline)
-               .toolbar {
-                   ToolbarItem(placement: .navigationBarTrailing) {
-                       Button("Done") {
-                           dismiss()
-                       }
-                   }
-               }
-               .onAppear {
-                   // self.sumOfPastPhotosOnThisDay = nil // Optional
-                   let currentMonthDay = Calendar.current.dateComponents([.month, .day], from: Date())
-                   Task {
-                       let sum = await statisticsService.calculateTotalPhotosForCalendarDayFromPastYears(
-                           availablePastYearOffsets: photoViewModel.availableYearsAgo,
-                           currentMonthDayComponents: currentMonthDay
-                       )
-                       await MainActor.run {
-                           self.sumOfPastPhotosOnThisDay = sum
-                       }
-                   }
-               }
-           }
-       }
-   }
-
+            Button(action: {
+                authVM.signOut()
+            }) {
+                Text("Sign Out")
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+            }
+            
+            Spacer()
+        }
+        .padding()
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            let currentMonthDay = Calendar.current.dateComponents([.month, .day], from: Date())
+            Task {
+                let sum = await statisticsService.calculateTotalPhotosForCalendarDayFromPastYears(
+                    availablePastYearOffsets: photoViewModel.availableYearsAgo,
+                    currentMonthDayComponents: currentMonthDay
+                )
+                await MainActor.run {
+                    self.sumOfPastPhotosOnThisDay = sum
+                }
+            }
+        }
+    }
+}
