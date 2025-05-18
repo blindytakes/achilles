@@ -159,6 +159,7 @@ struct ItemDisplayView: View {
                 dismissAction: { dismiss() }
             ) {
                 PHLivePhotoViewRepresentable(livePhoto: livePhoto)
+                    .padding(.bottom, 40)
             }
         case .error(let msg): errorView(message: msg)
         default: errorView(message: "Internal state error (LivePhoto)")
@@ -183,6 +184,8 @@ struct ItemDisplayView: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
+                    .padding(.bottom, 40)
+
             }
         case .error(let msg): errorView(message: msg)
         default: errorView(message: "Internal state error (Image)")
