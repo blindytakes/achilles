@@ -28,7 +28,7 @@ struct GridItemView: View {
     @State private var isPressed = false
     @State private var isLoadingThumbnail = false
 
-    private let itemFrameSize: CGFloat = 190
+    private let itemFrameSize: CGFloat = 200
 
     var body: some View {
         ZStack {
