@@ -43,7 +43,7 @@ struct PagedYearsView: View {
 
 struct ContentView: View {
     @EnvironmentObject var authVM: AuthViewModel
-    @StateObject private var viewModel = PhotoViewModel()
+    @EnvironmentObject var viewModel: PhotoViewModel // Changed from @StateObject to @EnvironmentObject
     @State private var selectedYearsAgo: Int?
 
     private let defaultTargetYear: Int = 1

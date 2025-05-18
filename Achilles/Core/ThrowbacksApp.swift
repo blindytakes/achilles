@@ -89,6 +89,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 struct ThrowbaksApp: App {  // Changed app name to match your new branding
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
   @StateObject private var authVM: AuthViewModel
+  @StateObject private var photoViewModel = PhotoViewModel()
   @State private var photoStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
   @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDate: Double = 0.0
 
@@ -137,6 +138,7 @@ struct ThrowbaksApp: App {  // Changed app name to match your new branding
             rootView // rootView will now use shouldPlayIntroVideo()
             // END OF MODIFICATION 3. (No change to this specific line, but what `rootView` returns changes)
                 .environmentObject(authVM)
+                .environmentObject(photoViewModel) // Pass the PhotoViewModel to the view hierarchy
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                     // Reset the flag when app goes to background
                     // This existing logic for authVM.showMainApp is related to the Firebase daily welcome,

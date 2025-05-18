@@ -51,6 +51,7 @@ struct CustomVideoPlayerView: UIViewRepresentable {
 
 struct DailyWelcomeView: View {
     @EnvironmentObject var authVM: AuthViewModel
+    @EnvironmentObject var photoViewModel: PhotoViewModel // Access the app-level PhotoViewModel
     @State private var player: AVPlayer?
     @State private var isVideoFinished = false // Local state to ensure flag is set once per view instance
     @State private var playerObserver: Any?
