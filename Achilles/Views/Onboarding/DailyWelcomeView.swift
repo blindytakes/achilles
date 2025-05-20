@@ -11,7 +11,7 @@ class PlayerLayerView: UIView {
         super.init(frame: .zero)
         self.playerLayer = AVPlayerLayer(player: player)
         if let playerLayer = self.playerLayer {
-            playerLayer.videoGravity = .resizeAspectFill // Or .resizeAspect if you prefer
+            playerLayer.videoGravity = .resizeAspectFill
             layer.addSublayer(playerLayer)
         }
     }
@@ -22,10 +22,9 @@ class PlayerLayerView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        playerLayer?.frame = bounds // Ensure playerLayer always fills the bounds of this UIView
+        playerLayer?.frame = bounds
     }
 
-    // Allow changing the player if needed, though for this use case it's set on init
     func updatePlayer(player: AVPlayer) {
         if self.playerLayer?.player != player {
             self.playerLayer?.player = player
@@ -42,141 +41,132 @@ struct CustomVideoPlayerView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PlayerLayerView, context: Context) {
-        // If the player instance itself could change dynamically (not in this specific view's case),
-        // you would update it here. For DailyWelcomeView, the player is set up once.
-        // uiView.updatePlayer(player: player)
+        // No dynamic updates needed
     }
 }
 
-
 struct DailyWelcomeView: View {
     @EnvironmentObject var authVM: AuthViewModel
-    @EnvironmentObject var photoViewModel: PhotoViewModel // Access the app-level PhotoViewModel
+    @EnvironmentObject var photoViewModel: PhotoViewModel
+
+    // MARK: - Video Playback State
     @State private var player: AVPlayer?
-    @State private var isVideoFinished = false // Local state to ensure flag is set once per view instance
     @State private var playerObserver: Any?
 
-    // AppStorage to persist the last time the intro video was played.
-    // Uses the same key as in ThrowbacksApp.swift to ensure synchronization.
+    // MARK: - Tutorial Overlay State
+    @State private var showingTutorial = false
+    @AppStorage("hasSeenTutorialOverlay") private var hasSeenTutorialOverlay: Bool = false
     @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDateStorage: Double = 0.0
 
-    // Video file details (ensure this video is in your app's bundle)
+    // Video resource identifiers
     private let videoFileName = "startingvideo"
     private let videoFileExtension = "mp4"
 
-    // Sets up the AVPlayer
+    /// Initialize the AVPlayer with the bundled video
     private func setupPlayer() {
-        guard let videoURL = Bundle.main.url(forResource: videoFileName, withExtension: videoFileExtension) else {
-            print("DailyWelcomeView Error: Video file '\(videoFileName).\(videoFileExtension)' not found in bundle.")
-            // If video is missing, proceed immediately so the app doesn't get stuck.
-            // This will also mark the video as "played" for the day.
-            proceedAfterVideo()
+        guard let url = Bundle.main.url(forResource: videoFileName, withExtension: videoFileExtension) else {
+            // If missing, skip directly
+            finishVideo()
             return
         }
-        let newPlayer = AVPlayer(url: videoURL)
-        // newPlayer.isMuted = true // Uncomment if you want the video to be silent by default
+        let newPlayer = AVPlayer(url: url)
         self.player = newPlayer
     }
 
-    // Called when the video finishes or if it's skipped/fails to load
-    private func proceedAfterVideo() {
-        // Ensure this logic runs only once per instance of the view,
-        // or if the video is explicitly replayed.
-        if !isVideoFinished {
-            isVideoFinished = true
-            
-            // Record the current time as the last playback time.
-            // This timestamp will be checked on the next app launch.
-            print("Intro video in DailyWelcomeView finished or was skipped. Updating lastIntroVideoPlayDateStorage.")
-            lastIntroVideoPlayDateStorage = Date().timeIntervalSince1970 // Store as TimeInterval since 1970
-            
-            // Navigate to the main application content.
-            authVM.navigateToMainApp()
-        }
+    /// Finalize intro: record timestamp and navigate to main app
+    private func finishVideo() {
+        lastIntroVideoPlayDateStorage = Date().timeIntervalSince1970
+        authVM.navigateToMainApp()
     }
 
     var body: some View {
         Group {
             if let player = player {
                 CustomVideoPlayerView(player: player)
-                    .edgesIgnoringSafeArea(.all) // Make the video player full screen
+                    .edgesIgnoringSafeArea(.all)
                     .onAppear {
-                        // Start playing the video when the view appears,
-                        // but only if it hasn't been marked as finished yet.
-                        if !isVideoFinished {
-                            player.seek(to: .zero) // Rewind to the beginning
-                            player.play()
+                        // Start playback
+                        player.seek(to: .zero)
+                        player.play()
+
+                        // Remove old observer
+                        if let existing = playerObserver {
+                            NotificationCenter.default.removeObserver(existing)
                         }
-                        
-                        // Remove any existing observer before adding a new one to prevent duplicates
-                        // if the view were to reappear multiple times.
-                        if let existingObserver = playerObserver {
-                            NotificationCenter.default.removeObserver(existingObserver)
-                            playerObserver = nil
-                        }
-                        
-                        // Observe the .AVPlayerItemDidPlayToEndTime notification to detect when the video finishes.
+
+                        // Add new observer for video end
                         playerObserver = NotificationCenter.default.addObserver(
                             forName: .AVPlayerItemDidPlayToEndTime,
-                            object: player.currentItem, // Observe the current item of this specific player
-                            queue: .main // Ensure the block executes on the main thread
+                            object: player.currentItem,
+                            queue: .main
                         ) { _ in
-                            print("Video (DailyWelcomeView) finished playing via .AVPlayerItemDidPlayToEndTime notification.")
-                            proceedAfterVideo() // Call to update timestamp and navigate
+                            if !hasSeenTutorialOverlay {
+                                showingTutorial = true
+                            } else {
+                                finishVideo()
+                            }
                         }
                     }
                     .onDisappear {
-                        player.pause() // Pause the video if the view disappears
-                        
-                        // Clean up the notification observer to prevent memory leaks or unexpected behavior.
-                        if let observer = playerObserver {
-                            NotificationCenter.default.removeObserver(observer)
-                            playerObserver = nil
+                        player.pause()
+                        if let obs = playerObserver {
+                            NotificationCenter.default.removeObserver(obs)
                         }
                     }
-                // The .onTapGesture modifier has been removed as per your request.
             } else {
-                // Fallback UI: Shown if the player couldn't be initialized (e.g., video file is missing).
+                // Fallback if player fails
                 ZStack {
-                    // A simple gradient background for the fallback view.
                     LinearGradient(
                         gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.1)]),
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                     .ignoresSafeArea()
-                    
+
                     VStack {
-                        // Provide a different message if no video is intended (e.g., filename is empty).
-                        if videoFileName.isEmpty && videoFileExtension.isEmpty {
-                             Text("Welcome!")
-                                .font(.largeTitle)
-                                .padding(.bottom)
-                        } else {
-                            // Standard loading message if a video was expected.
-                            ProgressView("Loading Animation...")
-                        }
-                        
-                        // "Continue" button allows the user to bypass this screen if loading is stuck or video fails.
+                        ProgressView("Loading Animation...")
                         Button("Continue") {
-                             proceedAfterVideo()
+                            finishVideo()
                         }
                         .padding(.top)
-                        .buttonStyle(.borderedProminent) // Makes the button more visually distinct.
+                        .buttonStyle(.borderedProminent)
                     }
                 }
             }
         }
+        //  MARK: - Tutorial Sheet
+        // MARK: - Tutorial Full-Screen Overlay
+        .fullScreenCover(isPresented: $showingTutorial, onDismiss: {
+            hasSeenTutorialOverlay = true
+            finishVideo()
+        }) {
+            ZStack {
+                // 1) Makes the image fill the entire screen
+                Image("TutorialOverlay")
+                    .resizable()
+                    .scaledToFill()
+                    .edgesIgnoringSafeArea(.all)
+
+                // 2) Puts your button on top, at the bottom
+                VStack {
+                    Spacer()
+                    Button(action: { showingTutorial = false }) {
+                        Text("Got it, let's go!")
+                            .font(.headline)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Color.black.opacity(0.6))
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .padding(.bottom, 40)
+                }
+            }
+        }
         .onAppear {
-            // This outer onAppear handles the initial setup of the player
-            // or re-initiates playback if the view appears again and the video wasn't finished.
-            if self.player == nil && !isVideoFinished {
+            // Setup player when the view appears
+            if player == nil {
                 setupPlayer()
-            } else if let existingPlayer = self.player, !isVideoFinished {
-                // If player exists (e.g., view re-appeared quickly) and video hasn't finished,
-                // rewind and play again.
-                existingPlayer.seek(to: .zero)
-                existingPlayer.play()
             }
         }
     }
@@ -185,6 +175,7 @@ struct DailyWelcomeView: View {
 struct DailyWelcomeView_Previews: PreviewProvider {
     static var previews: some View {
         DailyWelcomeView()
-            .environmentObject(AuthViewModel()) // Provide AuthViewModel for the preview to work correctly.
+            .environmentObject(AuthViewModel())
     }
 }
+
