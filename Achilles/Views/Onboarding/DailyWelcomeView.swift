@@ -151,15 +151,15 @@ struct DailyWelcomeView: View {
                 VStack {
                     Spacer()
                     Button(action: { showingTutorial = false }) {
-                        Text("Got it, let's go!")
+                        Text("Ready for my Throwbaks")
                             .font(.headline)
                             .padding(.horizontal, 24)
                             .padding(.vertical, 12)
-                            .background(Color.black.opacity(0.6))
+                            .background(Color.black.opacity(0.8))
                             .foregroundColor(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 400)
                 }
             }
         }

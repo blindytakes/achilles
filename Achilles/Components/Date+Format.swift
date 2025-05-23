@@ -72,6 +72,12 @@ extension Date {
     func longDateShortTime() -> String {
         return Self.longDateShortTimeFormatter.string(from: self)
     }
+
+    func monthDayOrdinalYearString() -> String {
+        let monthDayWithOrdinalPart = self.monthDayWithOrdinal() // This already gives "May 6th"
+        let year = Calendar.current.component(.year, from: self)
+        return "\(monthDayWithOrdinalPart) \(year)"
+    }
     
     /// “Apr 27, 2025, 9:22 PM”
     func abbreviatedDateShortTime() -> String {

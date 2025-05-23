@@ -7,7 +7,7 @@ import FirebaseFirestore
 
 @MainActor
 class AuthViewModel: ObservableObject {
-    // MARK: - Published State
+    // ... (keep existing published properties and private props)
     @Published var user: User?
     @Published var errorMessage: String?
     @Published var isLoading = false
@@ -24,7 +24,8 @@ class AuthViewModel: ObservableObject {
     private var authHandle: AuthStateDidChangeListenerHandle?
     private var authTask: Task<Void, Error>?
 
-    // MARK: - Initialization
+
+    // ... (keep existing init and deinit methods)
     init() {
         let initialCurrentUser = Auth.auth().currentUser
         print("🔌 AuthViewModel: init BEGINNING.")
@@ -78,6 +79,11 @@ class AuthViewModel: ObservableObject {
 
                 guard let validUserForTasks = self.user, !validUserForTasks.isAnonymous else {
                     print("   Listener: Current user in ViewModel is nil or anonymous.")
+                     // For anonymous users, ensure onboarding is reset if necessary, or handle differently
+                    DispatchQueue.main.async {
+                        self.onboardingComplete = false // Or load from local storage for anon
+                        self.dailyWelcomeNeeded = true // Or load from local storage for anon
+                    }
                     return
                 }
 
@@ -134,9 +140,13 @@ class AuthViewModel: ObservableObject {
 
         guard let currentUserID = self.user?.uid, self.user?.isAnonymous == false else {
             print("AuthViewModel: subscribeToUserDoc - No valid (non-anonymous) user. Not subscribing to Firestore user document.")
+            // For anonymous or nil users, set sensible defaults or load from local storage if you implement that
             DispatchQueue.main.async {
-                self.onboardingComplete = false
-                self.dailyWelcomeNeeded = true
+                 // For anonymous users, onboarding is usually considered "complete" immediately,
+                 // or you might have a simplified onboarding.
+                 // Daily welcome might not apply or could be tracked locally.
+                self.onboardingComplete = self.user?.isAnonymous ?? false // if anonymous, they are "onboarded"
+                self.dailyWelcomeNeeded = !(self.user?.isAnonymous ?? false) // if anonymous, no daily welcome needed this way
             }
             return
         }
@@ -154,6 +164,9 @@ class AuthViewModel: ObservableObject {
 
                 guard let data = snapshot?.data() else {
                     print("   Firestore Listener for UID \(currentUserID): No data in snapshot (document might not exist yet or was deleted).")
+                     // If document deleted (e.g. during account deletion elsewhere), reset local state
+                    self.onboardingComplete = false
+                    self.dailyWelcomeNeeded = true
                     return
                 }
 
@@ -165,6 +178,7 @@ class AuthViewModel: ObservableObject {
                         self.onboardingComplete = done
                     }
                 } else {
+                     // If field is missing, default to false unless it's a new user setup where it might be true.
                     if self.onboardingComplete != false {
                          print("      onboardingComplete missing from Firestore, defaulting to false.")
                          self.onboardingComplete = false
@@ -179,6 +193,7 @@ class AuthViewModel: ObservableObject {
                         self.dailyWelcomeNeeded = needs
                     }
                 } else {
+                     // If field is missing, assume welcome is needed.
                     if self.dailyWelcomeNeeded != true {
                         self.dailyWelcomeNeeded = true
                     }
@@ -189,7 +204,8 @@ class AuthViewModel: ObservableObject {
             }
     }
 
-    // MARK: - Public Methods
+
+    // ... (keep existing markDailyWelcomeDone, markOnboardingDone methods)
     func markDailyWelcomeDone() {
         guard let uid = user?.uid, user?.isAnonymous == false else {
             print("AuthViewModel: markDailyWelcomeDone - No valid user to mark for.")
@@ -223,6 +239,36 @@ class AuthViewModel: ObservableObject {
     }
 
     // MARK: - Auth Methods
+
+    // << NEW ANONYMOUS SIGN-IN METHOD >>
+    func signInAnonymously() async -> Bool {
+        isLoading = true
+        defer { isLoading = false }
+        self.errorMessage = nil
+        print("AuthViewModel: Attempting signInAnonymously. Current self.user UID: \(self.user?.uid ?? "nil")")
+        do {
+            print("   Calling Firebase Auth.auth().signInAnonymously...")
+            let authResult = try await auth.signInAnonymously()
+            // The authStateDidChangeListener will update self.user.
+            // For anonymous users, we typically don't create a Firestore doc
+            // unless you have specific anonymous-user data to store.
+            // If you do, call ensureUserDocument here.
+            // For this example, we assume anonymous users don't get a Firestore doc by default.
+            print("   ✅ AuthViewModel: Firebase signInAnonymously API call SUCCEEDED. Result UID: \(authResult.user.uid). Listener should update self.user state.")
+            // Potentially set onboardingComplete to true for anonymous users immediately,
+            // as they skip the typical onboarding/login form.
+            // self.onboardingComplete = true // Handled by listener or direct call if needed
+            // self.dailyWelcomeNeeded = false // Anonymous users might not see daily welcome
+            return true
+        } catch {
+            let nsError = error as NSError
+            self.errorMessage = error.localizedDescription
+            print("   ❌ AuthViewModel: Firebase signInAnonymously API call FAILED. Code: \(nsError.code). Error: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    // ... (keep existing signIn, signUp, resetPassword, signOut methods)
     func signIn(email: String, password: String) async -> Bool {
         print("AuthViewModel: Attempting signIn. Email: '\(email)'. Current self.user UID: \(self.user?.uid ?? "nil")")
         isLoading = true
@@ -300,10 +346,55 @@ class AuthViewModel: ObservableObject {
         }
     }
 
+
+    // << NEW ACCOUNT DELETION METHOD >>
+    func deleteAccount() async -> Bool {
+        guard let user = Auth.auth().currentUser, !user.isAnonymous else {
+            self.errorMessage = "No registered user is currently signed in to delete."
+            print("AuthViewModel: deleteAccount - Attempted to delete an anonymous user or no user signed in.")
+            return false
+        }
+        let userId = user.uid
+        isLoading = true
+        defer { isLoading = false }
+        self.errorMessage = nil
+        print("AuthViewModel: Attempting to delete account for UID: \(userId)")
+
+        do {
+            // 1. Delete Firestore document
+            print("   Deleting Firestore document users/\(userId)...")
+            try await db.collection("users").document(userId).delete()
+            print("   ✅ Successfully deleted Firestore data for user \(userId)")
+
+            // 2. Delete Firebase Auth user
+            print("   Deleting Firebase Auth user for UID: \(userId)...")
+            try await user.delete()
+            print("   ✅ Successfully deleted Firebase Auth user \(userId)")
+            // The authStateDidChangeListener will automatically update self.user to nil.
+            return true
+        } catch {
+            self.errorMessage = "Error deleting account: \(error.localizedDescription)"
+            print("   ❌ Error deleting account for \(userId): \(error.localizedDescription)")
+            // You might need to handle AuthErrorCode.requiresRecentLogin here
+            // by prompting the user to re-authenticate.
+            return false
+        }
+    }
+
+
     // MARK: - Firestore Helpers
     private func ensureUserDocument(for firebaseUser: User, isNewUser: Bool = false) async throws {
         let uid = firebaseUser.uid
-        print("AuthViewModel: ensureUserDocument() for UID: \(uid). Is new user: \(isNewUser)")
+        // If the user is anonymous, do not create a Firestore document by default.
+        // You can change this if you have specific needs for anonymous user data.
+        guard !firebaseUser.isAnonymous else {
+            print("AuthViewModel: ensureUserDocument() - User is anonymous (UID: \(uid)). Skipping Firestore document creation/check.")
+            // For anonymous users, you might want to set onboardingComplete to true here if they bypass normal onboarding.
+            // self.onboardingComplete = true
+            return
+        }
+
+        print("AuthViewModel: ensureUserDocument() for non-anonymous UID: \(uid). Is new user: \(isNewUser)")
         let userDocRef = db.collection("users").document(uid)
 
         if isNewUser {
@@ -322,7 +413,12 @@ class AuthViewModel: ObservableObject {
 
     private func createUserDocument(for firebaseUser: User) async throws {
         let uid = firebaseUser.uid
-        print("AuthViewModel: createUserDocument() for UID: \(uid)")
+        // Ensure we don't create documents for anonymous users here either
+        guard !firebaseUser.isAnonymous else {
+            print("AuthViewModel: createUserDocument() - User is anonymous (UID: \(uid)). Skipping Firestore document creation.")
+            return
+        }
+        print("AuthViewModel: createUserDocument() for non-anonymous UID: \(uid)")
         let initialData: [String: Any] = [
             "uid": uid,
             "email": firebaseUser.email ?? "",
@@ -330,12 +426,10 @@ class AuthViewModel: ObservableObject {
             "createdAt": FieldValue.serverTimestamp(),
             "lastLoginAt": FieldValue.serverTimestamp(),
             "sessionCount": 1,
-            "featureFlags": ["onboardingComplete": true],
-            "lastDailyWelcomeAt": FieldValue.serverTimestamp(),
-            "usageDuration": 0,
-            "pushToken": "",
-            "reminderSchedule": "",
-            "optedIntoEmails": false
+            "featureFlags": ["onboardingComplete": false], // New users start with onboarding incomplete
+            "lastDailyWelcomeAt": FieldValue.serverTimestamp(), // Or nil/past date to trigger welcome
+            // Initialize other fields as needed
+            "pushToken": ""
         ]
         try await db.collection("users").document(uid).setData(initialData)
         print("   ✅ [Firestore] Created user document users/\(uid)")
@@ -343,7 +437,12 @@ class AuthViewModel: ObservableObject {
 
     private func updateLastLogin(for firebaseUser: User) async throws {
         let uid = firebaseUser.uid
-        print("AuthViewModel: updateLastLogin() for UID: \(uid)")
+        // Ensure we don't try to update documents for anonymous users
+        guard !firebaseUser.isAnonymous else {
+            print("AuthViewModel: updateLastLogin() - User is anonymous (UID: \(uid)). Skipping Firestore update.")
+            return
+        }
+        print("AuthViewModel: updateLastLogin() for non-anonymous UID: \(uid)")
         try await db.collection("users").document(uid).updateData([
             "lastLoginAt": FieldValue.serverTimestamp(),
             "sessionCount": FieldValue.increment(Int64(1))

@@ -134,13 +134,14 @@ struct SettingsView: View {
     @ObservedObject var photoViewModel: PhotoViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var sumOfPastPhotosOnThisDay: Int? = nil
+    @State private var showingDeleteConfirm = false // << NEW STATE VARIABLE
 
     private let statisticsService = SettingsStatisticsService()
 
     var body: some View {
         VStack(spacing: 20) { // Main content VStack
             // Account Info Section
-            if let user = authVM.user {
+            if let user = authVM.user, !user.isAnonymous { // Hide for anonymous users
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Account")
                         .font(.headline)
@@ -153,14 +154,14 @@ struct SettingsView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(10)
             }
-            
+
             // "Memories in Numbers" Section
             VStack(alignment: .center, spacing: 10) {
                 Text("Memories in Numbers")
                     .font(.system(.title2, design: .rounded))
                     .fontWeight(.bold)
                     .padding(.top)
-                Text(Date().monthDayWithOrdinalAndYear())
+                Text(Date().monthDayWithOrdinalAndYear()) //
                     .font(.system(.headline, design: .rounded))
                     .foregroundColor(.secondary)
                     .padding(.bottom, 16)
@@ -201,8 +202,26 @@ struct SettingsView: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
             }
-            
-            Spacer()
+
+            Spacer() // Pushes Sign Out and Delete Account to the bottom if other content is less
+
+            // << NEW DELETE ACCOUNT BUTTON >>
+            if authVM.user?.isAnonymous == false { // Only show for non-anonymous users
+                // In Achilles/Views/Media/ContentView.swift, inside SettingsView
+                Button(action: {
+                    showingDeleteConfirm = true
+                }) {
+                    Text("Delete Account")
+                        .font(.footnote) // You might want to define a font size
+                        .foregroundColor(.white)
+                        // .frame(maxWidth: .infinity) // << REMOVE THIS LINE or comment it out
+                        .padding(.horizontal, 20) // Adjust horizontal padding as needed
+                        .padding(.vertical, 10)   // Adjust vertical padding as needed
+                        .background(Color.red.opacity(0.3)) // Or use a system color like pink with some opacity
+                        .cornerRadius(10)
+                }
+                .padding(.bottom)
+            }
         }
         .padding()
         .navigationTitle("Settings")
@@ -213,11 +232,23 @@ struct SettingsView: View {
                 let sum = await statisticsService.calculateTotalPhotosForCalendarDayFromPastYears(
                     availablePastYearOffsets: photoViewModel.availableYearsAgo,
                     currentMonthDayComponents: currentMonthDay
-                )
+                ) //
                 await MainActor.run {
                     self.sumOfPastPhotosOnThisDay = sum
                 }
             }
+        }
+        // << NEW ALERT FOR DELETE CONFIRMATION >>
+        .alert("Delete Account?", isPresented: $showingDeleteConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task {
+                    await authVM.deleteAccount()
+                    // The auth state listener should handle UI changes (e.g., navigating away)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to permanently delete your account and all associated data? This action cannot be undone.")
         }
     }
 }

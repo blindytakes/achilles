@@ -179,31 +179,54 @@ struct MediaDetailView: View {
 
     // MARK: - Share Preparation
 
+    // In Achilles/Views/Media/MediaDetailView.swift
+
     @MainActor
     private func prepareAndShareCurrentItem() {
         guard let item = currentItem(), case .idle = shareState else { return }
         shareState = .loading
 
         Task {
-            var shareable: Any?
-            switch item.asset.mediaType {
+            var shareableMedia: Any?
+            var constructedShareText: String?
+
+            // Your constraint: all items are at least 1 year old.
+            if let creationDate = item.asset.creationDate { //
+                let calendar = Calendar.current
+                let now = Date()
+                let yearsAgo = calendar.dateComponents([.year], from: creationDate, to: now).year ?? 1 // Should always be >= 1
+
+                // Use the new date formatter
+                let formattedDate = creationDate.monthDayOrdinalYearString() // e.g., "May 6th 2022"
+
+                let yearsAgoText = "\(yearsAgo) year\(yearsAgo == 1 ? "" : "s") ago!"
+                
+                // Construct the new desired text format
+                constructedShareText = "Check out this Throwback from \(formattedDate), \(yearsAgoText)"
+            }
+
+            switch item.asset.mediaType { //
             case .image:
-                if let data = await viewModel.requestFullImageData(for: item.asset),
+                if let data = await viewModel.requestFullImageData(for: item.asset), //
                    let image = UIImage(data: data) {
-                    shareable = image
+                    shareableMedia = image
                 }
             case .video:
-                if let url = currentPlayerItemURL, currentItem()?.id == item.id {
-                    shareable = url
-                } else if let url = await viewModel.requestVideoURL(for: item.asset) {
-                    shareable = url
+                if let url = currentPlayerItemURL, currentItem()?.id == item.id { //
+                    shareableMedia = url
+                } else if let url = await viewModel.requestVideoURL(for: item.asset) { //
+                    shareableMedia = url
                 }
             default:
                 break
             }
 
-            if let valid = shareable {
-                shareState = .ready(ShareableItem(items: [valid]))
+            if let validMedia = shareableMedia {
+                var itemsToShare: [Any] = [validMedia]
+                if let shareText = constructedShareText {
+                    itemsToShare.append(shareText)
+                }
+                shareState = .ready(ShareableItem(items: itemsToShare)) //
             } else {
                 shareState = .idle
             }

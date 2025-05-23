@@ -1,3 +1,24 @@
+# macOS
+.DS_Store
+*.localized
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.moved-aside
+
+# Design Files
+*.psd
+*.ai 
+# Add other design file extensions if you use them, e.g., *.sketch
+
+# Existing content from your file below:
+# Logs
+logs
+*.log
+npm-debug.log*
+# ... (keep all the rest of the content that was already in your .gitignore file) ...
 # Logs
 logs
 *.log
