@@ -59,7 +59,7 @@ struct DailyWelcomeView: View {
     @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDateStorage: Double = 0.0
 
     // Video resource identifiers
-    private let videoFileName = "startingvideo"
+    private let videoFileName = "Opener1"
     private let videoFileExtension = "mp4"
 
     /// Initialize the AVPlayer with the bundled video
