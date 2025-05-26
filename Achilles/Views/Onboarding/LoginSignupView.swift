@@ -3,7 +3,6 @@
 import SwiftUI
 import FirebaseAuth
 
-// This enum should be accessible to WelcomeView
 enum AuthScreenMode {
     case signUp
     case signIn
@@ -12,7 +11,7 @@ enum AuthScreenMode {
 struct LoginSignupView: View {
     @EnvironmentObject var authVM: AuthViewModel
     @State private var showingAuthSheet = false
-    @State private var currentAuthScreenMode: AuthScreenMode = .signUp // Default mode for the sheet
+    @State private var currentAuthScreenMode: AuthScreenMode = .signUp
 
     @State private var username = ""
     @State private var email = ""
@@ -22,119 +21,133 @@ struct LoginSignupView: View {
     @State private var formErrorMessage: String?
 
     private struct BrandColors {
-        static let lightGreen = Color(red: 0.90, green: 0.98, blue: 0.90)
-        static let lightYellow = Color(red: 1.0, green: 0.99, blue: 0.91)
         static let darkGreen = Color(red: 0.13, green: 0.55, blue: 0.13)
+        static let lightGreen = Color(red: 0.4, green: 0.8, blue: 0.4)
+        static let mediumGreen = Color(red: 0.3, green: 0.7, blue: 0.3)
     }
 
     var body: some View {
         ZStack {
+            // Background hero section
             LinearGradient(
-                gradient: Gradient(colors: [BrandColors.lightGreen, BrandColors.lightYellow]),
-                startPoint: .top,
-                endPoint: .bottom
+                gradient: Gradient(colors: [BrandColors.lightGreen, BrandColors.mediumGreen]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
-
-            VStack(spacing: 30) {
+            
+            // Floating emoji icons
+            FloatingIconsView()
+            
+            // Hero content
+            VStack {
                 Spacer()
-
-                VStack(spacing: 10) {
-                    Text("Welcome to")
-                        .font(.title2)
-                        .foregroundColor(BrandColors.darkGreen.opacity(0.9))
-                    Text("Your Throwbaks")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(BrandColors.darkGreen)
-                }
-                .padding(.horizontal)
-
-                Text("Rediscover your memories, one day at a time.")
-                    .font(.headline)
-                    .foregroundColor(BrandColors.darkGreen.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-
-                Spacer()
-                Spacer()
-
-                VStack(spacing: 15) {
-                    Button {
-                        print("WelcomeView: 'Create Account' button tapped.")
-                        currentAuthScreenMode = .signUp
-                        prepareAndShowSheet()
-                    } label: {
-                        Text("Create Account")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(BrandColors.darkGreen)
-                            .foregroundColor(.white)
-                            .font(.headline)
-                            .cornerRadius(12)
-                            .shadow(color: BrandColors.darkGreen.opacity(0.3), radius: 5, y: 3)
-                    }
-
-                    Button {
-                        print("WelcomeView: 'Log In' button tapped.")
-                        currentAuthScreenMode = .signIn
-                        if let savedEmail = UserDefaults.standard.string(forKey: "lastUsedEmail"), !savedEmail.isEmpty {
-                            print("WelcomeView: Pre-filling email for login: \(savedEmail)")
-                            email = savedEmail
-                        } else {
-                            email = ""
-                        }
-                        prepareAndShowSheet()
-                    } label: {
-                        Text("Log In")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white)
-                            .foregroundColor(BrandColors.darkGreen)
-                            .font(.headline)
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(BrandColors.darkGreen, lineWidth: 1.5)
-                            )
-                            .shadow(color: Color.black.opacity(0.1), radius: 5, y: 3)
-                    }
+                
+                VStack(spacing: 8) {
+                    Text("Welcome To")
+                        .font(.system(size: 48, weight: .black))
+                        .foregroundColor(.white.opacity(0.95))
                     
-                    Spacer()
-                        .frame(height: 80)
-
-                    // << NEW CONTINUE AS GUEST BUTTON >>
-                    Button {
-                        print("WelcomeView: 'Continue as Guest' button tapped.")
-                        Task {
-                            await authVM.signInAnonymously()
-                            // The authVM.user change will be picked up by ThrowbaksApp
-                            // and navigate to the main content if successful.
-                            // No sheet is shown for guest login.
+                    Text("Throwbaks")
+                        .font(.system(size: 48, weight: .black))
+                        .foregroundColor(.white)
+                    
+                    Text("Your Memories, Rediscovered!")
+                        .font(.title3)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                
+                Spacer()
+                Spacer() // Extra space to push content up from bottom sheet
+            }
+            
+            // Bottom sheet
+            VStack {
+                Spacer()
+                
+                VStack(spacing: 0) {
+                    // Sheet handle
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 40, height: 4)
+                        .padding(.top, 12)
+                        .padding(.bottom, 20)
+                    
+                    // Sheet content
+                    VStack(alignment: .center, spacing: 24) {
+                        VStack(alignment: .center, spacing: 8) {
+                            Text("Welcome!")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.primary)
+                            
+                            Text("Ready To Explore Your Memories?")
+                                .font(.body)
+                                .foregroundColor(.secondary)
                         }
-                    } label: {
-                        Text("Continue as Guest")
-                            .font(.subheadline) // Smaller font
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10) // Smaller vertical padding
-                            .background(Color.gray.opacity(0.1)) // Even more subtle background
-                            .foregroundColor(BrandColors.darkGreen.opacity(0.7)) // More muted color
-                            .cornerRadius(8) // Smaller corner radius
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(BrandColors.darkGreen.opacity(0.3), lineWidth: 0.5)
-                            )
-                                                }
-                                            }
-                                            .padding(.horizontal, 30)
-
-                                            Spacer()
-                                        }
-                                    }
-        
-        .sheet(isPresented: $showingAuthSheet,
-               onDismiss: {
-                   print("WelcomeView: Auth sheet was dismissed. showingAuthSheet is now \($showingAuthSheet.wrappedValue). authVM.user UID: \(authVM.user?.uid ?? "nil")")
-               }) {
+                        
+                        VStack(spacing: 12) {
+                            // Create Account Button
+                            Button {
+                                currentAuthScreenMode = .signUp
+                                prepareAndShowSheet()
+                            } label: {
+                                Text("Create Account")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 52)
+                                    .background(BrandColors.darkGreen)
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .shadow(color: BrandColors.darkGreen.opacity(0.3), radius: 8, y: 4)
+                            }
+                            
+                            // Sign In Button
+                            Button {
+                                currentAuthScreenMode = .signIn
+                                if let savedEmail = UserDefaults.standard.string(forKey: "lastUsedEmail"), !savedEmail.isEmpty {
+                                    email = savedEmail
+                                } else {
+                                    email = ""
+                                }
+                                prepareAndShowSheet()
+                            } label: {
+                                Text("Sign In")
+                                    .font(.headline)
+                                    .fontWeight(.medium)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 52)
+                                    .background(Color(.systemGray6))
+                                    .foregroundColor(BrandColors.darkGreen)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                            }
+                            
+                            // Continue as Guest
+                            Button {
+                                Task {
+                                    await authVM.signInAnonymously()
+                                }
+                            } label: {
+                                Text("Continue as Guest")
+                                     .font(.caption)
+                                     .fontWeight(.medium)
+                                     .foregroundColor(.secondary.opacity(0.8))
+                                     .underline()
+                                     .padding(.top, 8)
+                             }
+                         }
+                     }
+                     .padding(.horizontal, 30)
+                     .padding(.bottom, 50)
+                 }
+                 .frame(maxWidth: .infinity)
+                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                 .shadow(color: .black.opacity(0.1), radius: 20, y: -5)
+             }
+         }
+        .sheet(isPresented: $showingAuthSheet, onDismiss: {
+            print("Auth sheet dismissed")
+        }) {
             AuthFormView(
                 authScreenMode: $currentAuthScreenMode,
                 username: $username,
@@ -144,26 +157,17 @@ struct LoginSignupView: View {
                 showPassword: $showPasswordInForm,
                 formErrorMessage: $formErrorMessage,
                 onAuthenticationSuccess: {
-                    print("WelcomeView: onAuthenticationSuccess callback received from AuthFormView.")
                     showingAuthSheet = false
                 }
             )
             .environmentObject(authVM)
         }
         .onChange(of: authVM.user) { oldValue, newUser in
-            let oldUID = oldValue?.uid ?? "nil"
-            let newUID = newUser?.uid ?? "nil"
-            print("WelcomeView: authVM.user changed. From UID: \(oldUID) to New UID: \(newUID). showingAuthSheet: \(showingAuthSheet)")
-            // This will dismiss the sheet if user signs up/in successfully *while the sheet is open*.
-            // For anonymous login, the sheet isn't shown, so this part is less critical for that flow.
             if newUser != nil && showingAuthSheet {
-                print("WelcomeView: User authenticated while sheet was showing. Attempting to dismiss sheet.")
                 showingAuthSheet = false
             }
         }
         .onChange(of: authVM.errorMessage) { oldValue, newAuthError in
-            let oldError = oldValue ?? "nil"
-            print("WelcomeView: authVM.errorMessage changed. From: '\(oldError)' to New error: '\(newAuthError ?? "nil")'")
             if newAuthError != nil {
                 formErrorMessage = newAuthError
             }
@@ -171,8 +175,6 @@ struct LoginSignupView: View {
     }
 
     private func prepareAndShowSheet() {
-        print("WelcomeView: prepareAndShowSheet called. Mode: \(currentAuthScreenMode)")
-        print("WelcomeView: Current authVM.user: \(authVM.user?.uid ?? "nil")")
         if currentAuthScreenMode == .signUp {
             email = ""
         }
@@ -182,7 +184,40 @@ struct LoginSignupView: View {
         showPasswordInForm = false
         formErrorMessage = nil
         authVM.errorMessage = nil
-        print("WelcomeView: Form fields reset. Setting showingAuthSheet = true")
         showingAuthSheet = true
+    }
+}
+
+// Floating icons component
+struct FloatingIconsView: View {
+    @State private var animate1 = false
+    @State private var animate2 = false
+    @State private var animate3 = false
+    
+    var body: some View {
+        ZStack {
+            // Camera icon
+            Text("📸")
+                .font(.system(size: 32))
+                .offset(x: -120, y: animate1 ? -280 : -215)
+                .animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: animate1)
+            
+            // Video icon
+            Text("🎥")
+                .font(.system(size: 28))
+                .offset(x: 100, y: animate2 ? -230 : -250)
+                .animation(.easeInOut(duration: 4).repeatForever(autoreverses: true), value: animate2)
+            
+            // Heart icon
+            Text("❤️")
+                .font(.system(size: 24))
+                .offset(x: -10, y: animate3 ? -215 : -240)
+                .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: animate3)
+        }
+        .onAppear {
+            animate1 = true
+            animate2 = true
+            animate3 = true
+        }
     }
 }
