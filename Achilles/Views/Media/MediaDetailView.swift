@@ -51,6 +51,7 @@ struct MediaDetailView: View {
     @ObservedObject var viewModel: PhotoViewModel
     let itemsForYear: [MediaItem]
     let selectedItemID: String
+    let yearsAgo: Int
 
     // MARK: State
     @State private var currentItemIndex: Int = 0
@@ -191,17 +192,9 @@ struct MediaDetailView: View {
             var constructedShareText: String?
 
             // Your constraint: all items are at least 1 year old.
-            if let creationDate = item.asset.creationDate { //
-                let calendar = Calendar.current
-                let now = Date()
-                let yearsAgo = calendar.dateComponents([.year], from: creationDate, to: now).year ?? 1 // Should always be >= 1
-
-                // Use the new date formatter
-                let formattedDate = creationDate.monthDayOrdinalYearString() // e.g., "May 6th 2022"
-
+            if let creationDate = item.asset.creationDate {
+                let formattedDate = creationDate.monthDayOrdinalYearString()
                 let yearsAgoText = "\(yearsAgo) year\(yearsAgo == 1 ? "" : "s") ago!"
-                
-                // Construct the new desired text format
                 constructedShareText = "Check out this Throwback from \(formattedDate), \(yearsAgoText)"
             }
 

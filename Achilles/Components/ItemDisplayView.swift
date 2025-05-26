@@ -53,7 +53,7 @@ struct ItemDisplayView: View {
                                   y: geometry.size.height - (geometry.safeAreaInsets.bottom - 50 ))
                         .zIndex(1)
                 }
-                if showInfoPanel, let location = item.asset.location {
+                if showInfoPanel, let slocation = item.asset.location {
                     LocationInfoPanelView(
                       asset: item.asset,
                       viewModel: viewModel,

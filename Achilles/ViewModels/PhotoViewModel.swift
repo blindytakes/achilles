@@ -413,8 +413,8 @@ class PhotoViewModel: ObservableObject {
         let hiddenPredicate = NSPredicate(format: "isHidden == NO") // Exclude hidden photos
         options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [basePredicate, hiddenPredicate])
 
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+
         // Apply limit if provided
         if let limit = limit, limit > 0 {
             options.fetchLimit = limit

@@ -160,24 +160,23 @@ struct ThrowbaksApp: App {
     }
   }
 
-  @ViewBuilder
-  private var rootView: some View {
-    if authVM.isInitializing {
-      ZStack {
-        Color.black.ignoresSafeArea()
-        ProgressView("Loading…")
-          .progressViewStyle(CircularProgressViewStyle())
-      }
-    } else if authVM.user == nil {
-      LoginSignupView()
-    } else {
-      // Logged in: decide between intro video / daily welcome or main content
-      if !shouldPlayIntroVideo() || authVM.showMainApp {
-        ContentView()
-      } else {
-        DailyWelcomeView()
-      }
+    @ViewBuilder
+    private var rootView: some View {
+        if authVM.isInitializing {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ProgressView("Loading…")
+                    .progressViewStyle(CircularProgressViewStyle())
+            }
+        } else if authVM.user == nil {
+            LoginSignupView()
+        } else {
+            // All authenticated users (registered AND guests): decide between intro video or main content
+            if !shouldPlayIntroVideo() || authVM.showMainApp {
+                ContentView()
+            } else {
+                DailyWelcomeView()
+            }
+        }
     }
-  }
-}
-
+    }

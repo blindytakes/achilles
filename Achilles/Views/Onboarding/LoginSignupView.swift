@@ -98,6 +98,9 @@ struct LoginSignupView: View {
                             )
                             .shadow(color: Color.black.opacity(0.1), radius: 5, y: 3)
                     }
+                    
+                    Spacer()
+                        .frame(height: 80)
 
                     // << NEW CONTINUE AS GUEST BUTTON >>
                     Button {
@@ -110,25 +113,24 @@ struct LoginSignupView: View {
                         }
                     } label: {
                         Text("Continue as Guest")
+                            .font(.subheadline) // Smaller font
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.gray.opacity(0.2)) // Subtle background
-                            .foregroundColor(BrandColors.darkGreen)
-                            .font(.headline)
-                            .cornerRadius(12)
+                            .padding(.vertical, 10) // Smaller vertical padding
+                            .background(Color.gray.opacity(0.1)) // Even more subtle background
+                            .foregroundColor(BrandColors.darkGreen.opacity(0.7)) // More muted color
+                            .cornerRadius(8) // Smaller corner radius
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(BrandColors.darkGreen.opacity(0.5), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(BrandColors.darkGreen.opacity(0.3), lineWidth: 0.5)
                             )
-                    }
-                    .padding(.top, 10) // Add some space above the guest button
+                                                }
+                                            }
+                                            .padding(.horizontal, 30)
 
-                }
-                .padding(.horizontal, 30)
-
-                Spacer()
-            }
-        }
+                                            Spacer()
+                                        }
+                                    }
+        
         .sheet(isPresented: $showingAuthSheet,
                onDismiss: {
                    print("WelcomeView: Auth sheet was dismissed. showingAuthSheet is now \($showingAuthSheet.wrappedValue). authVM.user UID: \(authVM.user?.uid ?? "nil")")

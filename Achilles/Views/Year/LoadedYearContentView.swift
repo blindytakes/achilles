@@ -195,7 +195,8 @@ struct LoadedYearContentView: View {
             MediaDetailView(
                 viewModel: viewModel,
                 itemsForYear: allGridItems,
-                selectedItemID: item.id
+                selectedItemID: item.id,
+                yearsAgo: yearsAgo
             )
         }
         .onDisappear { selectedDetail = nil }
