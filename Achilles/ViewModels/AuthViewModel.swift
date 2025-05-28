@@ -4,6 +4,8 @@
 import Foundation
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseMessaging
+
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -131,6 +133,52 @@ class AuthViewModel: ObservableObject {
 
     func navigateToMainApp() {
         showMainApp = true
+    }
+    
+    func debugPushNotifications() {
+        print("🐛 === Push Notification Debug ===")
+        
+        if let user = self.user {
+            print("✅ Current user: \(user.uid) (anonymous: \(user.isAnonymous))")
+            
+            if user.isAnonymous {
+                print("⚠️ User is anonymous - push tokens are not saved for anonymous users")
+                return
+            }
+        } else {
+            print("❌ No current user")
+            return
+        }
+        
+        guard let uid = user?.uid else { return }
+        
+        // Check stored token in Firestore
+        db.collection("users").document(uid).getDocument { snapshot, error in
+            if let error = error {
+                print("❌ Error fetching user document: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let data = snapshot?.data() else {
+                print("❌ No user document found in Firestore")
+                return
+            }
+            
+            if let storedToken = data["pushToken"] as? String, !storedToken.isEmpty {
+                print("✅ Stored FCM Token: \(storedToken)")
+            } else {
+                print("❌ No FCM token found in Firestore")
+            }
+        }
+        
+        // Get current FCM token
+        Messaging.messaging().token { token, error in
+            if let error = error {
+                print("❌ Error getting current FCM token: \(error.localizedDescription)")
+            } else if let token = token {
+                print("✅ Current FCM Token: \(token)")
+            }
+        }
     }
     
     // MARK: - Firestore featureFlags Listener
@@ -450,17 +498,23 @@ class AuthViewModel: ObservableObject {
         print("   ✅ [Firestore] Updated lastLoginAt & sessionCount for UID: \(uid)")
     }
 
+    @MainActor
     func savePushToken(_ token: String) async {
         guard let uid = self.user?.uid, self.user?.isAnonymous == false else {
-            print("AuthViewModel: savePushToken - No valid (non-anonymous) user to save token for.")
+            print("🔕 AuthViewModel: savePushToken - No valid (non-anonymous) user to save token for.")
             return
         }
-        print("AuthViewModel: savePushToken for UID: \(uid)")
+        
+        print("💾 AuthViewModel: Saving FCM token for UID: \(uid)")
+        
         do {
-            try await db.collection("users").document(uid).updateData(["pushToken": token])
-            print("   ✅ PushToken saved in Firestore for UID \(uid).")
+            try await db.collection("users").document(uid).setData([
+                "pushToken": token,
+                "pushTokenUpdatedAt": FieldValue.serverTimestamp()
+            ], merge: true)
+            print("✅ FCM token successfully saved to Firestore for UID: \(uid)")
         } catch {
-            print("   ⚠️ ViewModel failed to save pushToken in Firestore for UID \(uid): \(error.localizedDescription)")
+            print("❌ Failed to save FCM token to Firestore for UID: \(uid): \(error.localizedDescription)")
         }
     }
 }
