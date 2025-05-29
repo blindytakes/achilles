@@ -3,8 +3,8 @@
 import SwiftUI
 import Photos
 import AVKit
-import UIKit // For Share Sheet
-import PhotosUI // For PHLivePhotoViewRepresentable
+import UIKit  // For Share Sheet
+import PhotosUI  // For PHLivePhotoViewRepresentable
 
 // MARK: - State Enum
 fileprivate enum DetailViewState {
@@ -19,14 +19,14 @@ struct ItemDisplayView: View {
     // MARK: - Inputs
     @ObservedObject var viewModel: PhotoViewModel
     let item: MediaItem
-    let player: AVPlayer? // For video
+    let player: AVPlayer?            // For video
     @Binding var showInfoPanel: Bool
     @Binding var controlsHidden: Bool
     let onSingleTap: () -> Void
 
     // MARK: - Internal State
     @State private var viewState: DetailViewState = .loading
-    @State private var currentZoomScale: CGFloat = 1.0 // Local state for zoom, bound to ZoomableScrollView
+    @State private var currentZoomScale: CGFloat = 1.0
 
     @Environment(\.dismiss) private var dismiss
 
@@ -49,21 +49,32 @@ struct ItemDisplayView: View {
                 if item.asset.location != nil && !showInfoPanel && !controlsHidden {
                     locationButton
                         .transition(.opacity.animation(.easeInOut))
-                        .position(x: geometry.size.width / 2,
-                                  y: geometry.size.height - (geometry.safeAreaInsets.bottom - 50 ))
+                        .position(
+                            x: geometry.size.width / 2,
+                            y: geometry.size.height - (geometry.safeAreaInsets.bottom - 50)
+                        )
                         .zIndex(1)
                 }
-                if showInfoPanel, let slocation = item.asset.location {
+
+                if showInfoPanel, let _ = item.asset.location {
                     LocationInfoPanelView(
-                      asset: item.asset,
-                      viewModel: viewModel,
-                      onDismiss: {
-                        withAnimation(.spring(response: ViewConstants.panelSpringResponse, dampingFraction: ViewConstants.panelSpringDamping)) {
-                          showInfoPanel = false
+                        asset: item.asset,
+                        viewModel: viewModel,
+                        onDismiss: {
+                            withAnimation(
+                                .spring(
+                                    response: ViewConstants.panelSpringResponse,
+                                    dampingFraction: ViewConstants.panelSpringDamping
+                                )
+                            ) {
+                                showInfoPanel = false
+                            }
                         }
-                      }
                     )
-                    .transition(.opacity.combined(with: .offset(y: geometry.size.height * 0.1)))
+                    .transition(
+                        .opacity
+                        .combined(with: .offset(y: geometry.size.height * 0.1))
+                    )
                     .zIndex(2)
                 }
             }
@@ -71,14 +82,14 @@ struct ItemDisplayView: View {
             .id(item.id)
             .ignoresSafeArea(.all)
             .simultaneousGesture(
-                TapGesture(count: 1)
-                    .onEnded {
-                        if currentZoomScale <= (ViewConstants.zoomSlightlyAboveMinimum + 0.01) && !showInfoPanel {
-                            onSingleTap()
-                        } else if showInfoPanel {
-                             withAnimation { showInfoPanel = false }
-                        }
+                TapGesture(count: 1).onEnded {
+                    if currentZoomScale <= ViewConstants.zoomSlightlyAboveMinimum + 0.01
+                       && !showInfoPanel {
+                        onSingleTap()
+                    } else if showInfoPanel {
+                        withAnimation { showInfoPanel = false }
                     }
+                }
             )
         }
         .task(id: item.id) {
@@ -100,7 +111,12 @@ struct ItemDisplayView: View {
     // MARK: - Location Button
     private var locationButton: some View {
         Button {
-            withAnimation(.spring(response: ViewConstants.panelSpringResponse, dampingFraction: ViewConstants.panelSpringDamping)) {
+            withAnimation(
+                .spring(
+                    response: ViewConstants.panelSpringResponse,
+                    dampingFraction: ViewConstants.panelSpringDamping
+                )
+            ) {
                 showInfoPanel = true
             }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -134,21 +150,29 @@ struct ItemDisplayView: View {
         switch item.asset.mediaType {
         case .image where item.asset.mediaSubtypes.contains(.photoLive):
             livePhotoView()
+
         case .image:
             staticImageView()
+
         case .video:
-            if let activePlayer = player { VideoPlayer(player: activePlayer).ignoresSafeArea() }
-            else { ProgressView().progressViewStyle(.circular).scaleEffect(1.5) }
+            if let activePlayer = player {
+                VideoPlayer(player: activePlayer).ignoresSafeArea()
+            } else {
+                ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
+            }
+
         default:
             unsupportedView(message: "Unsupported Media Type")
         }
     }
 
-    // MARK: - Live‑Photo Content
+    // MARK: - Live-Photo Content
     @ViewBuilder
     private func livePhotoView() -> some View {
         switch viewState {
-        case .loading: ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
+        case .loading:
+            ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
+
         case .livePhoto(let livePhoto):
             ZoomableScrollView(
                 contentId: item.id,
@@ -158,19 +182,35 @@ struct ItemDisplayView: View {
                 zoomScale: $currentZoomScale,
                 dismissAction: { dismiss() }
             ) {
-                PHLivePhotoViewRepresentable(livePhoto: livePhoto)
-                    .padding(.bottom, 40)
+                ZStack(alignment: .topLeading) {
+                    PHLivePhotoViewRepresentable(livePhoto: livePhoto)
+                        .padding(.bottom, 40)
+
+                    // Apple’s Live Photo badge
+                    Image(
+                        uiImage: PHLivePhotoView.livePhotoBadgeImage(
+                            options: .overContent
+                        )
+                    )
+                    .padding(8)
+                }
             }
-        case .error(let msg): errorView(message: msg)
-        default: errorView(message: "Internal state error (LivePhoto)")
+
+        case .error(let msg):
+            errorView(message: msg)
+
+        default:
+            errorView(message: "Internal state error (LivePhoto)")
         }
     }
 
-    // MARK: - Static‑Image Content
+    // MARK: - Static-Image Content
     @ViewBuilder
     private func staticImageView() -> some View {
         switch viewState {
-        case .loading: ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
+        case .loading:
+            ProgressView().progressViewStyle(.circular).scaleEffect(1.5)
+
         case .image(let uiImage):
             ZoomableScrollView(
                 contentId: item.id,
@@ -185,10 +225,13 @@ struct ItemDisplayView: View {
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
                     .padding(.bottom, 40)
-
             }
-        case .error(let msg): errorView(message: msg)
-        default: errorView(message: "Internal state error (Image)")
+
+        case .error(let msg):
+            errorView(message: msg)
+
+        default:
+            errorView(message: "Internal state error (Image)")
         }
     }
 
@@ -196,31 +239,32 @@ struct ItemDisplayView: View {
     @MainActor
     private func loadMediaData() async {
         let currentItemID = item.asset.localIdentifier
-        
+
         if item.asset.mediaType != .video {
-            if case .loading = viewState { /* Potentially check if it's for currentItemID */ }
-            else { viewState = .loading }
-        } else { return }
+            if case .loading = viewState {
+                // already loading
+            } else {
+                viewState = .loading
+            }
+        } else {
+            return
+        }
 
         if item.asset.mediaSubtypes.contains(.photoLive) {
-            viewModel.requestLivePhoto(for: item.asset) { fetchedLivePhoto in // Removed [weak self]
-                // `self` is implicitly captured. Check against currentItemID.
-                guard self.item.asset.localIdentifier == currentItemID else {
-                    return
-                }
-                self.viewState = fetchedLivePhoto.map { .livePhoto(displayLivePhoto: $0) }
-                               ?? .error("Failed to load Live Photo")
+            viewModel.requestLivePhoto(for: item.asset) { fetchedLivePhoto in
+                guard self.item.asset.localIdentifier == currentItemID else { return }
+                self.viewState = fetchedLivePhoto
+                    .map { .livePhoto(displayLivePhoto: $0) }
+                    ?? .error("Failed to load Live Photo")
             }
         } else if item.asset.mediaType == .image {
-            viewModel.requestFullSizeImage(for: item.asset) { fetchedImage in // Removed [weak self]
-                // `self` is implicitly captured. Check against currentItemID.
-                guard self.item.asset.localIdentifier == currentItemID else {
-                    return
-                }
-                self.viewState = fetchedImage.map { .image(displayImage: $0) }
-                             ?? .error("Failed to load image")
+            viewModel.requestFullSizeImage(for: item.asset) { fetchedImage in
+                guard self.item.asset.localIdentifier == currentItemID else { return }
+                self.viewState = fetchedImage
+                    .map { .image(displayImage: $0) }
+                    ?? .error("Failed to load image")
             }
-        } else if item.asset.mediaType != .video {
+        } else {
             viewState = .unsupported
         }
     }
@@ -228,44 +272,70 @@ struct ItemDisplayView: View {
     // MARK: - Helper Views
     @ViewBuilder private func errorView(message: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
-            Text("Error Loading Media").font(.headline).foregroundColor(.white)
-            Text(message).font(.caption).foregroundColor(.gray).multilineTextAlignment(.center).padding(.horizontal)
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.largeTitle)
+                .foregroundColor(.orange)
+            Text("Error Loading Media")
+                .font(.headline)
+                .foregroundColor(.white)
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
         }
     }
 
     @ViewBuilder private func unsupportedView(message: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "questionmark.diamond.fill").font(.largeTitle).foregroundColor(.orange)
-            Text(message).font(.headline).foregroundColor(.white)
+            Image(systemName: "questionmark.diamond.fill")
+                .font(.largeTitle)
+                .foregroundColor(.orange)
+            Text(message)
+                .font(.headline)
+                .foregroundColor(.white)
         }
     }
 
     // MARK: - Notification Observers
     private func setupNotificationObservers() {
         NotificationCenter.default.addObserver(
-            forName: Notification.Name("DismissMapPanel"), object: nil, queue: .main
+            forName: Notification.Name("DismissMapPanel"),
+            object: nil,
+            queue: .main
         ) { _ in
-            withAnimation(.spring(response: ViewConstants.panelSpringResponse, dampingFraction: ViewConstants.panelSpringDamping)) {
-                self.showInfoPanel = false // Explicit self for clarity in closure
+            withAnimation(
+                .spring(
+                    response: ViewConstants.panelSpringResponse,
+                    dampingFraction: ViewConstants.panelSpringDamping
+                )
+            ) {
+                self.showInfoPanel = false
             }
         }
     }
 
     private func removeNotificationObservers() {
-        NotificationCenter.default.removeObserver(self, name: Notification.Name("DismissMapPanel"), object: nil)
+        NotificationCenter.default.removeObserver(
+            self,
+            name: Notification.Name("DismissMapPanel"),
+            object: nil
+        )
     }
 }
 
 // MARK: - Live Photo View Representable
 struct PHLivePhotoViewRepresentable: UIViewRepresentable {
     var livePhoto: PHLivePhoto?
+
     func makeUIView(context: Context) -> PHLivePhotoView {
         let view = PHLivePhotoView()
         view.contentMode = .scaleAspectFit
         return view
     }
+
     func updateUIView(_ uiView: PHLivePhotoView, context: Context) {
         uiView.livePhoto = livePhoto
     }
 }
+
