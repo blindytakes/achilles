@@ -373,8 +373,42 @@ class AuthViewModel: ObservableObject {
             }
         }
 
-        // ... (keep existing signInAnonymously, signIn, signUp, resetPassword methods) ...
-    
+    private func createUserDocument(for firebaseUser: User) async throws {
+        let uid = firebaseUser.uid
+        guard !firebaseUser.isAnonymous else {
+            print("AuthViewModel: createUserDocument() - User is anonymous (UID: \(uid)). Skipping Firestore document creation.")
+            return
+        }
+        print("AuthViewModel: createUserDocument() for non-anonymous UID: \(uid)")
+        let initialData: [String: Any] = [
+            "uid": uid,
+            "email": firebaseUser.email ?? "",
+            "displayName": firebaseUser.displayName ?? "",
+            "createdAt": FieldValue.serverTimestamp(),
+            "lastLoginAt": FieldValue.serverTimestamp(),
+            "sessionCount": 1,
+            "featureFlags": ["onboardingComplete": false],
+            "lastDailyWelcomeAt": FieldValue.serverTimestamp(),
+            // ADD THIS NEW SECTION:
+            "notificationSettings": [
+                "enabled": true,
+                "dailyReminderEnabled": true,
+                "reEngagementEnabled": true,
+                "weeklyDigestEnabled": true,
+                "reminderTime": "14:00",
+                "timeZone": TimeZone.current.identifier,
+                "customMessages": [
+                    "Your memories await!",
+                    "Discover photos from this day in past years!",
+                    "Time for your daily throwback!"
+                ],
+                "frequency": "daily"
+            ],
+            "pushToken": ""
+        ]
+        try await db.collection("users").document(uid).setData(initialData)
+        print("   ✅ [Firestore] Created user document users/\(uid)")
+    }
     
     func signInAnonymously() async -> Bool {
         isLoading = true
@@ -551,30 +585,6 @@ class AuthViewModel: ObservableObject {
                 print("   Document already exists for UID: \(uid). Skipping create in ensureUserDocument.")
             }
         }
-    }
-
-    private func createUserDocument(for firebaseUser: User) async throws {
-        let uid = firebaseUser.uid
-        // Ensure we don't create documents for anonymous users here either
-        guard !firebaseUser.isAnonymous else {
-            print("AuthViewModel: createUserDocument() - User is anonymous (UID: \(uid)). Skipping Firestore document creation.")
-            return
-        }
-        print("AuthViewModel: createUserDocument() for non-anonymous UID: \(uid)")
-        let initialData: [String: Any] = [
-            "uid": uid,
-            "email": firebaseUser.email ?? "",
-            "displayName": firebaseUser.displayName ?? "",
-            "createdAt": FieldValue.serverTimestamp(),
-            "lastLoginAt": FieldValue.serverTimestamp(),
-            "sessionCount": 1,
-            "featureFlags": ["onboardingComplete": false], // New users start with onboarding incomplete
-            "lastDailyWelcomeAt": FieldValue.serverTimestamp(), // Or nil/past date to trigger welcome
-            // Initialize other fields as needed
-            "pushToken": ""
-        ]
-        try await db.collection("users").document(uid).setData(initialData)
-        print("   ✅ [Firestore] Created user document users/\(uid)")
     }
 
     private func updateLastLogin(for firebaseUser: User) async throws {

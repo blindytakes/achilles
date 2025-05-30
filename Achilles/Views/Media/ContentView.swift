@@ -32,7 +32,7 @@ class InteractiveTutorialManager: ObservableObject {
             case .welcome: return "Welcome to Throwbaks!"
             case .swipeYears: return "Swipe Between Years"
             case .tapFeatured: return "Tap Your Featured Photo"
-            case .viewDetails: return "Full Functionality"
+            case .viewDetails: return "Zoom, Live Photos, & Share"
             case .useLocation: return "View Photo Locations"
             case .completed: return "Get Ready To Explore!"
             }
@@ -148,11 +148,15 @@ class InteractiveTutorialManager: ObservableObject {
     }
 }
 
-// MARK: - Tutorial Overlay View
 struct TutorialOverlayView: View {
     @ObservedObject var tutorialManager: InteractiveTutorialManager
     let geometryProxy: GeometryProxy
     let hasPhotosWithLocation: Bool
+    
+    // Light green color scheme
+    private let lightGreen = Color(red: 0.565, green: 0.933, blue: 0.565) // #90EE90
+    private let forestGreen = Color(red: 0.184, green: 0.310, blue: 0.184) // #2F4F2F
+    private let mediumGreen = Color(red: 0.133, green: 0.545, blue: 0.133) // #228B22
     
     var body: some View {
         ZStack {
@@ -172,7 +176,7 @@ struct TutorialOverlayView: View {
                         ForEach(Array(InteractiveTutorialManager.TutorialStep.allCases.enumerated()), id: \.offset) { index, step in
                             Circle()
                                 .fill(index <= InteractiveTutorialManager.TutorialStep.allCases.firstIndex(of: tutorialManager.currentStep) ?? 0 ?
-                                     Color.white : Color.white.opacity(0.3))
+                                     mediumGreen : mediumGreen.opacity(0.3))
                                 .frame(width: 8, height: 8)
                         }
                     }
@@ -180,12 +184,12 @@ struct TutorialOverlayView: View {
                     Text(tutorialManager.currentStep.title)
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(forestGreen)
                         .multilineTextAlignment(.center)
                     
                     Text(stepInstructionText)
                         .font(.body)
-                        .foregroundColor(.white.opacity(0.9))
+                        .foregroundColor(forestGreen.opacity(0.9))
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
                     
@@ -194,8 +198,12 @@ struct TutorialOverlayView: View {
                 .padding(30)
                 .background(
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(.ultraThinMaterial)
-                        .shadow(radius: 20)
+                        .fill(lightGreen.opacity(0.95))
+                        .shadow(color: .black.opacity(0.3), radius: 20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(lightGreen.opacity(0.3), lineWidth: 1)
+                        )
                 )
                 .padding(.horizontal, 20)
                 
@@ -223,11 +231,12 @@ struct TutorialOverlayView: View {
             tutorialManager.nextStep()
         }
         .padding(.horizontal, 30)
-        .padding(.vertical, 10)
-        .background(Color.white)
-        .foregroundColor(.black)
+        .padding(.vertical, 12)
+        .background(mediumGreen)
+        .foregroundColor(.white)
         .cornerRadius(8)
         .fontWeight(.semibold)
+        .shadow(color: mediumGreen.opacity(0.3), radius: 4, x: 0, y: 2)
     }
     
     @ViewBuilder
@@ -238,15 +247,16 @@ struct TutorialOverlayView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "arrow.left.circle.fill")
                         .font(.system(size: 50))
-                        .foregroundColor(.white)
+                        .foregroundColor(lightGreen)
                         .opacity(tutorialManager.showArrows ? 1.0 : 0.6)
-                        .shadow(color: .black.opacity(0.3), radius: 4)
+                        .shadow(color: .black.opacity(0.4), radius: 6)
                     
                     Text("Older")
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(lightGreen)
                         .opacity(tutorialManager.showArrows ? 1.0 : 0.6)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
                 }
                 
                 Spacer()
@@ -254,28 +264,30 @@ struct TutorialOverlayView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "arrow.right.circle.fill")
                         .font(.system(size: 50))
-                        .foregroundColor(.white)
+                        .foregroundColor(lightGreen)
                         .opacity(tutorialManager.showArrows ? 1.0 : 0.6)
-                        .shadow(color: .black.opacity(0.3), radius: 4)
+                        .shadow(color: .black.opacity(0.4), radius: 6)
                     
                     Text("Newer")
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(lightGreen)
                         .opacity(tutorialManager.showArrows ? 1.0 : 0.6)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
                 }
             }
             .padding(.horizontal, 40)
-            .position(x: geometryProxy.size.width / 2, y: geometryProxy.size.height / 2)
-            
+            .position(x: geometryProxy.size.width / 2, y: geometryProxy.size.height * 0.45)
+
         case .tapFeatured:
             Circle()
-                .stroke(Color.white, lineWidth: 3)
-                .frame(width: 200, height: 200)
+                .stroke(lightGreen, lineWidth: 3)
+                .frame(width: 170, height: 170)
                 .opacity(0.8)
                 .scaleEffect(tutorialManager.isPulsing ? 1.2 : 1.0)
                 .position(x: geometryProxy.size.width / 2, y: geometryProxy.size.height * 0.4)
                 .allowsHitTesting(false)
+                .shadow(color: lightGreen.opacity(0.3), radius: 8)
             
         default:
             EmptyView()
