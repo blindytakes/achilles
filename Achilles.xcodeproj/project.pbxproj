@@ -14,6 +14,8 @@
 		2A8232872DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */; };
 		2A953FAC2DD57E720084047E /* SplunkOtel in Frameworks */ = {isa = PBXBuildFile; productRef = 2A953FAB2DD57E720084047E /* SplunkOtel */; };
 		2A953FAF2DD580B00084047E /* SplunkOtelCrashReporting in Frameworks */ = {isa = PBXBuildFile; productRef = 2A953FAE2DD580B00084047E /* SplunkOtelCrashReporting */; };
+		2AF628462DE93DDC00BF0908 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2AF628452DE93DDC00BF0908 /* GoogleSignIn */; };
+		2AF628482DE93DDC00BF0908 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 2AF628472DE93DDC00BF0908 /* GoogleSignInSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -104,9 +106,11 @@
 			files = (
 				2A2F7E172DCA5B220035B532 /* FirebaseMessaging in Frameworks */,
 				2A2F7E072DCA4C700035B532 /* FirebaseAuth in Frameworks */,
+				2AF628482DE93DDC00BF0908 /* GoogleSignInSwift in Frameworks */,
 				2A953FAF2DD580B00084047E /* SplunkOtelCrashReporting in Frameworks */,
 				2A2F7E092DCA4CBE0035B532 /* FirebaseFirestore in Frameworks */,
 				2A953FAC2DD57E720084047E /* SplunkOtel in Frameworks */,
+				2AF628462DE93DDC00BF0908 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -183,6 +187,8 @@
 				2A2F7E162DCA5B220035B532 /* FirebaseMessaging */,
 				2A953FAB2DD57E720084047E /* SplunkOtel */,
 				2A953FAE2DD580B00084047E /* SplunkOtelCrashReporting */,
+				2AF628452DE93DDC00BF0908 /* GoogleSignIn */,
+				2AF628472DE93DDC00BF0908 /* GoogleSignInSwift */,
 			);
 			productName = Achilles;
 			productReference = 2A8092ED2D98827F00EED088 /* Achilles.app */;
@@ -264,6 +270,7 @@
 				2A2F7E052DCA4C700035B532 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				2A953FAA2DD57E720084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios" */,
 				2A953FAD2DD580B00084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios-crashreporting" */,
+				2AF628442DE93DDC00BF0908 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2A8092EE2D98827F00EED088 /* Products */;
@@ -667,6 +674,14 @@
 				minimumVersion = 0.6.0;
 			};
 		};
+		2AF628442DE93DDC00BF0908 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -694,6 +709,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2A953FAD2DD580B00084047E /* XCRemoteSwiftPackageReference "splunk-otel-ios-crashreporting" */;
 			productName = SplunkOtelCrashReporting;
+		};
+		2AF628452DE93DDC00BF0908 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2AF628442DE93DDC00BF0908 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		2AF628472DE93DDC00BF0908 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2AF628442DE93DDC00BF0908 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

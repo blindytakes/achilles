@@ -29,6 +29,7 @@ import UserNotifications
 import PhotosUI            // for `PHPhotoLibrary`
 import SplunkOtel
 import SplunkOtelCrashReporting
+import GoogleSignIn 
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
     var authVM: AuthViewModel?
@@ -148,6 +149,8 @@ struct ThrowbaksApp: App {
         
         
         FirebaseApp.configure()
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: FirebaseApp.app()?.options.clientID ?? "")
+
 
         // Splunk RUM initialization only
         SplunkRumBuilder(
@@ -210,6 +213,10 @@ struct ThrowbaksApp: App {
         .background(Color.black)
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .onOpenURL { url in
+        print("✅ App received URL: \(url)")
+        GIDSignIn.sharedInstance.handle(url)
+        }
     }
     .onChange(of: photoStatus) { newStatus in
       print("📸 Photo-library status is now \(newStatus)")

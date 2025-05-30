@@ -1,7 +1,9 @@
-// Achilles/Views/Onboarding/LoginSignupView.swift
-
+// LoginSignupView.swift
 import SwiftUI
 import FirebaseAuth
+import GoogleSignInSwift 
+
+
 
 enum AuthScreenMode {
     case signUp
@@ -80,7 +82,7 @@ struct LoginSignupView: View {
                                 .font(.system(size: 28, weight: .bold))
                                 .foregroundColor(.primary)
                             
-                            Text("Ready To Explore Your Memories?")
+                            Text("Ready to Rediscover Your Memories?")
                                 .font(.body)
                                 .foregroundColor(.secondary)
                         }
@@ -122,6 +124,31 @@ struct LoginSignupView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 16))
                             }
                             
+                            // Divider
+                            HStack {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 1)
+                                
+                                Text("or")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 1)
+                            }
+                            .padding(.vertical, 4)
+                            
+                            // Option A: Simpler syntax
+                            GoogleSignInButton(scheme: .light, style: .wide, state: .normal) {
+                                handleGoogleSignIn()
+                            }
+                            .frame(height: 52)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        
+                            
                             // Continue as Guest
                             Button {
                                 Task {
@@ -129,12 +156,28 @@ struct LoginSignupView: View {
                                 }
                             } label: {
                                 Text("Continue as Guest")
-                                     .font(.caption)
-                                     .fontWeight(.medium)
-                                     .foregroundColor(.secondary.opacity(0.8))
+                                     .font(.caption2)
+                                     .fontWeight(.regular)
+                                     .foregroundColor(.secondary.opacity(0.3))
                                      .underline()
-                                     .padding(.top, 8)
+                                     .padding(.top, 4)
                              }
+                            
+                            // Loading indicator
+                            if authVM.isLoading {
+                                ProgressView()
+                                    .padding(.top)
+                            }
+                            
+                            // Error message display
+                            if let errorMsg = formErrorMessage ?? authVM.errorMessage {
+                                Text(errorMsg)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                    .padding(.top, 4)
+                            }
                          }
                      }
                      .padding(.horizontal, 30)
@@ -174,6 +217,8 @@ struct LoginSignupView: View {
         }
     }
 
+    // MARK: - Helper Methods
+    
     private func prepareAndShowSheet() {
         if currentAuthScreenMode == .signUp {
             email = ""
@@ -186,9 +231,37 @@ struct LoginSignupView: View {
         authVM.errorMessage = nil
         showingAuthSheet = true
     }
+    
+    // Updated Google Sign-In handler
+    private func handleGoogleSignIn() {
+        guard let presentingViewController = getRootViewController() else {
+            authVM.errorMessage = "Cannot find a window to present Google Sign-In."
+            print("❌ LoginSignupView: Could not find root view controller for Google Sign-In.")
+            return
+        }
+        
+        // Clear any previous errors
+        formErrorMessage = nil
+        authVM.errorMessage = nil
+        
+        // Call the AuthViewModel method (no Task/await needed here)
+        authVM.signInWithGoogle(presentingViewController: presentingViewController)
+    }
+    
+    // Robust method to get root view controller
+    private func getRootViewController() -> UIViewController? {
+        return UIApplication.shared.connectedScenes
+            .filter { $0.activationState == .foregroundActive }
+            .compactMap { $0 as? UIWindowScene }
+            .first?
+            .windows
+            .filter { $0.isKeyWindow }
+            .first?
+            .rootViewController
+    }
 }
 
-// Floating icons component
+// Floating icons component (unchanged)
 struct FloatingIconsView: View {
     @State private var animate1 = false
     @State private var animate2 = false

@@ -5,7 +5,8 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseMessaging
-
+import GoogleSignIn
+import FirebaseCore
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -27,7 +28,6 @@ class AuthViewModel: ObservableObject {
     private var authTask: Task<Void, Error>?
 
 
-    // ... (keep existing init and deinit methods)
     init() {
         let initialCurrentUser = Auth.auth().currentUser
         print("🔌 AuthViewModel: init BEGINNING.")
@@ -253,7 +253,6 @@ class AuthViewModel: ObservableObject {
     }
 
 
-    // ... (keep existing markDailyWelcomeDone, markOnboardingDone methods)
     func markDailyWelcomeDone() {
         guard let uid = user?.uid, user?.isAnonymous == false else {
             print("AuthViewModel: markDailyWelcomeDone - No valid user to mark for.")
@@ -287,8 +286,96 @@ class AuthViewModel: ObservableObject {
     }
 
     // MARK: - Auth Methods
+        func signInWithGoogle(presentingViewController: UIViewController) {
+            print("AuthViewModel: Attempting signInWithGoogle.")
+            isLoading = true
+            self.errorMessage = nil
 
-    // << NEW ANONYMOUS SIGN-IN METHOD >>
+            // 1. Get Client ID for GIDConfiguration
+            guard let clientID = FirebaseApp.app()?.options.clientID else {
+                self.errorMessage = "Firebase Client ID not found. Check GoogleService-Info.plist."
+                self.isLoading = false
+                print("   ❌ AuthViewModel: Firebase Client ID not found for Google Sign-In.")
+                return
+            }
+            
+            let config = GIDConfiguration(clientID: clientID)
+            GIDSignIn.sharedInstance.configuration = config
+
+            // 2. Start the Google Sign-In flow
+            GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController) { [weak self] result, error in
+                guard let self = self else { return }
+
+                if let error = error {
+                    if (error as NSError).code == GIDSignInError.canceled.rawValue {
+                        self.errorMessage = "Google Sign-In was canceled."
+                        print("   ⚠️ AuthViewModel: Google Sign-In was canceled by the user.")
+                    } else {
+                        self.errorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                        print("   ❌ AuthViewModel: Google Sign-In SDK failed. Error: \(error.localizedDescription)")
+                    }
+                    // Ensure isLoading is set back to false on the main thread
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                    }
+                    return
+                }
+
+                guard let googleUser = result?.user,
+                      let idToken = googleUser.idToken?.tokenString else {
+                    self.errorMessage = "Google Sign-In succeeded but failed to get ID token."
+                    print("   ❌ AuthViewModel: Google Sign-In succeeded but ID token was nil.")
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                    }
+                    return
+                }
+                
+                let accessToken = googleUser.accessToken.tokenString
+                print("   ✅ AuthViewModel: Google Sign-In SDK SUCCEEDED. Got ID Token. Now creating Firebase credential.")
+
+                // 3. Create Firebase credential
+                let credential = GoogleAuthProvider.credential(withIDToken: idToken,
+                                                                 accessToken: accessToken)
+
+                // 4. Sign in to Firebase with the Google credential
+                Task { @MainActor in // Ensure Firebase sign-in and subsequent logic runs on MainActor
+                    do {
+                        print("   AuthViewModel: Calling Firebase Auth.auth().signIn(with: credential) for Google user...")
+                        let authResult = try await Auth.auth().signIn(with: credential)
+                        let firebaseUser = authResult.user
+                        let isNewUser = authResult.additionalUserInfo?.isNewUser ?? false
+                        
+                        print("   ✅ AuthViewModel: Firebase signIn(with: credential) for Google SUCCEEDED. UID: \(firebaseUser.uid), IsNewUser: \(isNewUser)")
+
+                        // For new Google users, ensure their document is created in Firestore.
+                        // Your existing authStateDidChangeListener also calls ensureUserDocument,
+                        // but calling it here ensures it happens immediately after sign-up logic
+                        // and before the listener might fully process if there's any delay.
+                        // It's okay if ensureUserDocument is called multiple times as it checks for existence.
+                        if !firebaseUser.isAnonymous { // Should not be anonymous if signed in with Google
+                            print("   AuthViewModel: Ensuring user document for Google user UID: \(firebaseUser.uid), isNewUser: \(isNewUser)")
+                            try await self.ensureUserDocument(for: firebaseUser, isNewUser: isNewUser)
+                        }
+                        
+                        // The AuthStateDidChangeListener in your init() will handle updating self.user,
+                        // subscribing to the user document, and other follow-up tasks.
+                        self.errorMessage = nil // Clear any previous errors
+                        self.isLoading = false
+                        print("   AuthViewModel: Google Sign-In and Firebase link successful. Listener will handle further state updates.")
+
+                    } catch {
+                        self.errorMessage = "Firebase Sign-In with Google failed: \(error.localizedDescription)"
+                        print("   ❌ AuthViewModel: Firebase signIn(with: credential) for Google FAILED. Error: \(error.localizedDescription)")
+                        self.isLoading = false
+                    }
+                }
+            }
+        }
+
+        // ... (keep existing signInAnonymously, signIn, signUp, resetPassword methods) ...
+    
+    
     func signInAnonymously() async -> Bool {
         isLoading = true
         defer { isLoading = false }
@@ -382,17 +469,24 @@ class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
-        print("AuthViewModel: signOut called. Current user UID before signout: \(user?.uid ?? "nil")")
-        authTask?.cancel()
-        authTask = nil
-        do {
-            try auth.signOut()
-            print("   ✅ AuthViewModel: Firebase signOut successful. AuthStateDidChangeListener should now set self.user to nil.")
-        } catch {
-            self.errorMessage = error.localizedDescription
-            print("   ❌ AuthViewModel: Firebase signOut FAILED. Error: \(error.localizedDescription)")
+            print("AuthViewModel: signOut called. Current user UID before signout: \(user?.uid ?? "nil")")
+            authTask?.cancel() // Good, you're canceling ongoing tasks
+            authTask = nil
+            
+            // Sign out from Google SDK first (or after, order usually doesn't strictly matter here)
+            GIDSignIn.sharedInstance.signOut() // <--- ADD THIS LINE
+            print("   AuthViewModel: Called GIDSignIn.sharedInstance.signOut()")
+
+            do {
+                try auth.signOut()
+                print("   ✅ AuthViewModel: Firebase signOut successful. AuthStateDidChangeListener should now set self.user to nil.")
+                // Your existing authStateDidChangeListener will handle self.user = nil
+                // and subsequent UI updates.
+            } catch {
+                self.errorMessage = error.localizedDescription
+                print("   ❌ AuthViewModel: Firebase signOut FAILED. Error: \(error.localizedDescription)")
+            }
         }
-    }
 
 
     // << NEW ACCOUNT DELETION METHOD >>
