@@ -47,7 +47,7 @@ class InteractiveTutorialManager: ObservableObject {
             case .tapFeatured:
                 return "Tap the Featured Photo to see all photos from that day"
             case .viewDetails:
-                return "You can zoom in, view Live Photos, and Share Photos to all your favorite apps"
+                return "Zoom in, View Live Photos, & Share Photos to your favorite apps"
             case .useLocation:
                 return "When you see a map button, tap to see where the photo was taken"
             case .completed:
