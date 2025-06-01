@@ -5,6 +5,7 @@
 //
 // Key features:
 // - Initializes Firebase services during app startup
+// - Configures Firebase Analytics for user behavior tracking
 // - Configures push notifications with Firebase Cloud Messaging (FCM)
 // - Manages authentication state through AuthViewModel
 // - Controls the app's navigation flow based on:
@@ -13,6 +14,7 @@
 //   - Daily welcome requirements
 //   - Photo library permissions
 // - Handles photo library authorization changes
+// - Runs dual analytics: Firebase Analytics + Splunk RUM
 //
 // The file includes two main components:
 // 1. AppDelegate: Manages Firebase configuration, push notification permissions,
@@ -25,11 +27,12 @@ import Firebase            // FirebaseCore
 import FirebaseAuth        // brings in `Auth`
 import FirebaseMessaging   // brings in `Messaging`
 import FirebaseFirestore   // Firestore access
+import FirebaseAnalytics   // Firebase Analytics
 import UserNotifications
 import PhotosUI            // for `PHPhotoLibrary`
 import SplunkOtel
 import SplunkOtelCrashReporting
-import GoogleSignIn 
+import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
     var authVM: AuthViewModel?
@@ -146,13 +149,26 @@ struct ThrowbaksApp: App {
     @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDate: Double = 0.0
 
     init() {
-        
-        
+        // 1. Configure Firebase first
         FirebaseApp.configure()
+        
+        // 2. Enable Firebase Analytics
+        Analytics.setAnalyticsCollectionEnabled(true)
+        
+        // 3. Set initial user properties for better segmentation
+        Analytics.setUserProperty(
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+            forName: "app_version"
+        )
+        Analytics.setUserProperty(
+            Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+            forName: "build_number"
+        )
+        
+        // 4. Configure Google Sign-In
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: FirebaseApp.app()?.options.clientID ?? "")
 
-
-        // Splunk RUM initialization only
+        // 5. Splunk RUM initialization (keep for performance monitoring)
         SplunkRumBuilder(
             realm: "us1",
             rumAuth: "L6lXNT6-fbQFAQRU35-MYA"
@@ -163,10 +179,15 @@ struct ThrowbaksApp: App {
         .build()
         SplunkRumCrashReporting.start()
 
-        // Set up AuthViewModel and wire into AppDelegate
+        // 6. Set up AuthViewModel and wire into AppDelegate
         let vm = AuthViewModel()
         _authVM = StateObject(wrappedValue: vm)
         appDelegate.authVM = vm
+        
+        // 7. Log app initialization
+        print("🔥 Firebase Analytics enabled")
+        print("📊 Splunk RUM enabled")
+        print("✅ Dual analytics setup complete")
     }
     
   /// Write a `lastOpened` timestamp into Firestore when the app enters foreground
@@ -201,6 +222,11 @@ struct ThrowbaksApp: App {
           )
         ) { _ in
           updateLastOpened()
+          
+          // Log app open event for Firebase Analytics
+          Analytics.logEvent("app_open", parameters: [
+            "source": "foreground_return"
+          ])
         }
         // Reset welcome flag on resign active
         .onReceive(
@@ -214,12 +240,23 @@ struct ThrowbaksApp: App {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .onOpenURL { url in
-        print("✅ App received URL: \(url)")
-        GIDSignIn.sharedInstance.handle(url)
+            print("✅ App received URL: \(url)")
+            GIDSignIn.sharedInstance.handle(url)
+            
+            // Log deep link open for Firebase Analytics
+            Analytics.logEvent("app_open", parameters: [
+                "source": "deep_link",
+                "url": url.absoluteString
+            ])
         }
     }
     .onChange(of: photoStatus) { newStatus in
       print("📸 Photo-library status is now \(newStatus)")
+      
+      // Log photo permission changes for Firebase Analytics
+      Analytics.logEvent("photo_permission_changed", parameters: [
+        "new_status": String(describing: newStatus)
+      ])
     }
   }
 
@@ -231,15 +268,74 @@ struct ThrowbaksApp: App {
                 ProgressView("Loading…")
                     .progressViewStyle(CircularProgressViewStyle())
             }
+            .onAppear {
+                // Log app initialization screen
+                Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                    AnalyticsParameterScreenName: "app_initializing",
+                    AnalyticsParameterScreenClass: "LoadingView"
+                ])
+            }
         } else if authVM.user == nil {
             LoginSignupView()
+                .onAppear {
+                    // Log login/signup screen view
+                    Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                        AnalyticsParameterScreenName: "login_signup",
+                        AnalyticsParameterScreenClass: "LoginSignupView"
+                    ])
+                    
+                    // Log daily active user
+                    Analytics.logEvent("daily_active_user", parameters: [
+                        "date": DateFormatter.yyyyMMdd.string(from: Date())
+                    ])
+                }
         } else {
             // All authenticated users (registered AND guests): decide between intro video or main content
             if !shouldPlayIntroVideo() || authVM.showMainApp {
                 ContentView()
+                    .onAppear {
+                        // Log main content screen view
+                        Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                            AnalyticsParameterScreenName: "main_content",
+                            AnalyticsParameterScreenClass: "ContentView"
+                        ])
+                        
+                        // Log app open event
+                        Analytics.logEvent("app_open", parameters: [
+                            "source": "direct",
+                            "user_type": authVM.user?.isAnonymous == true ? "anonymous" : "registered"
+                        ])
+                        
+                        // Set user properties
+                        Analytics.setUserProperty(
+                            authVM.user?.isAnonymous == true ? "anonymous" : "registered",
+                            forName: "user_type"
+                        )
+                    }
             } else {
                 DailyWelcomeView()
+                    .onAppear {
+                        // Log daily welcome screen view
+                        Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                            AnalyticsParameterScreenName: "daily_welcome",
+                            AnalyticsParameterScreenClass: "DailyWelcomeView"
+                        ])
+                        
+                        // Log onboarding start
+                        Analytics.logEvent("onboarding_start", parameters: [
+                            "onboarding_type": "daily_welcome"
+                        ])
+                    }
             }
         }
     }
-    }
+}
+
+// MARK: - DateFormatter Extension for Analytics
+private extension DateFormatter {
+    static let yyyyMMdd: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
