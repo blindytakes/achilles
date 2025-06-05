@@ -195,7 +195,7 @@ struct MediaDetailView: View {
             if let creationDate = item.asset.creationDate {
                 let formattedDate = creationDate.monthDayOrdinalYearString()
                 let yearsAgoText = "\(yearsAgo) year\(yearsAgo == 1 ? "" : "s") ago!"
-                constructedShareText = "Check out this Throwbak from \(formattedDate), \(yearsAgoText)"
+                constructedShareText = "Check out this ThrowBak from \(formattedDate), \(yearsAgoText)"
             }
 
             switch item.asset.mediaType { //
