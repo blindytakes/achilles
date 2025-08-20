@@ -105,21 +105,20 @@ struct FeaturedYearFullScreenView: View {
     @State private var image: UIImage?
     @State private var isLoadingImage: Bool = false
     @State private var showLoadingTransition: Bool = false
-    @State private var imageBrightness: Double = -0.1
+    @State private var imageBrightness: Double = -0.11
     @State private var imageScale: CGFloat = 1.09
     @State private var transitionOpacity: Double = 1.0 // For transition fade-out animation
     @State private var imageLoadTask: Task<Void, Never>? = nil
 
     // MARK: - Constants
-    // ... (Keep existing constants) ...
     private let yearLabelFontSize: CGFloat = 56
-    private let dateLabelFontSize: CGFloat = 50
+    private let dateLabelFontSize: CGFloat = 42
     private let dateFontName: String = "SnellRoundhand-Bold"
     private let imageLoadFadeDuration: Double = 0.4
     private let handwritingAnimationDuration: Double = 2.0
     private let handwritingAnimationDelay: Double = 0.3
-    private let initialImageBrightness: Double = -0.1
-    private let targetImageBrightness: Double = 0.08
+    private let initialImageBrightness: Double = -0.15
+    private let targetImageBrightness: Double = 0.1
     private let initialImageScale: CGFloat = 1.05
     private let targetImageScale: CGFloat = 1.0
     private let imageTransitionDuration: Double = 0.3

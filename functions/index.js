@@ -4,6 +4,8 @@ const admin = require('firebase-admin');
 
 admin.initializeApp();
 const db = admin.firestore();
+console.log("Firebase project ID:", admin.app().options.projectId);
+
 
 // Enhanced daily memory reminder with admin controls
 exports.dailyMemoryReminder = onSchedule(
