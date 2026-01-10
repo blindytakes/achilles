@@ -1,12 +1,12 @@
 // AchillesApp.swift
 //
 // This is the main application file that configures the app, handles Firebase setup,
-// manages push notifications, and controls the app's navigation flow.
+// manages local notifications, and controls the app's navigation flow.
 //
 // Key features:
 // - Initializes Firebase services during app startup
 // - Configures Firebase Analytics for user behavior tracking
-// - Configures push notifications with Firebase Cloud Messaging (FCM)
+// - Schedules local notifications for inactive users (3+ days)
 // - Manages authentication state through AuthViewModel
 // - Controls the app's navigation flow based on:
 //   - Authentication state (logged in/out)
@@ -17,15 +17,13 @@
 // - Runs dual analytics: Firebase Analytics + Splunk RUM
 //
 // The file includes two main components:
-// 1. AppDelegate: Manages Firebase configuration, push notification permissions,
-//    and FCM token handling
+// 1. AppDelegate: Manages Firebase configuration and notification handling
 // 2. ThrowbaksApp: The SwiftUI app structure that determines which view to display
 //    based on the current application state
 
 import SwiftUI
 import Firebase            // FirebaseCore
 import FirebaseAuth        // brings in `Auth`
-import FirebaseMessaging   // brings in `Messaging`
 import FirebaseFirestore   // Firestore access
 import FirebaseAnalytics   // Firebase Analytics
 import UserNotifications
@@ -34,7 +32,7 @@ import SplunkOtel
 import SplunkOtelCrashReporting
 import GoogleSignIn
 
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     var authVM: AuthViewModel?
 
     func application(
@@ -44,81 +42,20 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // Firebase is already configured in ThrowbaksApp.init()
         
-        // 2) Verify authVM is wired up
+        // Verify authVM is wired up
         if authVM == nil {
             print("❌ CRITICAL: authVM is nil in AppDelegate!")
         } else {
             print("✅ authVM properly wired to AppDelegate")
         }
         
-        // 3) Request push notification permissions
+        // Set up notification center delegate for handling local notifications
         UNUserNotificationCenter.current().delegate = self
-        UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-                print("📱 Push notification permission granted: \(granted)")
-                if let error = error {
-                    print("❌ Push notification permission error: \(error)")
-                } else if granted {
-                    DispatchQueue.main.async {
-                        application.registerForRemoteNotifications()
-                    }
-                }
-            }
-
-        // 4) Set up FCM
-        Messaging.messaging().delegate = self
 
         return true
     }
 
-
-    func application(
-      _ application: UIApplication,
-      didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
-    ) {
-      print("✅ Successfully registered for remote notifications")
-      // Tell FCM about the APNs token
-      Messaging.messaging().apnsToken = deviceToken
-
-      // **Now** fetch your FCM token, since APNs is set
-      Messaging.messaging().token { token, error in
-        if let error = error {
-          print("❌ Error fetching FCM token after APNs registration: \(error)")
-          return
-        }
-        guard let token = token else {
-          print("⚠️ FCM token is nil even after APNs registration")
-          return
-        }
-        print("✅ FCM token after APNs registration: \(token)")
-        Task {
-          await self.authVM?.savePushToken(token)
-        }
-      }
-    }
-
-    // APNs registration failure
-    func application(
-        _ application: UIApplication,
-        didFailToRegisterForRemoteNotificationsWithError error: Error
-    ) {
-        print("❌ Failed to register for remote notifications: \(error)")
-    }
-
-    // FCM token refresh (keep your existing one, just add logging)
-    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        guard let token = fcmToken else {
-            print("⚠️ FCM token refresh returned nil")
-            return
-        }
-        print("🔄 FCM token refreshed: \(token)")
-
-        Task {
-            await authVM?.savePushToken(token)
-        }
-    }
-
-    // Keep your existing foreground notification handler
+    // Handle notification when app is in foreground
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -129,7 +66,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         completionHandler([.banner, .sound, .badge])
     }
     
-    // Add notification tap handler
+    // Handle notification tap
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -147,6 +84,9 @@ struct ThrowbaksApp: App {
     @StateObject private var photoViewModel = PhotoViewModel()
     @State private var photoStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDate: Double = 0.0
+    
+    // Local notification service for daily memory reminders
+    private let notificationService = NotificationService()
 
     init() {
         // 1. Configure Firebase first
@@ -208,6 +148,40 @@ struct ThrowbaksApp: App {
     }
     let lastPlayDate = Date(timeIntervalSince1970: lastIntroVideoPlayDate)
     return !Calendar.current.isDateInToday(lastPlayDate)
+  }
+  
+  /// Schedule local notifications for memory reminders (only if inactive for 3+ days)
+  private func scheduleDailyMemoryNotifications() async {
+      // Check and request authorization if needed
+      let status = await notificationService.checkAuthorizationStatus()
+      
+      if status == .notDetermined {
+          let granted = await notificationService.requestAuthorization()
+          guard granted else {
+              print("📱 User declined local notification permissions")
+              return
+          }
+      } else if status != .authorized {
+          print("📱 Local notifications not authorized (status: \(status))")
+          return
+      }
+      
+      // Schedule a notification for 3 days from now
+      // If user opens the app before then, this gets cancelled and rescheduled
+      await notificationService.scheduleInactivityReminder(
+          daysFromNow: 3,
+          hour: 9,
+          minute: 0,
+          yearsWithMemories: photoViewModel.availableYearsAgo
+      )
+      
+      // Log the scheduling for analytics
+      Analytics.logEvent("notifications_scheduled", parameters: [
+          "inactivity_days": 3,
+          "memories_count": photoViewModel.availableYearsAgo.count
+      ])
+      
+      print("✅ Inactivity notification scheduled for 3 days from now")
   }
 
   var body: some Scene {
@@ -311,6 +285,11 @@ struct ThrowbaksApp: App {
                             authVM.user?.isAnonymous == true ? "anonymous" : "registered",
                             forName: "user_type"
                         )
+                        
+                        // Schedule daily memory notifications
+                        Task {
+                            await scheduleDailyMemoryNotifications()
+                        }
                     }
             } else {
                 DailyWelcomeView()
@@ -339,3 +318,4 @@ private extension DateFormatter {
         return formatter
     }()
 }
+
