@@ -141,6 +141,17 @@ struct ThrowbaksApp: App {
     }
   }
 
+    /// Clear all delivered notifications when app opens
+    private func clearDeliveredNotifications() {
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        // Also clear the badge count
+        UNUserNotificationCenter.current().setBadgeCount(0) { error in
+            if let error = error {
+                print("❌ Error clearing badge: \(error)")
+            }
+        }
+        print("🗑️ Cleared all delivered notifications")
+    }
   /// Determine whether to show the intro video based on the last play date
   private func shouldPlayIntroVideo() -> Bool {
     if lastIntroVideoPlayDate == 0.0 {
@@ -169,7 +180,7 @@ struct ThrowbaksApp: App {
       // Schedule a notification for 3 days from now
       // If user opens the app before then, this gets cancelled and rescheduled
       await notificationService.scheduleInactivityReminder(
-          daysFromNow: 3,
+          daysFromNow: 2,
           hour: 9,
           minute: 0,
           yearsWithMemories: photoViewModel.availableYearsAgo
@@ -177,11 +188,11 @@ struct ThrowbaksApp: App {
       
       // Log the scheduling for analytics
       Analytics.logEvent("notifications_scheduled", parameters: [
-          "inactivity_days": 3,
+          "inactivity_days": 2,
           "memories_count": photoViewModel.availableYearsAgo.count
       ])
       
-      print("✅ Inactivity notification scheduled for 3 days from now")
+      print("✅ Inactivity notification scheduled for 2 days from now")
   }
 
   var body: some Scene {
@@ -224,7 +235,7 @@ struct ThrowbaksApp: App {
             ])
         }
     }
-    .onChange(of: photoStatus) { newStatus in
+     .onChange(of: photoStatus) { newStatus in
       print("📸 Photo-library status is now \(newStatus)")
       
       // Log photo permission changes for Firebase Analytics
@@ -252,6 +263,8 @@ struct ThrowbaksApp: App {
         } else if authVM.user == nil {
             LoginSignupView()
                 .onAppear {
+                    clearDeliveredNotifications()
+
                     // Log login/signup screen view
                     Analytics.logEvent(AnalyticsEventScreenView, parameters: [
                         AnalyticsParameterScreenName: "login_signup",
@@ -268,6 +281,9 @@ struct ThrowbaksApp: App {
             if !shouldPlayIntroVideo() || authVM.showMainApp {
                 ContentView()
                     .onAppear {
+                        
+                        clearDeliveredNotifications()
+                        
                         // Log main content screen view
                         Analytics.logEvent(AnalyticsEventScreenView, parameters: [
                             AnalyticsParameterScreenName: "main_content",

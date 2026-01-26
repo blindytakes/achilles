@@ -9,7 +9,7 @@
 // - Supports Hashable for collection operations (sets, dictionaries)
 // - Provides a convenience initializer that extracts the ID from the asset
 //
-// The model serves as the core data structure for representing photos and videos
+// The model serves as the core data structure for representing photos and vdeos
 // throughout the app, bridging the system's PHAsset representation with
 // the app's requirements for list rendering and state management.
 
