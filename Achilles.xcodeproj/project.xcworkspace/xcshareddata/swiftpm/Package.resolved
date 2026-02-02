@@ -1,5 +1,5 @@
 {
-  "originHash" : "445b22d89379097e1acfd9009e4e6b286b9c7b76ade2df88d7ad65e9c017257d",
+  "originHash" : "fc056ca7916ed818ce8cf28eaf37caf5bd27786a890a91807960ad4069819601",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -128,39 +128,12 @@
       }
     },
     {
-      "identity" : "plcrashreporter",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/microsoft/plcrashreporter",
-      "state" : {
-        "revision" : "8c61e5e38e9f737dd68512ed1ea5ab081244ad65",
-        "version" : "1.12.0"
-      }
-    },
-    {
       "identity" : "promises",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/promises.git",
       "state" : {
         "revision" : "540318ecedd63d883069ae7f1ed811a2df00b6ac",
         "version" : "2.4.0"
-      }
-    },
-    {
-      "identity" : "splunk-otel-ios",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/signalfx/splunk-otel-ios",
-      "state" : {
-        "revision" : "fb25e65069e8be42b1ca3017d16c32fbdb492d69",
-        "version" : "0.12.1"
-      }
-    },
-    {
-      "identity" : "splunk-otel-ios-crashreporting",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/signalfx/splunk-otel-ios-crashreporting",
-      "state" : {
-        "revision" : "734f3916bc211a467d43c0947347e90a7ea3d0de",
-        "version" : "0.6.0"
       }
     },
     {

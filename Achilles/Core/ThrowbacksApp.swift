@@ -14,7 +14,6 @@
 //   - Daily welcome requirements
 //   - Photo library permissions
 // - Handles photo library authorization changes
-// - Runs dual analytics: Firebase Analytics + Splunk RUM
 //
 // The file includes two main components:
 // 1. AppDelegate: Manages Firebase configuration and notification handling
@@ -28,8 +27,6 @@ import FirebaseFirestore   // Firestore access
 import FirebaseAnalytics   // Firebase Analytics
 import UserNotifications
 import PhotosUI            // for `PHPhotoLibrary`
-import SplunkOtel
-import SplunkOtelCrashReporting
 import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -108,26 +105,14 @@ struct ThrowbaksApp: App {
         // 4. Configure Google Sign-In
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: FirebaseApp.app()?.options.clientID ?? "")
 
-        // 5. Splunk RUM initialization (keep for performance monitoring)
-        SplunkRumBuilder(
-            realm: "us1",
-            rumAuth: "L6lXNT6-fbQFAQRU35-MYA"
-        )
-        .debug(enabled: true)
-        .deploymentEnvironment(environment: "dev")
-        .setApplicationName("Throwbacks")
-        .build()
-        SplunkRumCrashReporting.start()
-
-        // 6. Set up AuthViewModel and wire into AppDelegate
+        // 5. Set up AuthViewModel and wire into AppDelegate
         let vm = AuthViewModel()
         _authVM = StateObject(wrappedValue: vm)
         appDelegate.authVM = vm
         
-        // 7. Log app initialization
+        // 6. Log app initialization
         print("🔥 Firebase Analytics enabled")
-        print("📊 Splunk RUM enabled")
-        print("✅ Dual analytics setup complete")
+        print("✅ Analytics setup complete")
     }
     
   /// Write a `lastOpened` timestamp into Firestore when the app enters foreground
