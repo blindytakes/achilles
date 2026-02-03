@@ -396,6 +396,10 @@ class PhotoViewModel: ObservableObject {
                 name: "throwbaks.photos.displayed",
                 attributes: ["years_ago": yearsAgo]
             )
+            TelemetryService.shared.log(
+                "loadPage success",
+                attributes: ["years_ago": yearsAgo, "item_count": allItems.count, "duration_ms": durationMs]
+            )
 
             // Update state once with final results
             await MainActor.run {
@@ -410,6 +414,11 @@ class PhotoViewModel: ObservableObject {
                 startTime: spanStart,
                 durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
                 attributes: ["years_ago": yearsAgo, "outcome": "cancelled"]
+            )
+            TelemetryService.shared.log(
+                "loadPage cancelled",
+                severity: .warn,
+                attributes: ["years_ago": yearsAgo]
             )
             await MainActor.run {
                 if case .loading = pageStateByYear[yearsAgo] {
@@ -426,6 +435,11 @@ class PhotoViewModel: ObservableObject {
                 attributes: ["years_ago": yearsAgo, "outcome": "error", "error": error.localizedDescription],
                 status: .error
             )
+            TelemetryService.shared.log(
+                "loadPage error: \(error.localizedDescription)",
+                severity: .error,
+                attributes: ["years_ago": yearsAgo]
+            )
             await MainActor.run {
                 pageStateByYear[yearsAgo] = .error(message: error.localizedDescription)
                 activeLoadTasks[yearsAgo] = nil
@@ -439,6 +453,11 @@ class PhotoViewModel: ObservableObject {
                 durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
                 attributes: ["years_ago": yearsAgo, "outcome": "error", "error": wrappedError.localizedDescription],
                 status: .error
+            )
+            TelemetryService.shared.log(
+                "loadPage error: \(wrappedError.localizedDescription)",
+                severity: .error,
+                attributes: ["years_ago": yearsAgo]
             )
             await MainActor.run {
                 pageStateByYear[yearsAgo] = .error(message: wrappedError.localizedDescription)

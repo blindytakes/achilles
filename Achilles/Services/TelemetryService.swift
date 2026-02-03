@@ -1,7 +1,7 @@
 import Foundation
 
-/// Sends OpenTelemetry trace spans to Grafana Cloud via HTTP POST (OTLP/JSON).
-/// Zero external dependencies — uses only URLSession.
+/// Sends OpenTelemetry traces, metrics, and logs to Grafana Cloud
+/// via HTTP POST (OTLP/JSON).  Zero external dependencies — URLSession only.
 class TelemetryService {
     static let shared = TelemetryService()
 
@@ -76,6 +76,39 @@ class TelemetryService {
             attributes: attributes
         )
         sendPayload(payload, path: "/v1/metrics")
+    }
+
+    // MARK: - Logs public API
+
+    /// OTLP severity numbers (only the ones we actually use).
+    enum LogSeverity: Int {
+        case debug  = 5
+        case info   = 9
+        case warn   = 13
+        case error  = 17
+
+        var text: String {
+            switch self {
+            case .debug: return "DEBUG"
+            case .info:  return "INFO"
+            case .warn:  return "WARN"
+            case .error: return "ERROR"
+            }
+        }
+    }
+
+    /// Send a single log record to Grafana Loki via OTLP.
+    func log(
+        _ message: String,
+        severity: LogSeverity = .info,
+        attributes: [String: Any] = [:]
+    ) {
+        let payload = buildLogsPayload(
+            message:    message,
+            severity:   severity,
+            attributes: attributes
+        )
+        sendPayload(payload, path: "/v1/logs")
     }
 
     // MARK: - Payload construction
@@ -216,6 +249,50 @@ class TelemetryService {
         ]
     }
 
+    // MARK: - Logs payload
+
+    private func buildLogsPayload(
+        message: String,
+        severity: LogSeverity,
+        attributes: [String: Any]
+    ) -> [String: Any] {
+
+        let nowNanos = String(UInt64(Date().timeIntervalSince1970 * 1_000_000_000))
+
+        let otlpAttributes = attributes.map { key, val -> [String: Any] in
+            ["key": key, "value": anyValueObject(val)]
+        }
+
+        let logRecord: [String: Any] = [
+            "timeUnixNano":    nowNanos,
+            "severityNumber":  severity.rawValue,
+            "severityText":    severity.text,
+            "body":            ["stringValue": message],
+            "attributes":      otlpAttributes
+        ]
+
+        let resourceAttributes: [[String: Any]] = [
+            ["key": "service.name",             "value": ["stringValue": serviceName]],
+            ["key": "service.version",          "value": ["stringValue": serviceVersion]],
+            ["key": "telemetry.sdk.language",   "value": ["stringValue": "swift"]],
+            ["key": "os.type",                  "value": ["stringValue": "ios"]]
+        ]
+
+        return [
+            "resourceLogs": [
+                [
+                    "resource": ["attributes": resourceAttributes],
+                    "scopeLogs": [
+                        [
+                            "scope":      ["name": serviceName, "version": serviceVersion],
+                            "logRecords": [logRecord]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    }
+
     // MARK: - HTTP transport
 
     private func sendPayload(_ payload: [String: Any], path: String) {
@@ -241,8 +318,10 @@ class TelemetryService {
                 return
             }
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            if code == 200 || code == 202 {
-                let kind = path.contains("metrics") ? "Metrics" : "Trace"
+            if code == 200 || code == 202 || code == 204 {
+                let kind = path.contains("metrics") ? "Metrics"
+                         : path.contains("logs")    ? "Log"
+                         :                            "Trace"
                 print("📤 \(kind) sent to Grafana Cloud successfully (HTTP \(code))")
             } else {
                 print("❌ TelemetryService: Grafana returned HTTP \(code)")

@@ -139,6 +139,11 @@ class AnalyticsService {
             name: "throwbaks.errors.total",
             attributes: ["error.type": String(describing: type(of: error)), "error.context": context]
         )
+        TelemetryService.shared.log(
+            error.localizedDescription,
+            severity: .error,
+            attributes: ["error.type": String(describing: type(of: error)), "error.context": context]
+        )
     }
     
     // MARK: - Performance Events
