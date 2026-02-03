@@ -124,6 +124,17 @@ class AnalyticsService {
             "error_description": error.localizedDescription
         ])
         print("🔥 Analytics: Error logged - \(error.localizedDescription)")
+
+        TelemetryService.shared.recordSpan(
+            name: "error",
+            durationMs: 0,
+            attributes: [
+                "error.type":        String(describing: type(of: error)),
+                "error.description": error.localizedDescription,
+                "error.context":     context
+            ],
+            status: .error
+        )
     }
     
     // MARK: - Performance Events

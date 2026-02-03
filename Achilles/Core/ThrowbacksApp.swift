@@ -110,7 +110,10 @@ struct ThrowbaksApp: App {
         _authVM = StateObject(wrappedValue: vm)
         appDelegate.authVM = vm
         
-        // 6. Log app initialization
+        // 6. Initialize telemetry (Grafana Cloud traces)
+        TelemetryService.shared.initialize()
+
+        // 7. Log app initialization
         print("🔥 Firebase Analytics enabled")
         print("✅ Analytics setup complete")
     }

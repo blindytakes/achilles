@@ -305,14 +305,23 @@ class PhotoViewModel: ObservableObject {
 
 
     private func loadPageAsync(yearsAgo: Int) async {
+        let spanStart = Date()
+
         // Authorization checks
         guard authorizationStatus == .authorized || authorizationStatus == .limited else {
             print("❌ Cannot load content without photo library access.")
+            TelemetryService.shared.recordSpan(
+                name: "loadPage",
+                startTime: spanStart,
+                durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
+                attributes: ["years_ago": yearsAgo, "outcome": "denied"],
+                status: .error
+            )
             await MainActor.run { pageStateByYear[yearsAgo] = .error(message: "Photo library access required") }
             activeLoadTasks[yearsAgo] = nil
             return
         }
-        
+
         await MainActor.run { pageStateByYear[yearsAgo] = .loading }
         
         do {
@@ -360,9 +369,22 @@ class PhotoViewModel: ObservableObject {
             }
             
             print("✅ Load complete for \(yearsAgo). Featured: \(featuredItem != nil), Grid: \(gridItems.count) items")
-            
+
             try Task.checkCancellation()
-            
+
+            TelemetryService.shared.recordSpan(
+                name: "loadPage",
+                startTime: spanStart,
+                durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
+                attributes: [
+                    "years_ago":    yearsAgo,
+                    "outcome":      "success",
+                    "item_count":   allItems.count,
+                    "grid_count":   gridItems.count,
+                    "has_featured": featuredItem != nil
+                ]
+            )
+
             // Update state once with final results
             await MainActor.run {
                 pageStateByYear[yearsAgo] = .loaded(featured: featuredItem, grid: gridItems)
@@ -371,6 +393,12 @@ class PhotoViewModel: ObservableObject {
             
         } catch is CancellationError {
             print("🚫 Load task cancelled for year \(yearsAgo).")
+            TelemetryService.shared.recordSpan(
+                name: "loadPage",
+                startTime: spanStart,
+                durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
+                attributes: ["years_ago": yearsAgo, "outcome": "cancelled"]
+            )
             await MainActor.run {
                 if case .loading = pageStateByYear[yearsAgo] {
                     pageStateByYear[yearsAgo] = .idle
@@ -379,6 +407,13 @@ class PhotoViewModel: ObservableObject {
             }
         } catch let error as PhotoError {
             print("❌ Load failed for year \(yearsAgo): \(error.localizedDescription)")
+            TelemetryService.shared.recordSpan(
+                name: "loadPage",
+                startTime: spanStart,
+                durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
+                attributes: ["years_ago": yearsAgo, "outcome": "error", "error": error.localizedDescription],
+                status: .error
+            )
             await MainActor.run {
                 pageStateByYear[yearsAgo] = .error(message: error.localizedDescription)
                 activeLoadTasks[yearsAgo] = nil
@@ -386,6 +421,13 @@ class PhotoViewModel: ObservableObject {
         } catch {
             print("❌ Unexpected load failure for year \(yearsAgo): \(error.localizedDescription)")
             let wrappedError = PhotoError.underlyingPhotoLibraryError(error)
+            TelemetryService.shared.recordSpan(
+                name: "loadPage",
+                startTime: spanStart,
+                durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
+                attributes: ["years_ago": yearsAgo, "outcome": "error", "error": wrappedError.localizedDescription],
+                status: .error
+            )
             await MainActor.run {
                 pageStateByYear[yearsAgo] = .error(message: wrappedError.localizedDescription)
                 activeLoadTasks[yearsAgo] = nil
