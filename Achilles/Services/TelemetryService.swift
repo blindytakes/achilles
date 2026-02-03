@@ -6,7 +6,7 @@ class TelemetryService {
     static let shared = TelemetryService()
 
     // MARK: - Grafana Cloud OTLP credentials
-    private let endpoint   = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp/v1/traces"
+    private let baseURL    = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
     private let instanceID = "1471077"
     private let apiKey     = "glc_eyJvIjoiMTYxOTE5MyIsIm4iOiJzdGFjay0xNDcxMDc3LW90bHAtd3JpdGUtdGhyb3diYWtzIiwiayI6IjBFY0wwRFdVM1QwVjRJWnpNSzE0Mjd6MyIsIm0iOnsiciI6InByb2QtdXMtZWFzdC0zIn19"
 
@@ -44,7 +44,38 @@ class TelemetryService {
             attributes: attributes,
             status:     status
         )
-        sendPayload(payload)
+        sendPayload(payload, path: "/v1/traces")
+    }
+
+    // MARK: - Metrics public API
+
+    /// Increment a counter metric by 1.
+    func incrementCounter(
+        name: String,
+        attributes: [String: Any] = [:]
+    ) {
+        let payload = buildMetricsPayload(
+            metricName: name,
+            metricType: .counter,
+            value: 1,
+            attributes: attributes
+        )
+        sendPayload(payload, path: "/v1/metrics")
+    }
+
+    /// Record a histogram observation (e.g. a duration in ms).
+    func recordHistogram(
+        name: String,
+        value: Double,
+        attributes: [String: Any] = [:]
+    ) {
+        let payload = buildMetricsPayload(
+            metricName: name,
+            metricType: .histogram,
+            value: value,
+            attributes: attributes
+        )
+        sendPayload(payload, path: "/v1/metrics")
     }
 
     // MARK: - Payload construction
@@ -109,14 +140,90 @@ class TelemetryService {
         ]
     }
 
+    // MARK: - Metric type
+    private enum MetricType { case counter, histogram }
+
+    private func buildMetricsPayload(
+        metricName: String,
+        metricType: MetricType,
+        value: Double,
+        attributes: [String: Any]
+    ) -> [String: Any] {
+
+        let nowNanos = String(UInt64(Date().timeIntervalSince1970 * 1_000_000_000))
+
+        let otlpAttributes = attributes.map { key, val -> [String: Any] in
+            ["key": key, "value": anyValueObject(val)]
+        }
+
+        let dataPoint: [String: Any] = [
+            "attributes":        otlpAttributes,
+            "startTimeUnixNano": nowNanos,
+            "timeUnixNano":      nowNanos,
+            "asDouble":          value
+        ]
+
+        let metric: [String: Any]
+        switch metricType {
+        case .counter:
+            metric = [
+                "name": metricName,
+                "unit": "1",
+                "sum": [
+                    "dataPoints":            [dataPoint],
+                    "aggregationTemporality": 2,   // CUMULATIVE
+                    "isMonotonic":            true
+                ]
+            ]
+        case .histogram:
+            metric = [
+                "name": metricName,
+                "unit": "ms",
+                "histogram": [
+                    "dataPoints": [
+                        [
+                            "attributes":        otlpAttributes,
+                            "startTimeUnixNano": nowNanos,
+                            "timeUnixNano":      nowNanos,
+                            "count":             String(1),
+                            "sum":               value
+                        ]
+                    ],
+                    "aggregationTemporality": 2   // CUMULATIVE
+                ]
+            ]
+        }
+
+        let resourceAttributes: [[String: Any]] = [
+            ["key": "service.name",             "value": ["stringValue": serviceName]],
+            ["key": "service.version",          "value": ["stringValue": serviceVersion]],
+            ["key": "telemetry.sdk.language",   "value": ["stringValue": "swift"]],
+            ["key": "os.type",                  "value": ["stringValue": "ios"]]
+        ]
+
+        return [
+            "resourceMetrics": [
+                [
+                    "resource": ["attributes": resourceAttributes],
+                    "scopeMetrics": [
+                        [
+                            "scope":   ["name": serviceName, "version": serviceVersion],
+                            "metrics": [metric]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    }
+
     // MARK: - HTTP transport
 
-    private func sendPayload(_ payload: [String: Any]) {
+    private func sendPayload(_ payload: [String: Any], path: String) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
             print("❌ TelemetryService: JSON serialisation failed")
             return
         }
-        guard let url = URL(string: endpoint) else {
+        guard let url = URL(string: baseURL + path) else {
             print("❌ TelemetryService: invalid endpoint URL")
             return
         }
@@ -135,7 +242,8 @@ class TelemetryService {
             }
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             if code == 200 || code == 202 {
-                print("📤 Trace sent to Grafana Cloud successfully (HTTP \(code))")
+                let kind = path.contains("metrics") ? "Metrics" : "Trace"
+                print("📤 \(kind) sent to Grafana Cloud successfully (HTTP \(code))")
             } else {
                 print("❌ TelemetryService: Grafana returned HTTP \(code)")
             }

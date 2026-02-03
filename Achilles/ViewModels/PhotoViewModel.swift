@@ -372,10 +372,12 @@ class PhotoViewModel: ObservableObject {
 
             try Task.checkCancellation()
 
+            let durationMs = Int(Date().timeIntervalSince(spanStart) * 1000)
+
             TelemetryService.shared.recordSpan(
                 name: "loadPage",
                 startTime: spanStart,
-                durationMs: Int(Date().timeIntervalSince(spanStart) * 1000),
+                durationMs: durationMs,
                 attributes: [
                     "years_ago":    yearsAgo,
                     "outcome":      "success",
@@ -383,6 +385,16 @@ class PhotoViewModel: ObservableObject {
                     "grid_count":   gridItems.count,
                     "has_featured": featuredItem != nil
                 ]
+            )
+            // Metrics: duration histogram + photos displayed counter
+            TelemetryService.shared.recordHistogram(
+                name: "throwbaks.loadPage.duration",
+                value: Double(durationMs),
+                attributes: ["years_ago": yearsAgo]
+            )
+            TelemetryService.shared.incrementCounter(
+                name: "throwbaks.photos.displayed",
+                attributes: ["years_ago": yearsAgo]
             )
 
             // Update state once with final results

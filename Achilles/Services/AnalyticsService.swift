@@ -135,6 +135,10 @@ class AnalyticsService {
             ],
             status: .error
         )
+        TelemetryService.shared.incrementCounter(
+            name: "throwbaks.errors.total",
+            attributes: ["error.type": String(describing: type(of: error)), "error.context": context]
+        )
     }
     
     // MARK: - Performance Events
