@@ -423,7 +423,8 @@ struct TutorialEnabledPagedYearsView: View {
     
     private struct Constants {
         static let transitionDuration: Double = 0.3
-        static let settingsPageTag: Int = -999
+        static let collagePageTag:    Int = -1
+        static let settingsPageTag:   Int = -999
     }
     
     var body: some View {
@@ -437,6 +438,9 @@ struct TutorialEnabledPagedYearsView: View {
                 .tag(Optional(yearsAgo))
             }
             
+            CollageView()
+                .tag(Optional(Constants.collagePageTag))
+
             SettingsView(photoViewModel: viewModel)
                 .environmentObject(authVM)
                 .tag(Optional(Constants.settingsPageTag))
@@ -448,10 +452,12 @@ struct TutorialEnabledPagedYearsView: View {
         .navigationTitle("")
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedYearsAgo) { _, newValue in
-            if let currentYearsAgo = newValue, currentYearsAgo != Constants.settingsPageTag {
+            if let currentYearsAgo = newValue,
+               currentYearsAgo != Constants.settingsPageTag,
+               currentYearsAgo != Constants.collagePageTag {
                 print("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
                 viewModel.triggerPrefetch(around: currentYearsAgo)
-                
+
                 tutorialManager.actionPerformed(for: .swipeYears)
             }
         }

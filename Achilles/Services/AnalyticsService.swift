@@ -166,6 +166,34 @@ class AnalyticsService {
             "date": DateFormatter.yyyyMMdd.string(from: Date())
         ])
     }
+
+    // MARK: - Collage Events
+
+    /// Fired when the user views the collage source-picker page.
+    func logCollageSourceView(source: String) {
+        Analytics.logEvent("collage_source_view", parameters: [
+            "source_type": source
+        ])
+        print("🔥 Analytics: Collage source viewed - \(source)")
+    }
+
+    /// Fired when a collage is successfully generated (rendered).
+    func logCollageGenerated(source: String, photoCount: Int, durationMs: Int) {
+        Analytics.logEvent("collage_generated", parameters: [
+            "source_type":   source,
+            "photo_count":   photoCount,
+            "duration_ms":   durationMs
+        ])
+        print("🔥 Analytics: Collage generated - \(source), \(photoCount) photos, \(durationMs) ms")
+    }
+
+    /// Fired when the user saves a collage to their photo library.
+    func logCollageSaved(source: String) {
+        Analytics.logEvent("collage_saved", parameters: [
+            "source_type": source
+        ])
+        print("🔥 Analytics: Collage saved - \(source)")
+    }
 }
 
 // MARK: - DateFormatter Extension

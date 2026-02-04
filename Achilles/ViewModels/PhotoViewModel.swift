@@ -136,6 +136,12 @@ class PhotoViewModel: ObservableObject {
              if !initialYearScanComplete && backgroundYearScanTask == nil { // Check background task too
                   Task { await startYearScanningProcess() } // Call new process starter
              }
+             // Kick off the collage photo index (builds once, then stays
+             // fresh via PHPhotoLibraryChangeObserver + monthly rebuild).
+             Task.detached(priority: .background) {
+                 await PhotoIndexService.shared.buildIndex()
+                 await PhotoIndexService.shared.rebuildIfNeeded()
+             }
          case .restricted, .denied:
              print("Photo Library access restricted or denied.")
              // Clear state and cancel any running scan
