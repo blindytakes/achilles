@@ -209,14 +209,18 @@ class CollageViewModel: ObservableObject {
             )
             AnalyticsService.shared.logCollageSaved(source: source.analyticsLabel)
 
+            #if DEBUG
             print("✅ CollageViewModel: collage saved to photo library.")
+            #endif
 
         } catch {
             await MainActor.run {
                 self.isSaving   = false
                 self.saveMessage = "Save failed. Please try again."
             }
+            #if DEBUG
             print("❌ CollageViewModel: save failed – \(error.localizedDescription)")
+            #endif
             TelemetryService.shared.log(
                 "collage save failed",
                 severity: .error,

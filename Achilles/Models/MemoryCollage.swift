@@ -73,13 +73,17 @@ enum CollageState {
 struct MemoryCollage {
     /// The source that produced this collage.
     let source: CollageSourceType
-    /// The ordered list of photos in the collage (max 10, best-scored first).
+    /// The ordered list of photos in the collage (max 9, best-scored first).
     let items: [MediaItem]
     /// When this collage was generated (used to decide staleness).
     let generatedAt: Date
 
     // MARK: - Constants
-    static let maxPhotos = 10
+    static let maxPhotos = 9
+
+    /// How many candidates to fetch from the index before randomly sampling
+    /// down to maxPhotos.  Larger pool = more variety on each Regenerate.
+    static let candidatePoolSize = 25
 
     // MARK: - Convenience
     var title: String { source.displayTitle }

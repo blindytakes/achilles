@@ -32,6 +32,16 @@ import Foundation
 import Photos
 
 
+// MARK: - Persistence Wrapper
+
+/// Top-level envelope persisted to disk.  The `version` field lets us
+/// detect schema changes and trigger a rebuild automatically.
+private struct IndexPersistencePayload: Codable {
+    let version: Int
+    let entries: [String: IndexEntry]
+}
+
+
 // MARK: - Index Entry
 
 /// A lightweight, Codable snapshot of a single PHAsset's scoring inputs
@@ -80,10 +90,18 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         /// Cache-directory filename for the persisted index.
         static let indexFileName = "photo_index.json"
 
+        /// Smart-album subtypes that aren't exposed as named symbols on all
+        /// SDK versions.  Values verified against PhotoKit headers.
+        static let locationAlbumSubtype = PHAssetCollectionSubtype(rawValue: 66)   // smartAlbumByLocation
+        static let peopleAlbumSubtype   = PHAssetCollectionSubtype(rawValue: 54)   // smartAlbumFacesWithPeople
+
         /// Scoring constants — kept in sync with FeaturedSelectorService.
         struct Scoring {
             static let isEditedBonus              = 150
-            static let hasPeopleBonus             = 300
+            /// Bonus for portrait-mode (depth-effect) photos.  These tend to
+            /// be higher-effort shots; note this does NOT confirm a person is
+            /// present — it's a quality proxy.
+            static let hasDepthEffectBonus        = 300
             static let isKeyBurstBonus            = 50
             static let hasGoodAspectRatioBonus    = 20
             static let hasLocationBonus           = 10
@@ -127,12 +145,16 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         super.init()
         // Register for photo-library changes so incremental updates work.
         PHPhotoLibrary.shared().register(self)
+#if DEBUG
         print("📇 PhotoIndexService: initialised, registered as change observer.")
+#endif
     }
 
     deinit {
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
+#if DEBUG
         print("📇 PhotoIndexService: deinit, unregistered change observer.")
+#endif
     }
 
     // MARK: - Lifecycle  (PhotoIndexServiceProtocol)
@@ -141,18 +163,24 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         // If already ready and not stale, nothing to do.
         let alreadyReady = queue.sync { _isReady }
         if alreadyReady {
+#if DEBUG
             print("📇 PhotoIndexService: index already built, skipping buildIndex().")
+#endif
             return
         }
 
         // Try to load a valid persisted index first (fast path).
         if await loadPersistedIndex() {
+#if DEBUG
             print("📇 PhotoIndexService: loaded valid persisted index.")
+#endif
             return
         }
 
         // Cold start – build from scratch.
+#if DEBUG
         print("📇 PhotoIndexService: no valid persisted index found, performing full build.")
+#endif
         await performFullBuild()
     }
 
@@ -161,10 +189,14 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         let daysSinceRebuild = Calendar.current.dateComponents([.day], from: lastRebuild, to: Date()).day ?? Int.max
 
         if daysSinceRebuild >= Constants.monthlyRebuildDays {
+#if DEBUG
             print("📇 PhotoIndexService: monthly rebuild due (\(daysSinceRebuild) days since last). Rebuilding.")
+#endif
             await performFullBuild()
         } else {
+#if DEBUG
             print("📇 PhotoIndexService: rebuild not due yet (\(daysSinceRebuild) days since last).")
+#endif
         }
     }
 
@@ -184,7 +216,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         // Fetch the asset IDs that belong to this place via PHAssetCollection,
         // then cross-reference with the index for scoring + sorting.
         guard let collection = findSmartAlbum(named: place) else {
+#if DEBUG
             print("📇 PhotoIndexService: no smart album found for place '\(place)'.")
+#endif
             return []
         }
 
@@ -201,7 +235,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
     func topItems(forPerson person: String, limit: Int = MemoryCollage.maxPhotos) -> [MediaItem] {
         guard let collection = findPeopleAlbum(named: person) else {
+#if DEBUG
             print("📇 PhotoIndexService: no People album found for '\(person)'.")
+#endif
             return []
         }
 
@@ -229,9 +265,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     }
 
     func availablePlaces() -> [String] {
-        // Location-based smart albums: raw value 66 = smartAlbumByLocation
-        // (not a named symbol on all SDK versions).
-        guard let locationSubtype = PHAssetCollectionSubtype(rawValue: 66) else { return [] }
+        guard let locationSubtype = Constants.locationAlbumSubtype else { return [] }
         let results = PHAssetCollection.fetchAssetCollections(
             with: .smartAlbum,
             subtype: locationSubtype,
@@ -247,9 +281,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     }
 
     func availablePeople() -> [String] {
-        // People smart album: raw value 54 = smartAlbumFacesWithPeople
-        // (not a named symbol on all SDK versions).
-        guard let peopleSubtype = PHAssetCollectionSubtype(rawValue: 54) else { return [] }
+        guard let peopleSubtype = Constants.peopleAlbumSubtype else { return [] }
         let results = PHAssetCollection.fetchAssetCollections(
             with: .smartAlbum,
             subtype: peopleSubtype,
@@ -267,7 +299,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     // MARK: - PHPhotoLibraryChangeObserver
 
     func photoLibraryDidChange(_ changeInfo: PHChange) {
+#if DEBUG
         print("📇 PhotoIndexService: PHPhotoLibrary change detected, performing incremental update.")
+#endif
         // Run the incremental update on our serial queue so it doesn't race
         // with a concurrent full build.
         queue.async { [weak self] in
@@ -285,12 +319,16 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
             return false
         }
         guard !alreadyBuilding else {
+#if DEBUG
             print("📇 PhotoIndexService: build already in progress, skipping.")
+#endif
             return
         }
 
         let spanStart = Date()
+#if DEBUG
         print("📇 PhotoIndexService: ── full build START ──")
+#endif
 
         // Fetch ALL image assets.  PHAsset.fetchAssets is synchronous but
         // fast (it's a SQLite query against Apple's index).
@@ -304,7 +342,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         ])
 
         let fetchResult = PHAsset.fetchAssets(with: options)
+#if DEBUG
         print("📇 PhotoIndexService: fetched \(fetchResult.count) image assets.")
+#endif
 
         // Score every asset.  This is CPU-bound but each score is O(1) —
         // just reading a handful of properties and doing arithmetic.
@@ -324,7 +364,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         }
 
         let durationMs = Int(Date().timeIntervalSince(spanStart) * 1000)
+#if DEBUG
         print("📇 PhotoIndexService: ── full build DONE ── \(newIndex.count) entries in \(durationMs) ms")
+#endif
 
         // Persist to disk (fire-and-forget; non-critical path).
         persistIndex()
@@ -364,7 +406,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         let fetchResult = PHAsset.fetchAssets(with: options)
 
         guard let changes = changeInfo.changeDetails(for: fetchResult) else {
+#if DEBUG
             print("📇 PhotoIndexService: no asset-level changes detected.")
+#endif
             return
         }
 
@@ -409,7 +453,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         }
 
         if added + removed + updated > 0 {
+#if DEBUG
             print("📇 PhotoIndexService: incremental update — +\(added) -\(removed) ~\(updated)")
+#endif
             // Re-persist after any mutation.
             persistIndex()
         }
@@ -465,7 +511,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
             score += Constants.Scoring.isEditedBonus
         }
         if asset.mediaSubtypes.contains(.photoDepthEffect) {
-            score += Constants.Scoring.hasPeopleBonus
+            score += Constants.Scoring.hasDepthEffectBonus
         }
         if asset.representsBurst {
             if asset.burstSelectionTypes.contains(.userPick) ||
@@ -510,15 +556,19 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
         DispatchQueue.global(qos: .background).async {
             do {
-                let wrapper: [String: Any] = [
-                    "version": Constants.persistenceVersion,
-                    "entries": snapshot
-                ]
-                let data = try JSONSerialization.data(withJSONObject: wrapper)
+                let payload = IndexPersistencePayload(
+                    version: Constants.persistenceVersion,
+                    entries: snapshot
+                )
+                let data = try JSONEncoder().encode(payload)
                 try data.write(to: self.indexFilePath)
+#if DEBUG
                 print("📇 PhotoIndexService: persisted \(snapshot.count) entries to disk.")
+#endif
             } catch {
+#if DEBUG
                 print("❌ PhotoIndexService: failed to persist index – \(error.localizedDescription)")
+#endif
             }
         }
     }
@@ -529,33 +579,37 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     @discardableResult
     private func loadPersistedIndex() async -> Bool {
         guard FileManager.default.fileExists(atPath: indexFilePath.path) else {
+#if DEBUG
             print("📇 PhotoIndexService: no persisted index file found.")
+#endif
             return false
         }
 
         do {
             let data = try Data(contentsOf: indexFilePath)
-            guard let wrapper = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let version = wrapper["version"] as? Int,
-                  version == Constants.persistenceVersion,
-                  let entriesRaw = wrapper["entries"] as? [String: Any] else {
-                print("📇 PhotoIndexService: persisted index version mismatch or corrupt. Will rebuild.")
+            let payload = try JSONDecoder().decode(IndexPersistencePayload.self, from: data)
+
+            guard payload.version == Constants.persistenceVersion else {
+#if DEBUG
+                print("📇 PhotoIndexService: persisted index version mismatch (on-disk: \(payload.version), expected: \(Constants.persistenceVersion)). Will rebuild.")
+#endif
                 return false
             }
 
-            // Re-encode just the entries portion so we can decode via Codable.
-            let entriesData = try JSONSerialization.data(withJSONObject: entriesRaw)
-            let entries = try JSONDecoder().decode([String: IndexEntry].self, from: entriesData)
-
             queue.sync {
-                self._index = entries
+                self._index = payload.entries
                 self._isReady = true
             }
 
-            print("📇 PhotoIndexService: loaded \(entries.count) entries from persisted index (v\(version)).")
+
+#if DEBUG
+            print("📇 PhotoIndexService: loaded \(payload.entries.count) entries from persisted index (v\(payload.version)).")
+#endif
             return true
         } catch {
+#if DEBUG
             print("❌ PhotoIndexService: failed to load persisted index – \(error.localizedDescription)")
+#endif
             return false
         }
     }
@@ -564,9 +618,10 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
     /// Find a location-based smart album by its localised title.
     private func findSmartAlbum(named title: String) -> PHAssetCollection? {
+        guard let subtype = Constants.locationAlbumSubtype else { return nil }
         let results = PHAssetCollection.fetchAssetCollections(
             with: .smartAlbum,
-            subtype: PHAssetCollectionSubtype(rawValue: 66)!,
+            subtype: subtype,
             options: nil
         )
         var found: PHAssetCollection?
@@ -581,9 +636,10 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
     /// Find a People smart album by its localised title.
     private func findPeopleAlbum(named title: String) -> PHAssetCollection? {
+        guard let subtype = Constants.peopleAlbumSubtype else { return nil }
         let results = PHAssetCollection.fetchAssetCollections(
             with: .smartAlbum,
-            subtype: PHAssetCollectionSubtype(rawValue: 54)!,
+            subtype: subtype,
             options: nil
         )
         var found: PHAssetCollection?

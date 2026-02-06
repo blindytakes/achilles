@@ -1,8 +1,10 @@
 # Throwbacks Memory Collage Feature — PRD
 
+> **Note:** This document is the *original* design spec. Sections that differ from the shipped v1 implementation are marked with `[v1 delta]` inline. See also **Deferred to Post-V1** at the bottom for a consolidated list of what didn't ship in the first cut.
+
 ## Overview
 
-A feature for the Throwbacks iOS app that lets users generate photo collages from their memories. Users select a person (from Apple's People albums) or a theme (from AI-clustered scenes), and the app creates a shareable collage image with face-aware cropping.
+A feature for the Throwbacks iOS app that lets users generate photo collages from their memories. Users select a year, place, or person and the app creates a shareable collage image from their best photos matching that source.
 
 **Core principle:** Everything runs on-device. No cloud compute, no data leaves the phone.
 
@@ -13,32 +15,36 @@ A feature for the Throwbacks iOS app that lets users generate photo collages fro
 ### Flow
 
 1. User opens Throwbacks and taps "Create Memory"
-2. User sees a picker with two tabs: **People** and **Themes**
-3. User selects a person (e.g., "Jake") or theme (e.g., "Beach")
-4. User optionally adjusts date range filter
-5. App generates a 6-photo collage with face-aware cropping
-6. User sees preview with shuffle/save/share buttons
+2. User sees a picker with two tabs: **People** and **Themes** `[v1 delta: single picker with Year / Place / Person chip rows; Place and Person rows only appear when index data is available]`
+3. User selects a person (e.g., "Jake") or theme (e.g., "Beach") `[v1 delta: user selects a year, place, or person]`
+4. User optionally adjusts date range filter `[v1 delta: not shipped — no date-range filter in v1]`
+5. App generates a 6-photo collage with face-aware cropping `[v1 delta: up to 10 photos, uniform grid, no face-aware cropping]`
+6. User sees preview with shuffle/save/share buttons `[v1 delta: Save and Regenerate only; share sheet not shipped]`
 7. On save, collage is added to Camera Roll
 
 ### Picker Requirements
 
-- **People tab**: Display all People albums with >= 10 photos
+- **People tab**: Display all People albums with >= 10 photos `[v1 delta: People row shown when index has people data; no minimum-count gate]`
 - **Themes tab**: Show auto-generated clusters (beaches, mountains, food, etc.) — deferred to post-v1
-- **Date range filter**: Slider with "All time / Last year / Last 5 years" presets
+- **Date range filter**: Slider with "All time / Last year / Last 5 years" presets `[v1 delta: not shipped]`
 
 ### Collage Output
 
-- **Aspect ratio**: 4:5 rectangle (optimized for full screen viewing)
-- **Photo count**: 6 photos (2x3 grid)
-- **Quality**: High resolution, suitable for saving and sharing
-- **Save behavior**: Only on explicit user tap (not auto-saved)
-- **Shuffle**: Deterministic with seed (user can shuffle to see different combinations)
+- **Aspect ratio**: 4:5 rectangle (optimized for full screen viewing) `[v1 delta: square canvas; column count adapts to photo count (2-col for 1–4 photos, 3-col for 5+)]`
+- **Photo count**: 6 photos (2x3 grid) `[v1 delta: up to 10 photos, dynamic grid]`
+- **Quality**: High resolution, suitable for saving and sharing `[v1 delta: 1× scale (~1200 px); bump to 2× noted as future option]`
+- **Save behavior**: Only on explicit user tap (not auto-saved) ✓ shipped as designed
+- **Shuffle**: Deterministic with seed (user can shuffle to see different combinations) `[v1 delta: Regenerate re-queries the index; no seed-based deterministic shuffle]`
 
 ---
 
 ## Technical Architecture
 
 ### Core Data Model
+
+`[v1 delta: Core Data was not used. The index is a single [String: IndexEntry] dictionary persisted as JSON in the app's cache directory. See IndexEntry and IndexPersistencePayload in PhotoIndexService.swift.]`
+
+Original spec (target for future iterations):
 
 ```swift
 // Stores photo metadata for fast lookups
@@ -74,6 +80,10 @@ class ThemeCluster {
 
 ### Background Indexing Pipeline
 
+`[v1 delta: No BGProcessingTask or Vision pipeline. The index is built synchronously on a detached background task the first time the collage tab appears. Scoring is a fast heuristic (O(1) per asset) based on PHAsset metadata — see calculateScore() in PhotoIndexService. Incremental updates are handled via PHPhotoLibraryChangeObserver. A monthly full rebuild runs as a safety net.]`
+
+Original spec (target for future iterations):
+
 Uses `BGProcessingTask` to index photos incrementally:
 
 1. Request all `PHAsset` objects from Photos library
@@ -92,6 +102,10 @@ Uses `BGProcessingTask` to index photos incrementally:
 
 ### Photo Selection Algorithm
 
+`[v1 delta: simplified. CollageSourceService asks the index for the top-N items matching the source (year / place / person). The index returns them pre-sorted by heuristic score. No aesthetics threshold, no date-spread logic, no face-visibility filter. Max 10 photos returned.]`
+
+Original spec (target for future iterations):
+
 When user selects a person or theme:
 
 1. **Candidate pool**: Query Core Data for all photos matching criteria
@@ -102,6 +116,10 @@ When user selects a person or theme:
 6. **Select top 8-10**: Keep extras in case iCloud photos fail to download
 
 ### Face-Aware Cropping
+
+`[v1 delta: not shipped. CollageRenderer uses a uniform aspect-fill crop (center-weighted) for every cell. Face-aware cropping is deferred to post-v1.]`
+
+Original spec (target for future iterations):
 
 For each photo in the collage:
 
@@ -116,10 +134,10 @@ For each photo in the collage:
 
 ### Collage Rendering
 
-- Use `UIGraphicsImageRenderer` to composite final image
-- 2x3 grid layout with minimal spacing
-- Target resolution: 1200x1500px (4:5 ratio at ~@3x scale)
-- Export as JPEG at 0.9 quality
+- Use `UIGraphicsImageRenderer` to composite final image ✓ shipped as designed
+- 2x3 grid layout with minimal spacing `[v1 delta: dynamic grid — 2 columns for 1–4 photos, 3 columns for 5+. 6 pt spacing, 8 pt rounded corners.]`
+- Target resolution: 1200x1500px (4:5 ratio at ~@3x scale) `[v1 delta: ~1200×1200 square at 1× scale]`
+- Export as JPEG at 0.9 quality `[v1 delta: saved as UIImage via PHAssetCreationRequest; format is determined by Photos framework]`
 
 ---
 
@@ -269,11 +287,23 @@ No third-party dependencies required for v1.
 
 ## Deferred to Post-V1
 
-- Theme clustering (beaches, food, mountains, etc.)
+**From original spec (not yet implemented):**
+- Vision-based indexing pipeline (embeddings, scene labels, face detection, aesthetics scoring)
+- Core Data persistence layer (currently JSON in cache directory)
+- BGProcessingTask background indexing
+- Face-aware cropping
+- Theme clustering (beaches, food, mountains, etc.) via DBSCAN on embeddings
+- Date-range filter in the picker
+- Deterministic seed-based shuffle
+- Share sheet
+- Minimum photo-count gate on picker rows
+- 4:5 aspect ratio / fixed 2×3 grid layout
+- 2× Retina export resolution
+
+**Additional future work:**
 - Video support / animated slideshows
-- Custom collage templates beyond 2x3 grid
 - Text overlays (dates, person names, locations)
-- iPad optimization
+- iPad optimization with larger grids
 - iCloud photo auto-download
 - Export as live wallpaper or widget content
 

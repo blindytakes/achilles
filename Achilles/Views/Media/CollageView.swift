@@ -26,6 +26,10 @@ struct CollageView: View {
     /// Whether the user has picked a source and we're showing the collage.
     @State private var selectedSource: CollageSourceType? = nil
 
+    /// Tap the collage to hide / show the Save & Regenerate buttons so the
+    /// image can breathe.  Resets to visible every time a new collage loads.
+    @State private var buttonsVisible = true
+
     // MARK: - Body
 
     var body: some View {
@@ -40,7 +44,7 @@ struct CollageView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle(selectedSource != nil ? selectedSource!.displayTitle : "Make a Collage")
+            .navigationTitle(selectedSource.map(\.displayTitle) ?? "Make a Collage")
             .toolbar {
                 if selectedSource != nil {
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -50,6 +54,8 @@ struct CollageView: View {
                                 viewModel.cleanup()
                             }
                         }
+                        .opacity(buttonsVisible ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
                     }
                 }
             }
@@ -154,6 +160,7 @@ struct CollageView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
+            buttonsVisible = true
             viewModel.generateCollage(source: source)
             AnalyticsService.shared.logCollageSourceView(source: source.analyticsLabel)
         }
@@ -172,39 +179,74 @@ struct CollageView: View {
             Spacer()
 
             // ── Rendered collage image ──
+            // Tapping anywhere on the image toggles the buttons.
             if let image = viewModel.renderedImage {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, buttonsVisible ? 24 : 0)
+                    .onTapGesture {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            buttonsVisible.toggle()
+                        }
+                    }
+                    .id(image)  // Force SwiftUI to treat each new image as a fresh view
+                    .transition(.opacity)
+                    .animation(.easeIn(duration: 0.3), value: image)
             }
 
-            // ── Save button ──
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                viewModel.saveCollage()
-            }) {
-                HStack(spacing: 8) {
-                    if viewModel.isSaving {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "square.and.arrow.down")
+            // ── Save & Share buttons ──
+            HStack(spacing: 16) {
+                // Share button
+                if let image = viewModel.renderedImage {
+                    ShareLink(item: Image(uiImage: image), preview: SharePreview(source.displayTitle, image: Image(uiImage: image))) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Share")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 14)
+                        .background(Color.secondary)
+                        .cornerRadius(12)
+                        .shadow(color: Color.secondary.opacity(0.4), radius: 6, x: 0, y: 3)
                     }
-                    Text(viewModel.isSaving ? "Saving…" : "Save to Photos")
+                    .simultaneousGesture(TapGesture().onEnded {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    })
                 }
-                .font(.headline)
-                .foregroundColor(.white)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 14)
-                .background(Color.accentColor)
-                .cornerRadius(12)
-                .shadow(color: Color.accentColor.opacity(0.4), radius: 6, x: 0, y: 3)
+
+                // Save button
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    viewModel.saveCollage()
+                }) {
+                    HStack(spacing: 8) {
+                        if viewModel.isSaving {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                        Text(viewModel.isSaving ? "Saving…" : "Save")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+                    .background(Color.accentColor)
+                    .cornerRadius(12)
+                    .shadow(color: Color.accentColor.opacity(0.4), radius: 6, x: 0, y: 3)
+                }
+                .disabled(viewModel.isSaving)
             }
-            .disabled(viewModel.isSaving)
+            .opacity(buttonsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
 
             // ── Regenerate button ──
             Button(action: {
@@ -216,10 +258,12 @@ struct CollageView: View {
                     .foregroundColor(.secondary)
             }
             .padding(.top, 4)
+            .opacity(buttonsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
 
             Spacer()
         }
-        // ── Toast overlay ──
+        // ── Toast overlay (always visible — it's a confirmation, not a control) ──
         .overlay(alignment: .bottom) {
             if let msg = viewModel.saveMessage {
                 Text(msg)

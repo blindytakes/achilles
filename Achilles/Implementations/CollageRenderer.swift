@@ -30,7 +30,8 @@ class CollageRenderer {
 
     private struct Layout {
         /// Target size for each individual photo request (points).
-        static let thumbnailSize: CGSize = CGSize(width: 400, height: 400)
+        /// Portrait aspect ratio (3:4) to better fill vertical phone screens.
+        static let thumbnailSize: CGSize = CGSize(width: 450, height: 600)
 
         /// Gap between cells in the grid (points).
         static let spacing: CGFloat = 6
@@ -60,12 +61,16 @@ class CollageRenderer {
     /// Default fetch implementation — requests from PHImageManager at the
     /// collage thumbnail size.
     private static func defaultFetch(_ item: MediaItem) async -> UIImage? {
+        // isSynchronous = true guarantees exactly one callback, which is
+        // required by withCheckedContinuation.  This is safe here because
+        // the caller (render) already runs on a background TaskGroup task —
+        // we are never on the main thread at this point.
         await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
             options.deliveryMode    = .highQualityFormat
             options.resizeMode      = .fast
             options.isNetworkAccessAllowed = true
-            options.isSynchronous   = false
+            options.isSynchronous   = true
             options.version         = .current
 
             PHCachingImageManager.default().requestImage(
@@ -111,7 +116,9 @@ class CollageRenderer {
         // Re-sort by original index so grid order matches score order.
         let sorted = images.sorted { $0.0 < $1.0 }.compactMap { $0.1 }
         guard !sorted.isEmpty else {
+#if DEBUG
             print("🖼️ CollageRenderer: all image fetches returned nil.")
+#endif
             return nil
         }
 
@@ -125,7 +132,7 @@ class CollageRenderer {
 
         // ── 3. Composite onto a single image via UIGraphicsImageRenderer ──
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0   // 1× keeps output ~1200 px; bump to 2× for Retina export if needed.
+        format.scale = 2.0   // 2× scale for sharper exports (~2712×3624 px for 3×3 portrait grid)
         let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
 
         let result: UIImage = renderer.image { ctx in
@@ -162,13 +169,17 @@ class CollageRenderer {
         }
 
         // ── 4. Clean up — source images go out of scope here; ARC handles the rest ──
+#if DEBUG
         print("🖼️ CollageRenderer: composed \(sorted.count) images into \(Int(canvasW))×\(Int(canvasH)) canvas.")
+#endif
         return result
     }
 
     // MARK: - Private helpers
 
     /// How many columns for N photos.
+    /// - 1-4 photos: 2 columns (2×2 grid or less)
+    /// - 5+ photos: 3 columns (2×3 or 3×3 grid)
     private func columnCount(for photoCount: Int) -> Int {
         switch photoCount {
         case 1...4: return 2
