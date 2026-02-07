@@ -30,6 +30,9 @@ struct CollageView: View {
     /// image can breathe.  Resets to visible every time a new collage loads.
     @State private var buttonsVisible = true
 
+    /// Controls the iOS share sheet for video export
+    @State private var showingVideoShareSheet = false
+
     // MARK: - Body
 
     var body: some View {
@@ -248,20 +251,49 @@ struct CollageView: View {
             .opacity(buttonsVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
 
-            // ── Regenerate button ──
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                viewModel.generateCollage(source: source)
-            }) {
-                Label("Regenerate", systemImage: "arrow.counterclockwise")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            // ── Regenerate & Export Video buttons ──
+            VStack(spacing: 8) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    viewModel.generateCollage(source: source)
+                }) {
+                    Label("Regenerate", systemImage: "arrow.counterclockwise")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    viewModel.exportVideo()
+                }) {
+                    Label("Export Video", systemImage: "film")
+                        .font(.subheadline)
+                        .foregroundColor(.accentColor)
+                }
+                .disabled(viewModel.isExportingVideo)
             }
             .padding(.top, 4)
             .opacity(buttonsVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
 
             Spacer()
+        }
+        // ── Video export progress overlay ──
+        .overlay {
+            if viewModel.isExportingVideo {
+                videoExportProgressView
+            }
+        }
+        // ── Auto-show share sheet when video is ready ──
+        .onChange(of: viewModel.exportedVideoURL) { _, newURL in
+            if let url = newURL {
+                showingVideoShareSheet = true
+            }
+        }
+        .sheet(isPresented: $showingVideoShareSheet) {
+            if let videoURL = viewModel.exportedVideoURL {
+                VideoShareSheet(videoURL: videoURL)
+            }
         }
         // ── Toast overlay (always visible — it's a confirmation, not a control) ──
         .overlay(alignment: .bottom) {
@@ -359,6 +391,57 @@ struct CollageView: View {
                 .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
         }
     }
+
+    // MARK: - Video Export Progress View
+
+    private var videoExportProgressView: some View {
+        ZStack {
+            // Dimmed background
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .transition(.opacity)
+
+            // Progress card
+            VStack(spacing: 20) {
+                // Circular progress indicator
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.2), lineWidth: 8)
+                        .frame(width: 100, height: 100)
+
+                    Circle()
+                        .trim(from: 0, to: CGFloat(viewModel.videoExportProgress))
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                        .frame(width: 100, height: 100)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.3), value: viewModel.videoExportProgress)
+
+                    Text("\(Int(viewModel.videoExportProgress * 100))%")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+                }
+
+                VStack(spacing: 8) {
+                    Text("Exporting Video")
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    Text("Creating Ken Burns effects...")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.systemGray6).opacity(0.95))
+                    .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+            )
+            .scaleEffect(viewModel.isExportingVideo ? 1.0 : 0.8)
+            .opacity(viewModel.isExportingVideo ? 1.0 : 0.0)
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: viewModel.isExportingVideo)
+        }
+    }
 }
 
 
@@ -368,4 +451,24 @@ struct CollageView: View {
 private struct PickerItem {
     let label:  String
     let source: CollageSourceType
+}
+
+
+// MARK: - Video Share Sheet
+
+/// UIKit wrapper for sharing video files via UIActivityViewController
+struct VideoShareSheet: UIViewControllerRepresentable {
+    let videoURL: URL
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let activityVC = UIActivityViewController(
+            activityItems: [videoURL],
+            applicationActivities: nil
+        )
+        return activityVC
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // No updates needed
+    }
 }

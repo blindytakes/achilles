@@ -35,10 +35,20 @@ class CollageViewModel: ObservableObject {
     /// Toast / feedback message shown briefly after a save completes.
     @Published var saveMessage: String? = nil
 
+    /// Whether a video export is currently in progress.
+    @Published var isExportingVideo = false
+
+    /// Video export progress (0.0 to 1.0).
+    @Published var videoExportProgress: Float = 0.0
+
+    /// URL of the exported video (nil until export completes).
+    @Published var exportedVideoURL: URL? = nil
+
     // MARK: - Dependencies
 
     private let sourceService: CollageSourceServiceProtocol
     private let renderer:      CollageRenderer
+    private let videoExporter: CollageVideoExporter
 
     /// The PhotoIndexService that backs the source service.  We hold a
     /// reference so we can kick off the index build on first use if needed.
@@ -53,7 +63,8 @@ class CollageViewModel: ObservableObject {
     init(
         sourceService: CollageSourceServiceProtocol? = nil,
         indexService:  PhotoIndexServiceProtocol?    = nil,
-        renderer:      CollageRenderer?              = nil
+        renderer:      CollageRenderer?              = nil,
+        videoExporter: CollageVideoExporter?         = nil
     ) {
         // Wire defaults with shared index so source service and index
         // service are talking to the same instance.
@@ -61,6 +72,7 @@ class CollageViewModel: ObservableObject {
         self.indexService  = idx
         self.sourceService = sourceService ?? CollageSourceService(indexService: idx)
         self.renderer      = renderer      ?? CollageRenderer()
+        self.videoExporter = videoExporter ?? CollageVideoExporter()
     }
 
     // MARK: - Public API
@@ -106,6 +118,20 @@ class CollageViewModel: ObservableObject {
         Task { [weak self] in
             guard let self = self else { return }
             await self.performSave(image: image, source: collage.source)
+        }
+    }
+
+    /// Export the current collage as a Ken Burns video.
+    func exportVideo() {
+        guard case .loaded(let collage) = state else { return }
+
+        isExportingVideo = true
+        videoExportProgress = 0.0
+        exportedVideoURL = nil
+
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.performVideoExport(collage: collage)
         }
     }
 
@@ -229,12 +255,83 @@ class CollageViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Private – Video Export
+
+    private func performVideoExport(collage: MemoryCollage) async {
+        let spanStart = Date()
+
+        do {
+            // Export video with progress updates
+            let videoURL = try await videoExporter.export(collage: collage) { [weak self] progress in
+                Task { @MainActor in
+                    self?.videoExportProgress = progress
+                }
+            }
+
+            let durationMs = Int(Date().timeIntervalSince(spanStart) * 1000)
+
+            await MainActor.run {
+                self.isExportingVideo = false
+                self.exportedVideoURL = videoURL
+                self.videoExportProgress = 1.0
+            }
+
+            // Telemetry + Analytics
+            TelemetryService.shared.recordSpan(
+                name: "collage.videoExport",
+                startTime: spanStart,
+                durationMs: durationMs,
+                attributes: [
+                    "source_type": collage.source.analyticsLabel,
+                    "photo_count": collage.items.count
+                ]
+            )
+            TelemetryService.shared.incrementCounter(
+                name: "throwbaks.collage.videoExported",
+                attributes: ["source_type": collage.source.analyticsLabel]
+            )
+            TelemetryService.shared.log(
+                "collage video exported",
+                attributes: [
+                    "source_type": collage.source.analyticsLabel,
+                    "photo_count": collage.items.count,
+                    "duration_ms": durationMs
+                ]
+            )
+
+            #if DEBUG
+            print("✅ CollageViewModel: video exported → \(videoURL.path)")
+            #endif
+
+        } catch {
+            await MainActor.run {
+                self.isExportingVideo = false
+                self.videoExportProgress = 0.0
+                self.saveMessage = "Video export failed. Please try again."
+            }
+
+            #if DEBUG
+            print("❌ CollageViewModel: video export failed – \(error.localizedDescription)")
+            #endif
+
+            TelemetryService.shared.log(
+                "collage video export failed",
+                severity: .error,
+                attributes: [
+                    "source_type": collage.source.analyticsLabel,
+                    "error": error.localizedDescription
+                ]
+            )
+        }
+    }
+
     // MARK: - Cleanup
 
     func cleanup() {
         activeTask?.cancel()
         activeTask     = nil
         renderedImage  = nil
+        exportedVideoURL = nil
         state          = .idle
     }
 
