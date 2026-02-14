@@ -22,6 +22,40 @@ import Foundation
 import Photos
 
 
+// MARK: - Collage Layout
+
+/// The visual layout used to arrange photos in a collage.
+enum CollageLayout: String, CaseIterable, Equatable {
+    case grid        // Uniform grid (2x2, 2x3, 3x3)
+    case magazine    // One large hero + smaller supporting photos
+    case polaroid    // Stacked, rotated photos with white borders and shadows
+    case filmStrip   // Vertical film-strip aesthetic with sprocket holes
+
+    /// Human-readable name for the layout picker UI.
+    var displayName: String {
+        switch self {
+        case .grid:      return "Grid"
+        case .magazine:  return "Magazine"
+        case .polaroid:  return "Polaroid"
+        case .filmStrip: return "Film Strip"
+        }
+    }
+
+    /// SF Symbol icon for the layout picker.
+    var iconName: String {
+        switch self {
+        case .grid:      return "square.grid.2x2"
+        case .magazine:  return "rectangle.split.1x2"
+        case .polaroid:  return "rectangle.stack"
+        case .filmStrip: return "film"
+        }
+    }
+
+    /// Short label used in analytics and logging.
+    var analyticsLabel: String { rawValue }
+}
+
+
 // MARK: - Source Type
 
 /// The dimension along which a collage is generated.

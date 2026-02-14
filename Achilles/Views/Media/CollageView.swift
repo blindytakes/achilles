@@ -1,17 +1,15 @@
 // CollageView.swift
 //
 // The collage screen.  Two phases:
-//   1. Source picker  – user picks a year (place / person added later).
-//   2. Collage display – rendered collage image with an optional Save button.
+//   1. Source picker  – user picks a year, place, or person.
+//   2. Collage display – rendered collage with layout picker, Save, Share,
+//      and Export Video buttons.
 //
 // Follows the same visual language as the rest of the app:
 //   - Dark-mode-first colour palette.
 //   - SkeletonView for loading states.
 //   - Spring animations on state transitions.
 //   - Haptic feedback on taps.
-//
-// No customisation knobs in v1.  The user picks a source, sees the result,
-// and optionally saves it.  That's the whole flow.
 
 import SwiftUI
 import Photos
@@ -199,7 +197,24 @@ struct CollageView: View {
                     .id(image)  // Force SwiftUI to treat each new image as a fresh view
                     .transition(.opacity)
                     .animation(.easeIn(duration: 0.3), value: image)
+            } else {
+                // Layout is switching — show brief spinner
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .frame(maxWidth: .infinity, minHeight: 300)
             }
+
+            // ── Layout picker ──
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(CollageLayout.allCases, id: \.self) { layout in
+                        layoutChip(layout)
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+            .opacity(buttonsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
 
             // ── Save & Share buttons ──
             HStack(spacing: 16) {
@@ -251,24 +266,41 @@ struct CollageView: View {
             .opacity(buttonsVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
 
-            // ── Regenerate & Export Video buttons ──
-            VStack(spacing: 8) {
-                Button(action: {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    viewModel.generateCollage(source: source)
-                }) {
-                    Label("Regenerate", systemImage: "arrow.counterclockwise")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+            // ── Regenerate button ──
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                viewModel.generateCollage(source: source)
+            }) {
+                Label("Regenerate", systemImage: "arrow.counterclockwise")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 4)
+            .opacity(buttonsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: buttonsVisible)
+
+            // ── Music picker + Export Video ──
+            VStack(spacing: 10) {
+                // Music track chips
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(MusicTrack.allCases) { track in
+                            musicChip(track)
+                        }
+                    }
+                    .padding(.horizontal, 24)
                 }
 
                 Button(action: {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     viewModel.exportVideo()
                 }) {
-                    Label("Export Video", systemImage: "film")
-                        .font(.subheadline)
-                        .foregroundColor(.accentColor)
+                    HStack(spacing: 8) {
+                        Image(systemName: "film")
+                        Text("Export Video")
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.accentColor)
                 }
                 .disabled(viewModel.isExportingVideo)
             }
@@ -278,18 +310,28 @@ struct CollageView: View {
 
             Spacer()
         }
-        // ── Video export progress overlay ──
+        // ── Video export: progress overlay OR preview ──
         .overlay {
             if viewModel.isExportingVideo {
                 videoExportProgressView
+                    .transition(.opacity)
+            } else if let videoURL = viewModel.exportedVideoURL {
+                VideoPreviewView(
+                    videoURL: videoURL,
+                    onSaveToPhotos: { viewModel.saveVideoToPhotos() },
+                    onShare: { showingVideoShareSheet = true },
+                    onRegenerate: {
+                        viewModel.dismissVideoPreview()
+                        viewModel.exportVideo()
+                    },
+                    onDismiss: { viewModel.dismissVideoPreview() },
+                    isSaving: viewModel.isSavingVideo
+                )
+                .transition(.opacity)
             }
         }
-        // ── Auto-show share sheet when video is ready ──
-        .onChange(of: viewModel.exportedVideoURL) { _, newURL in
-            if let url = newURL {
-                showingVideoShareSheet = true
-            }
-        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: viewModel.isExportingVideo)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: viewModel.exportedVideoURL != nil)
         .sheet(isPresented: $showingVideoShareSheet) {
             if let videoURL = viewModel.exportedVideoURL {
                 VideoShareSheet(videoURL: videoURL)
@@ -389,6 +431,51 @@ struct CollageView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(20)
                 .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+        }
+    }
+
+    // MARK: - Layout Chip
+
+    private func layoutChip(_ layout: CollageLayout) -> some View {
+        let isSelected = viewModel.selectedLayout == layout
+        return Button(action: {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            viewModel.switchLayout(to: layout)
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: layout.iconName)
+                    .font(.subheadline)
+                Text(layout.displayName)
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.accentColor : Color(.systemGray6))
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+        }
+    }
+
+    // MARK: - Music Chip
+
+    private func musicChip(_ track: MusicTrack) -> some View {
+        let isSelected = viewModel.selectedMusicTrack == track
+        return Button(action: {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            viewModel.selectedMusicTrack = track
+        }) {
+            HStack(spacing: 5) {
+                Image(systemName: track.iconName)
+                    .font(.caption)
+                Text(track.displayName)
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundColor(isSelected ? .white : .secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color.accentColor : Color(.systemGray6))
+            .cornerRadius(14)
         }
     }
 

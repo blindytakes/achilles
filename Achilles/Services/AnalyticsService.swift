@@ -194,6 +194,14 @@ class AnalyticsService {
         ])
         print("🔥 Analytics: Collage saved - \(source)")
     }
+
+    /// Fired when the user switches collage layout.
+    func logCollageLayoutSwitched(layout: String) {
+        Analytics.logEvent("collage_layout_switched", parameters: [
+            "layout": layout
+        ])
+        print("🔥 Analytics: Collage layout switched - \(layout)")
+    }
 }
 
 // MARK: - DateFormatter Extension

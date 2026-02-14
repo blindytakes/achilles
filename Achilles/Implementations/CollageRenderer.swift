@@ -1,24 +1,24 @@
 // CollageRenderer.swift
 //
-// Composites up to 10 photos into a single UIImage using a uniform grid
-// layout via Core Graphics.  This is the only place in the collage feature
-// that touches pixel data.
+// Composites up to 9 photos into a single UIImage using one of several
+// layout styles via Core Graphics.  This is the only place in the collage
+// feature that touches pixel data.
+//
+// Layouts
+// ───────
+//   - Grid:      uniform grid (2×2, 2×3, or 3×3)
+//   - Magazine:  one large hero + smaller supporting photos in an L-shape
+//   - Polaroid:  stacked, slightly rotated photos with white borders
+//   - Film Strip: vertical film-negative aesthetic with sprocket holes
 //
 // Design decisions
 // ────────────────
-//   - Resolution: each photo is requested at ~400 × 400 points (not full
-//     res).  The final canvas is sized so the output is a crisp but
-//     reasonably-sized image (roughly 1200 × 1200 for a 3×3+1 grid).
-//   - Layout: uniform grid.  Rows fill left-to-right, last row may be
-//     short.  Column count adapts to photo count:
-//         1–4 photos  →  2 columns
-//         5–9 photos  →  3 columns
-//         10  photos  →  3 columns  (3+3+3+1)
+//   - Resolution: each photo is requested at ~450 × 600 points (portrait).
 //   - Memory: source images are loaded, drawn, and released within this
 //     single call.  Nothing lingers in any cache after render.
 //   - Threading: the caller (CollageViewModel) invokes this on a
 //     background task.  All work here is synchronous and CPU-bound once
-//     the images are in hand — no UIKit or main-thread requirements.
+//     the images are in hand.
 
 import UIKit
 import Photos
@@ -28,9 +28,8 @@ class CollageRenderer {
 
     // MARK: - Constants
 
-    private struct Layout {
+    private struct LayoutConfig {
         /// Target size for each individual photo request (points).
-        /// Portrait aspect ratio (3:4) to better fill vertical phone screens.
         static let thumbnailSize: CGSize = CGSize(width: 450, height: 600)
 
         /// Gap between cells in the grid (points).
@@ -41,6 +40,9 @@ class CollageRenderer {
 
         /// Background colour of the canvas.
         static let backgroundColor: UIColor = .systemGray6
+
+        /// Output scale for sharp exports.
+        static let outputScale: CGFloat = 2.0
     }
 
     // MARK: - Dependencies
@@ -51,48 +53,48 @@ class CollageRenderer {
 
     // MARK: - Init
 
-    /// - Parameter fetchImage: async closure that loads one image for a
-    ///   given MediaItem at collage-appropriate size.  The default
-    ///   implementation uses PHCachingImageManager directly.
     init(fetchImage: @escaping (MediaItem) async -> UIImage? = CollageRenderer.defaultFetch) {
         self.fetchImage = fetchImage
     }
 
-    /// Default fetch implementation — requests from PHImageManager at the
-    /// collage thumbnail size.
     private static func defaultFetch(_ item: MediaItem) async -> UIImage? {
-        // isSynchronous = true guarantees exactly one callback, which is
-        // required by withCheckedContinuation.  This is safe here because
-        // the caller (render) already runs on a background TaskGroup task —
-        // we are never on the main thread at this point.
         await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
             options.deliveryMode    = .highQualityFormat
             options.resizeMode      = .fast
             options.isNetworkAccessAllowed = true
-            options.isSynchronous   = true
+            options.isSynchronous   = false  // Must be false when isNetworkAccessAllowed is true to avoid iCloud deadlock
             options.version         = .current
+
+            var didResume = false
 
             PHCachingImageManager.default().requestImage(
                 for: item.asset,
-                targetSize: Layout.thumbnailSize,
+                targetSize: LayoutConfig.thumbnailSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, _ in
-                continuation.resume(returning: image)
+            ) { image, info in
+                // When isSynchronous is false, this callback can fire
+                // multiple times (degraded thumbnail first, then full quality).
+                // Only resume the continuation once with the final result.
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                if !isDegraded && !didResume {
+                    didResume = true
+                    continuation.resume(returning: image)
+                }
             }
         }
     }
 
     // MARK: - Public API
 
-    /// Render a collage from the given items.
+    /// Render a collage from the given items using the specified layout.
     ///
-    /// - Parameter items: 1–10 MediaItems (score-sorted; order is preserved
-    ///   in the grid, left-to-right, top-to-bottom).
-    /// - Returns: A single composited UIImage, or nil if no images could
-    ///   be loaded.
-    func render(items: [MediaItem]) async -> UIImage? {
+    /// - Parameters:
+    ///   - items: 1–9 MediaItems (score-sorted; order is preserved).
+    ///   - layout: The visual layout style to use (defaults to `.grid`).
+    /// - Returns: A single composited UIImage, or nil if no images could be loaded.
+    func render(items: [MediaItem], layout: CollageLayout = .grid) async -> UIImage? {
         guard !items.isEmpty else { return nil }
 
         let clamped = Array(items.prefix(MemoryCollage.maxPhotos))
@@ -113,78 +115,334 @@ class CollageRenderer {
             return results
         }
 
-        // Re-sort by original index so grid order matches score order.
         let sorted = images.sorted { $0.0 < $1.0 }.compactMap { $0.1 }
         guard !sorted.isEmpty else {
-#if DEBUG
+            #if DEBUG
             print("🖼️ CollageRenderer: all image fetches returned nil.")
-#endif
+            #endif
             return nil
         }
 
-        // ── 2. Compute layout ──
-        let columns   = columnCount(for: sorted.count)
-        let rows      = (sorted.count + columns - 1) / columns   // ceiling division
-        let cellSize  = Layout.thumbnailSize
-        let canvasW   = CGFloat(columns) * cellSize.width  + CGFloat(columns - 1) * Layout.spacing
-        let canvasH   = CGFloat(rows)    * cellSize.height + CGFloat(rows    - 1) * Layout.spacing
-        let canvasSize = CGSize(width: canvasW, height: canvasH)
-
-        // ── 3. Composite onto a single image via UIGraphicsImageRenderer ──
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 2.0   // 2× scale for sharper exports (~2712×3624 px for 3×3 portrait grid)
-        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
-
-        let result: UIImage = renderer.image { ctx in
-            // Fill background
-            Layout.backgroundColor.setFill()
-            ctx.fill(CGRect(origin: .zero, size: canvasSize))
-
-            for (i, image) in sorted.enumerated() {
-                let col = i % columns
-                let row = i / columns
-                let x   = CGFloat(col) * (cellSize.width  + Layout.spacing)
-                let y   = CGFloat(row) * (cellSize.height + Layout.spacing)
-                let rect = CGRect(x: x, y: y, width: cellSize.width, height: cellSize.height)
-
-                // Clip to rounded rectangle
-                let cg = ctx.cgContext
-                cg.saveGState()
-                let clipPath = CGMutablePath()
-                clipPath.addRoundedRect(in: rect, cornerWidth: Layout.cellRadius, cornerHeight: Layout.cellRadius)
-                cg.addPath(clipPath)
-                cg.clip()
-
-                // Draw image, filling the cell (aspect-fill crop)
-                let imgSize = image.size
-                let imgScale = max(rect.width / imgSize.width, rect.height / imgSize.height)
-                let drawW    = imgSize.width  * imgScale
-                let drawH    = imgSize.height * imgScale
-                let drawX    = rect.minX + (rect.width  - drawW) / 2
-                let drawY    = rect.minY + (rect.height - drawH) / 2
-                image.draw(in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
-
-                cg.restoreGState()
-            }
+        // ── 2. Dispatch to layout-specific renderer ──
+        let result: UIImage?
+        switch layout {
+        case .grid:      result = renderGrid(images: sorted)
+        case .magazine:  result = renderMagazine(images: sorted)
+        case .polaroid:  result = renderPolaroid(images: sorted)
+        case .filmStrip: result = renderFilmStrip(images: sorted)
         }
 
-        // ── 4. Clean up — source images go out of scope here; ARC handles the rest ──
-#if DEBUG
-        print("🖼️ CollageRenderer: composed \(sorted.count) images into \(Int(canvasW))×\(Int(canvasH)) canvas.")
-#endif
+        #if DEBUG
+        print("🖼️ CollageRenderer: composed \(sorted.count) images with \(layout.displayName) layout.")
+        #endif
         return result
     }
 
-    // MARK: - Private helpers
+    // MARK: - Grid Layout
 
-    /// How many columns for N photos.
-    /// - 1-4 photos: 2 columns (2×2 grid or less)
-    /// - 5+ photos: 3 columns (2×3 or 3×3 grid)
-    private func columnCount(for photoCount: Int) -> Int {
+    private func renderGrid(images: [UIImage]) -> UIImage {
+        let columns   = gridColumnCount(for: images.count)
+        let rows      = (images.count + columns - 1) / columns
+        let cellSize  = LayoutConfig.thumbnailSize
+        let canvasW   = CGFloat(columns) * cellSize.width  + CGFloat(columns - 1) * LayoutConfig.spacing
+        let canvasH   = CGFloat(rows)    * cellSize.height + CGFloat(rows    - 1) * LayoutConfig.spacing
+        let canvasSize = CGSize(width: canvasW, height: canvasH)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = LayoutConfig.outputScale
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+
+        return renderer.image { ctx in
+            LayoutConfig.backgroundColor.setFill()
+            ctx.fill(CGRect(origin: .zero, size: canvasSize))
+
+            for (i, image) in images.enumerated() {
+                let col = i % columns
+                let row = i / columns
+                let x   = CGFloat(col) * (cellSize.width  + LayoutConfig.spacing)
+                let y   = CGFloat(row) * (cellSize.height + LayoutConfig.spacing)
+                let rect = CGRect(x: x, y: y, width: cellSize.width, height: cellSize.height)
+                drawAspectFill(image: image, in: rect, cornerRadius: LayoutConfig.cellRadius, context: ctx.cgContext)
+            }
+        }
+    }
+
+    private func gridColumnCount(for photoCount: Int) -> Int {
         switch photoCount {
         case 1...4: return 2
         default:    return 3
         }
     }
 
+    // MARK: - Magazine Layout
+
+    private func renderMagazine(images: [UIImage]) -> UIImage {
+        let sp = LayoutConfig.spacing
+        let rects = magazineCellRects(for: images.count, spacing: sp)
+
+        // Compute canvas from the union of all rects
+        var maxX: CGFloat = 0
+        var maxY: CGFloat = 0
+        for r in rects {
+            maxX = max(maxX, r.maxX)
+            maxY = max(maxY, r.maxY)
+        }
+        let canvasSize = CGSize(width: maxX, height: maxY)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = LayoutConfig.outputScale
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+
+        return renderer.image { ctx in
+            LayoutConfig.backgroundColor.setFill()
+            ctx.fill(CGRect(origin: .zero, size: canvasSize))
+
+            for (i, image) in images.enumerated() {
+                guard i < rects.count else { break }
+                drawAspectFill(image: image, in: rects[i], cornerRadius: LayoutConfig.cellRadius, context: ctx.cgContext)
+            }
+        }
+    }
+
+    private func magazineCellRects(for count: Int, spacing sp: CGFloat) -> [CGRect] {
+        // Hero is always top-left and large.
+        // Supporting photos fill the right column and bottom row.
+        let heroW: CGFloat = 600
+        let heroH: CGFloat = 800
+        let smallW: CGFloat = 296
+        let smallH: CGFloat = (heroH - sp) / 2  // two cells stacked in right column
+
+        let bottomCellH: CGFloat = 400
+
+        switch count {
+        case 1:
+            return [CGRect(x: 0, y: 0, width: heroW, height: heroH)]
+
+        case 2:
+            return [
+                CGRect(x: 0, y: 0, width: heroW, height: heroH),
+                CGRect(x: heroW + sp, y: 0, width: smallW, height: heroH)
+            ]
+
+        case 3:
+            return [
+                CGRect(x: 0, y: 0, width: heroW, height: heroH),
+                CGRect(x: heroW + sp, y: 0, width: smallW, height: smallH),
+                CGRect(x: heroW + sp, y: smallH + sp, width: smallW, height: smallH)
+            ]
+
+        case 4:
+            let totalW = heroW + sp + smallW
+            return [
+                CGRect(x: 0, y: 0, width: heroW, height: heroH),
+                CGRect(x: heroW + sp, y: 0, width: smallW, height: smallH),
+                CGRect(x: heroW + sp, y: smallH + sp, width: smallW, height: smallH),
+                CGRect(x: 0, y: heroH + sp, width: totalW, height: bottomCellH)
+            ]
+
+        case 5...6:
+            let totalW = heroW + sp + smallW
+            let bottomCount = count - 3
+            let bottomCellW = (totalW - CGFloat(bottomCount - 1) * sp) / CGFloat(bottomCount)
+            var rects = [
+                CGRect(x: 0, y: 0, width: heroW, height: heroH),
+                CGRect(x: heroW + sp, y: 0, width: smallW, height: smallH),
+                CGRect(x: heroW + sp, y: smallH + sp, width: smallW, height: smallH)
+            ]
+            for j in 0..<bottomCount {
+                let x = CGFloat(j) * (bottomCellW + sp)
+                rects.append(CGRect(x: x, y: heroH + sp, width: bottomCellW, height: bottomCellH))
+            }
+            return rects
+
+        default: // 7-9
+            let totalW = heroW + sp + smallW
+            let bottomCount = min(count - 3, 6) // up to 6 in bottom rows
+            let bottomPerRow = min(bottomCount, 3)
+            let bottomRows = (bottomCount + bottomPerRow - 1) / bottomPerRow
+            let bottomCellW = (totalW - CGFloat(bottomPerRow - 1) * sp) / CGFloat(bottomPerRow)
+
+            var rects = [
+                CGRect(x: 0, y: 0, width: heroW, height: heroH),
+                CGRect(x: heroW + sp, y: 0, width: smallW, height: smallH),
+                CGRect(x: heroW + sp, y: smallH + sp, width: smallW, height: smallH)
+            ]
+
+            for j in 0..<bottomCount {
+                let row = j / bottomPerRow
+                let col = j % bottomPerRow
+                let x = CGFloat(col) * (bottomCellW + sp)
+                let y = heroH + sp + CGFloat(row) * (bottomCellH + sp)
+                rects.append(CGRect(x: x, y: y, width: bottomCellW, height: bottomCellH))
+            }
+            return rects
+        }
+    }
+
+    // MARK: - Polaroid Layout
+
+    private func renderPolaroid(images: [UIImage]) -> UIImage {
+        let canvasSize = CGSize(width: 1000, height: 1300)
+        let photoSize  = CGSize(width: 360, height: 480)
+        let borderSide: CGFloat = 20
+        let borderBottom: CGFloat = 60
+        let cardW = photoSize.width + borderSide * 2
+        let cardH = photoSize.height + borderSide + borderBottom
+
+        // Deterministic rotations (degrees)
+        let rotations: [CGFloat] = [0, -8, 5, -3, 7, -6, 4, -7, 3]
+        // Offsets from center
+        let offsets: [(dx: CGFloat, dy: CGFloat)] = [
+            (0, 0), (-80, -40), (70, -60), (-60, 50), (90, 30),
+            (-40, -80), (50, 70), (-90, 20), (30, -50)
+        ]
+
+        let cx = canvasSize.width / 2
+        let cy = canvasSize.height / 2
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = LayoutConfig.outputScale
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+
+        return renderer.image { ctx in
+            LayoutConfig.backgroundColor.setFill()
+            ctx.fill(CGRect(origin: .zero, size: canvasSize))
+
+            let cg = ctx.cgContext
+
+            // Draw back-to-front (last photo first, top photo last)
+            for i in stride(from: images.count - 1, through: 0, by: -1) {
+                let image = images[i]
+                let rotation = rotations[i % rotations.count]
+                let offset = offsets[i % offsets.count]
+
+                let centerX = cx + offset.dx
+                let centerY = cy + offset.dy
+                let angle = rotation * .pi / 180
+
+                cg.saveGState()
+
+                // Translate to card center, rotate
+                cg.translateBy(x: centerX, y: centerY)
+                cg.rotate(by: angle)
+
+                // Draw shadow
+                cg.setShadow(offset: CGSize(width: 0, height: 4), blur: 12,
+                             color: UIColor.black.withAlphaComponent(0.35).cgColor)
+
+                // Draw white polaroid card
+                let cardRect = CGRect(x: -cardW / 2, y: -cardH / 2, width: cardW, height: cardH)
+                cg.setFillColor(UIColor.white.cgColor)
+                let cardPath = CGMutablePath()
+                cardPath.addRoundedRect(in: cardRect, cornerWidth: 4, cornerHeight: 4)
+                cg.addPath(cardPath)
+                cg.fillPath()
+
+                // Clear shadow for photo drawing
+                cg.setShadow(offset: .zero, blur: 0)
+
+                // Draw photo inside the card
+                let photoRect = CGRect(
+                    x: -cardW / 2 + borderSide,
+                    y: -cardH / 2 + borderSide,
+                    width: photoSize.width,
+                    height: photoSize.height
+                )
+                drawAspectFill(image: image, in: photoRect, cornerRadius: 0, context: cg)
+
+                cg.restoreGState()
+            }
+        }
+    }
+
+    // MARK: - Film Strip Layout
+
+    private func renderFilmStrip(images: [UIImage]) -> UIImage {
+        let stripWidth: CGFloat = 500
+        let frameWidth: CGFloat = 420
+        let frameHeight: CGFloat = 280
+        let frameBorder: CGFloat = 2
+        let frameSpacing: CGFloat = 20
+        let margin: CGFloat = 40
+        let topPadding: CGFloat = 30
+        let bottomPadding: CGFloat = 30
+        let sprocketWidth: CGFloat = 20
+        let sprocketHeight: CGFloat = 30
+        let sprocketInset: CGFloat = 8
+
+        let stripHeight = topPadding + CGFloat(images.count) * (frameHeight + frameSpacing) - frameSpacing + bottomPadding
+        let canvasSize = CGSize(width: stripWidth, height: stripHeight)
+
+        let stripColor = UIColor(white: 0.12, alpha: 1.0)
+        let sprocketColor = UIColor.white.withAlphaComponent(0.25)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = LayoutConfig.outputScale
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+
+            // Dark strip background
+            stripColor.setFill()
+            cg.fill(CGRect(origin: .zero, size: canvasSize))
+
+            for (i, image) in images.enumerated() {
+                let y = topPadding + CGFloat(i) * (frameHeight + frameSpacing)
+
+                // Sprocket holes (left and right) — rounded for authentic film look
+                sprocketColor.setFill()
+                let sprocketY = y + (frameHeight - sprocketHeight) / 2
+                let sprocketRadius: CGFloat = 4
+                let leftSprocket = CGRect(x: sprocketInset, y: sprocketY, width: sprocketWidth, height: sprocketHeight)
+                let rightSprocket = CGRect(x: stripWidth - sprocketInset - sprocketWidth, y: sprocketY, width: sprocketWidth, height: sprocketHeight)
+                let leftPath = CGMutablePath()
+                leftPath.addRoundedRect(in: leftSprocket, cornerWidth: sprocketRadius, cornerHeight: sprocketRadius)
+                cg.addPath(leftPath)
+                cg.fillPath()
+                let rightPath = CGMutablePath()
+                rightPath.addRoundedRect(in: rightSprocket, cornerWidth: sprocketRadius, cornerHeight: sprocketRadius)
+                cg.addPath(rightPath)
+                cg.fillPath()
+
+                // White frame border
+                let borderRect = CGRect(
+                    x: margin - frameBorder,
+                    y: y - frameBorder,
+                    width: frameWidth + frameBorder * 2,
+                    height: frameHeight + frameBorder * 2
+                )
+                UIColor.white.withAlphaComponent(0.5).setFill()
+                cg.fill(borderRect)
+
+                // Photo (sharp corners for film aesthetic)
+                let photoRect = CGRect(x: margin, y: y, width: frameWidth, height: frameHeight)
+                drawAspectFill(image: image, in: photoRect, cornerRadius: 0, context: cg)
+            }
+        }
+    }
+
+    // MARK: - Shared Drawing Helper
+
+    /// Draws an image into a rect with aspect-fill cropping and optional corner radius.
+    private func drawAspectFill(image: UIImage, in rect: CGRect, cornerRadius: CGFloat, context: CGContext) {
+        context.saveGState()
+
+        if cornerRadius > 0 {
+            let clipPath = CGMutablePath()
+            clipPath.addRoundedRect(in: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius)
+            context.addPath(clipPath)
+            context.clip()
+        }
+
+        let imgSize  = image.size
+        let imgScale = max(rect.width / imgSize.width, rect.height / imgSize.height)
+        let drawW    = imgSize.width  * imgScale
+        let drawH    = imgSize.height * imgScale
+        let drawX    = rect.minX + (rect.width  - drawW) / 2
+        let drawY    = rect.minY + (rect.height - drawH) / 2
+        image.draw(in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
+
+        context.restoreGState()
+    }
 }

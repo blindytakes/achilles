@@ -44,6 +44,16 @@ class CollageViewModel: ObservableObject {
     /// URL of the exported video (nil until export completes).
     @Published var exportedVideoURL: URL? = nil
 
+    /// Whether saving the exported video to Photos is in progress.
+    @Published var isSavingVideo = false
+
+    /// The currently selected collage layout.
+    @Published var selectedLayout: CollageLayout = .grid
+
+    /// The music track to use for video export.  Randomised on first load
+    /// (50% chance of music, 50% none).  User can change before exporting.
+    @Published var selectedMusicTrack: MusicTrack = MusicTrack.randomDefault()
+
     // MARK: - Dependencies
 
     private let sourceService: CollageSourceServiceProtocol
@@ -108,6 +118,37 @@ class CollageViewModel: ObservableObject {
         activeTask = task
     }
 
+    /// Re-render the current collage with a different layout.
+    /// Reuses the existing photos — no re-fetch needed.
+    func switchLayout(to layout: CollageLayout) {
+        guard case .loaded(let collage) = state else { return }
+        guard layout != selectedLayout else { return }
+
+        selectedLayout = layout
+
+        activeTask?.cancel()
+        activeTask = nil
+        renderedImage = nil
+
+        let task = Task { [weak self] in
+            guard let self = self else { return }
+            guard let image = await self.renderer.render(items: collage.items, layout: layout) else {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.renderedImage = image
+            }
+        }
+        activeTask = task
+
+        TelemetryService.shared.incrementCounter(
+            name: "throwbaks.collage.layoutSwitched",
+            attributes: ["layout": layout.analyticsLabel]
+        )
+        AnalyticsService.shared.logCollageLayoutSwitched(layout: layout.analyticsLabel)
+    }
+
     /// Save the current rendered collage to the photo library.
     func saveCollage() {
         guard let image = renderedImage else { return }
@@ -121,7 +162,56 @@ class CollageViewModel: ObservableObject {
         }
     }
 
-    /// Export the current collage as a Ken Burns video.
+    /// Save the exported video to the photo library.
+    func saveVideoToPhotos() {
+        guard let videoURL = exportedVideoURL else { return }
+        isSavingVideo = true
+
+        Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: videoURL)
+                }
+                await MainActor.run {
+                    self.isSavingVideo = false
+                    self.saveMessage = "Video saved to your Photos!"
+                }
+                TelemetryService.shared.incrementCounter(
+                    name: "throwbaks.collage.videoSaved",
+                    attributes: [:]
+                )
+                TelemetryService.shared.log(
+                    "collage video saved to photo library",
+                    attributes: [:]
+                )
+                #if DEBUG
+                print("✅ CollageViewModel: video saved to photo library.")
+                #endif
+            } catch {
+                await MainActor.run {
+                    self.isSavingVideo = false
+                    self.saveMessage = "Save failed. Please try again."
+                }
+                #if DEBUG
+                print("❌ CollageViewModel: video save failed – \(error.localizedDescription)")
+                #endif
+                TelemetryService.shared.log(
+                    "collage video save failed",
+                    severity: .error,
+                    attributes: ["error": error.localizedDescription]
+                )
+            }
+        }
+    }
+
+    /// Dismiss the video preview and clean up the exported video file.
+    func dismissVideoPreview() {
+        cleanupVideoFile()
+        exportedVideoURL = nil
+    }
+
+    /// Export the current collage as a Ken Burns video with optional music.
     func exportVideo() {
         guard case .loaded(let collage) = state else { return }
 
@@ -129,9 +219,11 @@ class CollageViewModel: ObservableObject {
         videoExportProgress = 0.0
         exportedVideoURL = nil
 
+        let music = selectedMusicTrack
+
         Task { [weak self] in
             guard let self = self else { return }
-            await self.performVideoExport(collage: collage)
+            await self.performVideoExport(collage: collage, music: music)
         }
     }
 
@@ -154,7 +246,7 @@ class CollageViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
 
         // 2. Render
-        guard let image = await renderer.render(items: collage.items) else {
+        guard let image = await renderer.render(items: collage.items, layout: selectedLayout) else {
             await MainActor.run {
                 self.state = .error(message: "Failed to render collage. Please try again.")
             }
@@ -257,12 +349,12 @@ class CollageViewModel: ObservableObject {
 
     // MARK: - Private – Video Export
 
-    private func performVideoExport(collage: MemoryCollage) async {
+    private func performVideoExport(collage: MemoryCollage, music: MusicTrack = .none) async {
         let spanStart = Date()
 
         do {
             // Export video with progress updates
-            let videoURL = try await videoExporter.export(collage: collage) { [weak self] progress in
+            let videoURL = try await videoExporter.export(collage: collage, musicTrack: music) { [weak self] progress in
                 Task { @MainActor in
                     self?.videoExportProgress = progress
                 }
@@ -295,7 +387,8 @@ class CollageViewModel: ObservableObject {
                 attributes: [
                     "source_type": collage.source.analyticsLabel,
                     "photo_count": collage.items.count,
-                    "duration_ms": durationMs
+                    "duration_ms": durationMs,
+                    "music_track": music.analyticsLabel
                 ]
             )
 
@@ -329,10 +422,23 @@ class CollageViewModel: ObservableObject {
 
     func cleanup() {
         activeTask?.cancel()
-        activeTask     = nil
-        renderedImage  = nil
-        exportedVideoURL = nil
-        state          = .idle
+        activeTask       = nil
+        renderedImage    = nil
+        cleanupVideoFile()
+        exportedVideoURL   = nil
+        isSavingVideo      = false
+        selectedLayout     = .grid
+        selectedMusicTrack = MusicTrack.randomDefault()
+        state              = .idle
+    }
+
+    /// Delete the temp video file if it exists.
+    private func cleanupVideoFile() {
+        guard let url = exportedVideoURL else { return }
+        try? FileManager.default.removeItem(at: url)
+        #if DEBUG
+        print("🗑️ CollageViewModel: deleted temp video → \(url.lastPathComponent)")
+        #endif
     }
 
     deinit {
