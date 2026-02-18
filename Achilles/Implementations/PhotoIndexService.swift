@@ -30,6 +30,7 @@
 
 import Foundation
 import Photos
+import CoreLocation
 
 
 // MARK: - Persistence Wrapper
@@ -90,11 +91,6 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         /// Cache-directory filename for the persisted index.
         static let indexFileName = "photo_index.json"
 
-        /// Smart-album subtypes that aren't exposed as named symbols on all
-        /// SDK versions.  Values verified against PhotoKit headers.
-        static let locationAlbumSubtype = PHAssetCollectionSubtype(rawValue: 66)   // smartAlbumByLocation
-        static let peopleAlbumSubtype   = PHAssetCollectionSubtype(rawValue: 54)   // smartAlbumFacesWithPeople
-
         /// Scoring constants — kept in sync with FeaturedSelectorService.
         struct Scoring {
             static let isEditedBonus              = 150
@@ -128,6 +124,22 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
     /// Guard against concurrent builds.
     private var _isBuildingIndex = false
+
+    /// Cached place names derived from reverse-geocoding index coordinates.
+    /// Populated during index build, BEFORE _isReady is set.
+    private var _cachedPlaces: [String] = []
+
+    /// Mapping from place name → set of asset IDs at that location.
+    /// Used by topItems(forPlace:) to find photos at a given place.
+    private var _placeToAssetIDs: [String: Set<String>] = [:]
+
+    /// Cached people names derived from the Photos People album.
+    private var _cachedPeople: [String] = []
+
+    /// Notification posted (on main thread) when the index finishes building
+    /// and place/people caches are populated.  The ViewModel observes this
+    /// to update its @Published properties.
+    static let indexDidFinishBuilding = Notification.Name("PhotoIndexService.indexDidFinishBuilding")
 
     // MARK: - Protocol conformance – computed
 
@@ -213,17 +225,14 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     }
 
     func topItems(forPlace place: String, limit: Int = MemoryCollage.maxPhotos) -> [MediaItem] {
-        // Fetch the asset IDs that belong to this place via PHAssetCollection,
-        // then cross-reference with the index for scoring + sorting.
-        guard let collection = findSmartAlbum(named: place) else {
+        let (snapshot, assetIDs) = queue.sync { (_index, _placeToAssetIDs[place] ?? []) }
+
+        guard !assetIDs.isEmpty else {
 #if DEBUG
-            print("📇 PhotoIndexService: no smart album found for place '\(place)'.")
+            print("📇 PhotoIndexService: no assets mapped to place '\(place)'.")
 #endif
             return []
         }
-
-        let assetIDs = fetchAssetIDs(from: collection)
-        let snapshot = queue.sync { _index }
 
         let matched = assetIDs.compactMap { snapshot[$0] }
             .filter { $0.mediaType == PHAssetMediaType.image.rawValue && !$0.isHidden }
@@ -234,7 +243,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     }
 
     func topItems(forPerson person: String, limit: Int = MemoryCollage.maxPhotos) -> [MediaItem] {
-        guard let collection = findPeopleAlbum(named: person) else {
+        guard let collection = findPeopleAlbumDocumented(named: person) else {
 #if DEBUG
             print("📇 PhotoIndexService: no People album found for '\(person)'.")
 #endif
@@ -265,35 +274,11 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     }
 
     func availablePlaces() -> [String] {
-        guard let locationSubtype = Constants.locationAlbumSubtype else { return [] }
-        let results = PHAssetCollection.fetchAssetCollections(
-            with: .smartAlbum,
-            subtype: locationSubtype,
-            options: nil
-        )
-        var places = [String]()
-        results.enumerateObjects { collection, _, _ in
-            guard let title = collection.localizedTitle, !title.isEmpty else { return }
-            let assets = PHAsset.fetchAssets(in: collection, options: nil)
-            if assets.count > 0 { places.append(title) }
-        }
-        return Array(Set(places)).sorted()
+        queue.sync { _cachedPlaces }
     }
 
     func availablePeople() -> [String] {
-        guard let peopleSubtype = Constants.peopleAlbumSubtype else { return [] }
-        let results = PHAssetCollection.fetchAssetCollections(
-            with: .smartAlbum,
-            subtype: peopleSubtype,
-            options: nil
-        )
-        var people = [String]()
-        results.enumerateObjects { collection, _, _ in
-            guard let title = collection.localizedTitle, !title.isEmpty else { return }
-            let assets = PHAsset.fetchAssets(in: collection, options: nil)
-            if assets.count > 0 { people.append(title) }
-        }
-        return people.sorted()
+        queue.sync { _cachedPeople }
     }
 
     // MARK: - PHPhotoLibraryChangeObserver
@@ -356,9 +341,18 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
             newIndex[entry.assetId] = entry
         }
 
-        // Swap in the new index and mark ready.
+        // Swap in the new index (but DON'T mark ready yet — caches first).
         queue.sync {
             self._index = newIndex
+        }
+
+        // Build place & people caches BEFORE marking ready, so that any
+        // reader that checks isIndexReady will see populated caches.
+        await buildPlacesCache()
+        buildPeopleCache()
+
+        // NOW mark ready and allow builds again.
+        queue.sync {
             self._isReady = true
             self._isBuildingIndex = false
         }
@@ -367,6 +361,11 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 #if DEBUG
         print("📇 PhotoIndexService: ── full build DONE ── \(newIndex.count) entries in \(durationMs) ms")
 #endif
+
+        // Notify observers (ViewModel) that data is available.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.indexDidFinishBuilding, object: nil)
+        }
 
         // Persist to disk (fire-and-forget; non-critical path).
         persistIndex()
@@ -596,11 +595,24 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
                 return false
             }
 
+            // Load the index entries (but DON'T mark ready yet).
             queue.sync {
                 self._index = payload.entries
+            }
+
+            // Build caches BEFORE marking ready.
+            await buildPlacesCache()
+            buildPeopleCache()
+
+            // NOW mark ready.
+            queue.sync {
                 self._isReady = true
             }
 
+            // Notify observers (ViewModel) that data is available.
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Self.indexDidFinishBuilding, object: nil)
+            }
 
 #if DEBUG
             print("📇 PhotoIndexService: loaded \(payload.entries.count) entries from persisted index (v\(payload.version)).")
@@ -614,42 +626,205 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         }
     }
 
-    // MARK: - Private – PHAssetCollection helpers
+    // MARK: - Private – Place Cache (Reverse Geocoding)
 
-    /// Find a location-based smart album by its localised title.
-    private func findSmartAlbum(named title: String) -> PHAssetCollection? {
-        guard let subtype = Constants.locationAlbumSubtype else { return nil }
-        let results = PHAssetCollection.fetchAssetCollections(
-            with: .smartAlbum,
-            subtype: subtype,
-            options: nil
-        )
-        var found: PHAssetCollection?
-        results.enumerateObjects { collection, _, stop in
-            if collection.localizedTitle == title {
-                found = collection
-                stop.pointee = true
+    /// Clusters index entries by rounded lat/lng (~10 km), then reverse-
+    /// geocodes one representative coordinate per cluster to get a city name.
+    private func buildPlacesCache() async {
+        let snapshot = queue.sync { _index }
+
+        // Collect entries that have location data.
+        let locEntries = snapshot.values.filter {
+            $0.hasLocation && $0.latitude != nil && $0.longitude != nil
+            && $0.mediaType == PHAssetMediaType.image.rawValue && !$0.isHidden
+        }
+        guard !locEntries.isEmpty else {
+            queue.sync {
+                _cachedPlaces = []
+                _placeToAssetIDs = [:]
+            }
+#if DEBUG
+            print("📇 PhotoIndexService: no location entries – places cache empty.")
+#endif
+            return
+        }
+
+        // Round coordinates to 1 decimal place (~11 km clusters).
+        struct CoordKey: Hashable {
+            let latBucket: Int
+            let lngBucket: Int
+        }
+        var clusters: [CoordKey: (lat: Double, lng: Double, assetIDs: [String])] = [:]
+        for entry in locEntries {
+            let lat = Double(entry.latitude!)
+            let lng = Double(entry.longitude!)
+            let key = CoordKey(latBucket: Int((lat * 10).rounded()), lngBucket: Int((lng * 10).rounded()))
+            if clusters[key] == nil {
+                clusters[key] = (lat: lat, lng: lng, assetIDs: [entry.assetId])
+            } else {
+                clusters[key]!.assetIDs.append(entry.assetId)
             }
         }
-        return found
+
+#if DEBUG
+        print("📇 PhotoIndexService: reverse-geocoding \(clusters.count) location clusters…")
+#endif
+
+        let geocoder = CLGeocoder()
+        var placeMap: [String: Set<String>] = [:]   // placeName → assetIDs
+
+        for (_, cluster) in clusters {
+            // Include any cluster with at least 1 photo.
+            guard cluster.assetIDs.count >= 1 else { continue }
+
+            let location = CLLocation(latitude: cluster.lat, longitude: cluster.lng)
+            do {
+                let placemarks = try await geocoder.reverseGeocodeLocation(location)
+                if let city = placemarks.first?.locality, !city.isEmpty {
+                    var existing = placeMap[city] ?? []
+                    for id in cluster.assetIDs { existing.insert(id) }
+                    placeMap[city] = existing
+                }
+            } catch {
+#if DEBUG
+                print("📇 PhotoIndexService: geocode failed for (\(cluster.lat), \(cluster.lng)): \(error.localizedDescription)")
+#endif
+            }
+
+            // Apple rate-limits CLGeocoder; small delay between requests.
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+        }
+
+        let sortedPlaces = placeMap.keys.sorted()
+        queue.sync {
+            _cachedPlaces = sortedPlaces
+            _placeToAssetIDs = placeMap
+        }
+
+#if DEBUG
+        print("📇 PhotoIndexService: places cache built – \(sortedPlaces.count) places.")
+#endif
     }
 
-    /// Find a People smart album by its localised title.
-    private func findPeopleAlbum(named title: String) -> PHAssetCollection? {
-        guard let subtype = Constants.peopleAlbumSubtype else { return nil }
-        let results = PHAssetCollection.fetchAssetCollections(
+    // MARK: - Private – People Cache (Documented API)
+
+    /// Known system smart album titles that should never appear as "People".
+    /// These are Apple's built-in album names across English + common locales.
+    private static let knownSystemAlbumTitles: Set<String> = [
+        // English
+        "Recents", "Favorites", "Recently Deleted", "Screenshots",
+        "Selfies", "Portrait", "Panoramas", "Videos", "Slo-mo",
+        "Time-lapse", "Bursts", "Hidden", "Recently Added",
+        "Live Photos", "Animated", "Long Exposure", "RAW",
+        "Cinematic", "All Photos", "Camera Roll", "Imports",
+        "Depth Effect", "Unable to Upload", "Spatial",
+        // Also match PHAssetCollectionSubtype named cases
+        "Photo Booth",
+        // French
+        "Récents", "Favoris", "Photos", "Vidéos", "Captures d'écran",
+        "Autoportraits", "Portraits", "Panoramas", "Ralenti",
+        "Accéléré", "Rafales", "Masqué", "Ajouts récents",
+        "Live Photos", "Animé", "Longue exposition", "Cinématique",
+        // Spanish
+        "Recientes", "Favoritos", "Capturas de pantalla",
+        "Selfis", "Retrato", "Panorámicas", "Cámara lenta",
+        "Time-lapse", "Ráfagas", "Oculto", "Añadidos recientemente",
+        // German
+        "Zuletzt", "Favoriten", "Bildschirmfotos", "Selfies",
+        "Porträt", "Panoramafotos", "Slo-Mo", "Zeitraffer",
+        "Serien", "Ausgeblendet", "Zuletzt hinzugefügt",
+        // Portuguese
+        "Recentes", "Favoritas", "Capturas de Ecrã",
+        // Italian
+        "Recenti", "Preferite", "Istantanee schermo",
+    ]
+
+    /// Scans for People albums using multiple strategies, filtering out
+    /// all known system smart albums from the results.
+    private func buildPeopleCache() {
+        var peopleNames: [String] = []
+
+        // Method 1: Try the conventional People subtypes.
+        // Apple has used different raw values across iOS versions.
+        let candidateSubtypes: [Int] = [54, 210, 211, 212]
+        for rawValue in candidateSubtypes {
+            guard let subtype = PHAssetCollectionSubtype(rawValue: rawValue) else { continue }
+            let results = PHAssetCollection.fetchAssetCollections(
+                with: .smartAlbum,
+                subtype: subtype,
+                options: nil
+            )
+            results.enumerateObjects { collection, _, _ in
+                guard let title = collection.localizedTitle, !title.isEmpty else { return }
+                let assets = PHAsset.fetchAssets(in: collection, options: nil)
+                if assets.count > 0 { peopleNames.append(title) }
+            }
+        }
+
+        // Method 2: Fallback — scan ALL smart albums.
+        if peopleNames.isEmpty {
+            let allSmartAlbums = PHAssetCollection.fetchAssetCollections(
+                with: .smartAlbum,
+                subtype: .any,
+                options: nil
+            )
+            allSmartAlbums.enumerateObjects { collection, _, _ in
+                guard let title = collection.localizedTitle, !title.isEmpty else { return }
+                let assets = PHAsset.fetchAssets(in: collection, options: nil)
+                if assets.count > 0 { peopleNames.append(title) }
+            }
+        }
+
+        // Filter out ALL known system album names regardless of which
+        // method found them.  What remains should be actual people names.
+        let filtered = peopleNames.filter { !Self.knownSystemAlbumTitles.contains($0) }
+        let sorted = Array(Set(filtered)).sorted()
+
+        queue.sync {
+            _cachedPeople = sorted
+        }
+
+#if DEBUG
+        print("📇 PhotoIndexService: people cache built – \(sorted.count) people (filtered \(peopleNames.count - filtered.count) system albums).")
+#endif
+    }
+
+    /// Find a People album by scanning all smart album subtypes for a
+    /// matching title.  This uses the documented PHAssetCollection API.
+    private func findPeopleAlbumDocumented(named title: String) -> PHAssetCollection? {
+        // Try known People subtypes first.
+        let candidateSubtypes: [Int] = [54, 210, 211, 212]
+        for rawValue in candidateSubtypes {
+            guard let subtype = PHAssetCollectionSubtype(rawValue: rawValue) else { continue }
+            let results = PHAssetCollection.fetchAssetCollections(
+                with: .smartAlbum,
+                subtype: subtype,
+                options: nil
+            )
+            var found: PHAssetCollection?
+            results.enumerateObjects { collection, _, stop in
+                if collection.localizedTitle == title {
+                    found = collection
+                    stop.pointee = true
+                }
+            }
+            if let found { return found }
+        }
+
+        // Fallback: scan all smart albums.
+        let all = PHAssetCollection.fetchAssetCollections(
             with: .smartAlbum,
-            subtype: subtype,
+            subtype: .any,
             options: nil
         )
-        var found: PHAssetCollection?
-        results.enumerateObjects { collection, _, stop in
+        var fallback: PHAssetCollection?
+        all.enumerateObjects { collection, _, stop in
             if collection.localizedTitle == title {
-                found = collection
+                fallback = collection
                 stop.pointee = true
             }
         }
-        return found
+        return fallback
     }
 
     /// Pull all asset local-identifiers out of a collection.

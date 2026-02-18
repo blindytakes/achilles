@@ -85,20 +85,54 @@ class CollageViewModel: ObservableObject {
         self.videoExporter = videoExporter ?? CollageVideoExporter()
     }
 
+    // MARK: - Index Notification
+
+    /// Observation token for the index-finished notification.
+    private var indexObserver: NSObjectProtocol?
+
     // MARK: - Public API
 
     /// Available years / places / people for the source picker.
-    var availableYears:  [Int]    { sourceService.availableYears() }
-    var availablePlaces: [String] { sourceService.availablePlaces() }
-    var availablePeople: [String] { sourceService.availablePeople() }
+    /// These are @Published so SwiftUI re-renders when the index finishes.
+    @Published var availableYears:  [Int]    = []
+    @Published var availablePlaces: [String] = []
+    @Published var availablePeople: [String] = []
 
     /// Kick off index build if it hasn't happened yet.  Call this when the
     /// collage page appears — it's a no-op if the index is already ready.
     func ensureIndexReady() {
-        guard !indexService.isIndexReady else { return }
+        // If the index is already built, refresh the published properties
+        // immediately (they may already be stale from init).
+        if indexService.isIndexReady {
+            refreshAvailableSources()
+            return
+        }
+
+        // Listen for the index-finished notification so we can update
+        // the @Published properties when caches are populated.
+        if indexObserver == nil {
+            indexObserver = NotificationCenter.default.addObserver(
+                forName: PhotoIndexService.indexDidFinishBuilding,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refreshAvailableSources()
+            }
+        }
+
         Task {
             await indexService.buildIndex()
         }
+    }
+
+    /// Pull the latest data from the source service into @Published properties.
+    private func refreshAvailableSources() {
+        availableYears  = sourceService.availableYears()
+        availablePlaces = sourceService.availablePlaces()
+        availablePeople = sourceService.availablePeople()
+#if DEBUG
+        print("📇 CollageViewModel: refreshed sources – \(availableYears.count) years, \(availablePlaces.count) places, \(availablePeople.count) people")
+#endif
     }
 
     /// Generate a collage for the given source.  Cancels any in-flight
@@ -430,6 +464,10 @@ class CollageViewModel: ObservableObject {
         selectedLayout     = .grid
         selectedMusicTrack = MusicTrack.randomDefault()
         state              = .idle
+        if let obs = indexObserver {
+            NotificationCenter.default.removeObserver(obs)
+            indexObserver = nil
+        }
     }
 
     /// Delete the temp video file if it exists.
@@ -443,5 +481,8 @@ class CollageViewModel: ObservableObject {
 
     deinit {
         activeTask?.cancel()
+        if let obs = indexObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
     }
 }
