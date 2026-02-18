@@ -91,6 +91,9 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         /// Cache-directory filename for the persisted index.
         static let indexFileName = "photo_index.json"
 
+        /// Cache-directory filename for persisted geocode results.
+        static let geocodeCacheFileName = "geocode_cache.json"
+
         /// Scoring constants — kept in sync with FeaturedSelectorService.
         struct Scoring {
             static let isEditedBonus              = 150
@@ -541,6 +544,44 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
     // MARK: - Private – Persistence
 
+    /// Path to the persisted geocode cache file.
+    private var geocodeCacheFilePath: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+            .appendingPathComponent(Constants.geocodeCacheFileName)
+    }
+
+    /// Load previously geocoded bucket→city mappings from disk.
+    /// Key format: "latBucket,lngBucket" (e.g. "407,-740").
+    private func loadGeocodeCache() -> [String: String] {
+        guard FileManager.default.fileExists(atPath: geocodeCacheFilePath.path) else { return [:] }
+        do {
+            let data = try Data(contentsOf: geocodeCacheFilePath)
+            return try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+#if DEBUG
+            print("📇 PhotoIndexService: failed to load geocode cache – \(error.localizedDescription)")
+#endif
+            return [:]
+        }
+    }
+
+    /// Persist geocoded bucket→city mappings to disk.
+    private func saveGeocodeCache(_ cache: [String: String]) {
+        DispatchQueue.global(qos: .background).async {
+            do {
+                let data = try JSONEncoder().encode(cache)
+                try data.write(to: self.geocodeCacheFilePath)
+#if DEBUG
+                print("📇 PhotoIndexService: persisted geocode cache with \(cache.count) entries.")
+#endif
+            } catch {
+#if DEBUG
+                print("❌ PhotoIndexService: failed to persist geocode cache – \(error.localizedDescription)")
+#endif
+            }
+        }
+    }
+
     /// Path to the persisted index file in the app's cache directory.
     private var indexFilePath: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -630,6 +671,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
 
     /// Clusters index entries by rounded lat/lng (~10 km), then reverse-
     /// geocodes one representative coordinate per cluster to get a city name.
+    /// Results are cached to disk so subsequent launches skip the network calls.
     private func buildPlacesCache() async {
         let snapshot = queue.sync { _index }
 
@@ -653,6 +695,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         struct CoordKey: Hashable {
             let latBucket: Int
             let lngBucket: Int
+            var cacheKey: String { "\(latBucket),\(lngBucket)" }
         }
         var clusters: [CoordKey: (lat: Double, lng: Double, assetIDs: [String])] = [:]
         for entry in locEntries {
@@ -666,43 +709,93 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
             }
         }
 
+        // Load previously geocoded results from disk.
+        var geocodeCache = loadGeocodeCache()
+        var geocodeCacheDirty = false
+
+        let uncachedClusters = clusters.filter { geocodeCache[$0.key.cacheKey] == nil }
+
 #if DEBUG
-        print("📇 PhotoIndexService: reverse-geocoding \(clusters.count) location clusters…")
+        print("📇 PhotoIndexService: \(clusters.count) location clusters – \(clusters.count - uncachedClusters.count) cached, \(uncachedClusters.count) need geocoding.")
 #endif
 
-        let geocoder = CLGeocoder()
-        var placeMap: [String: Set<String>] = [:]   // placeName → assetIDs
+        // Only hit the network for clusters we haven't geocoded before.
+        if !uncachedClusters.isEmpty {
+            let geocoder = CLGeocoder()
+            var succeeded = 0
+            var failed = 0
 
-        for (_, cluster) in clusters {
-            // Include any cluster with at least 1 photo.
-            guard cluster.assetIDs.count >= 1 else { continue }
-
-            let location = CLLocation(latitude: cluster.lat, longitude: cluster.lng)
-            do {
-                let placemarks = try await geocoder.reverseGeocodeLocation(location)
-                if let city = placemarks.first?.locality, !city.isEmpty {
-                    var existing = placeMap[city] ?? []
-                    for id in cluster.assetIDs { existing.insert(id) }
-                    placeMap[city] = existing
+            for (key, cluster) in uncachedClusters {
+                let location = CLLocation(latitude: cluster.lat, longitude: cluster.lng)
+                do {
+                    let placemarks = try await geocoder.reverseGeocodeLocation(location)
+                    if let placemark = placemarks.first {
+                        if let city = placemark.locality, !city.isEmpty {
+                            geocodeCache[key.cacheKey] = city
+                            geocodeCacheDirty = true
+                            succeeded += 1
+                        } else {
+                            // Store empty string so we don't retry clusters
+                            // where Apple returns a placemark but no locality.
+                            geocodeCache[key.cacheKey] = ""
+                            geocodeCacheDirty = true
+#if DEBUG
+                            print("📇 PhotoIndexService: ⚠️ nil locality for cluster (\(cluster.lat), \(cluster.lng)) with \(cluster.assetIDs.count) photos. name=\(placemark.name ?? "nil"), subLocality=\(placemark.subLocality ?? "nil"), administrativeArea=\(placemark.administrativeArea ?? "nil")")
+#endif
+                        }
+                    }
+                } catch {
+                    failed += 1
+#if DEBUG
+                    print("📇 PhotoIndexService: geocode failed for (\(cluster.lat), \(cluster.lng)): \(error.localizedDescription)")
+#endif
+                    // Do NOT cache failures — we'll retry next time.
                 }
-            } catch {
-#if DEBUG
-                print("📇 PhotoIndexService: geocode failed for (\(cluster.lat), \(cluster.lng)): \(error.localizedDescription)")
-#endif
+
+                // Apple rate-limits CLGeocoder; 1.5s between requests avoids throttling.
+                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
             }
 
-            // Apple rate-limits CLGeocoder; small delay between requests.
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+#if DEBUG
+            print("📇 PhotoIndexService: geocoded \(succeeded) new clusters, \(failed) failed (will retry next launch).")
+#endif
         }
 
-        let sortedPlaces = placeMap.keys.sorted()
+        // Persist updated geocode cache if anything changed.
+        if geocodeCacheDirty {
+            saveGeocodeCache(geocodeCache)
+        }
+
+        // Build the placeMap from the (now-populated) geocode cache.
+        var placeMap: [String: Set<String>] = [:]
+        for (key, cluster) in clusters {
+            if let city = geocodeCache[key.cacheKey], !city.isEmpty {
+                var existing = placeMap[city] ?? []
+                for id in cluster.assetIDs { existing.insert(id) }
+                placeMap[city] = existing
+            }
+        }
+
+        // Only include places with at least 20 photos so the wheel
+        // isn't cluttered with one-off locations.
+        let minPhotosPerPlace = 20
+        let filtered = placeMap.filter { $0.value.count >= minPhotosPerPlace }
+        let sortedPlaces = filtered.keys.sorted()
         queue.sync {
             _cachedPlaces = sortedPlaces
-            _placeToAssetIDs = placeMap
+            _placeToAssetIDs = filtered
         }
 
 #if DEBUG
-        print("📇 PhotoIndexService: places cache built – \(sortedPlaces.count) places.")
+        let totalIndexed = snapshot.count
+        let withLocation = locEntries.count
+        print("📇 PhotoIndexService: \(withLocation)/\(totalIndexed) photos have location data (\(Int(Double(withLocation) / Double(max(totalIndexed, 1)) * 100))%).")
+        print("📇 PhotoIndexService: ── All geocoded places (sorted by count) ──")
+        for (place, ids) in placeMap.sorted(by: { $0.value.count > $1.value.count }) {
+            let status = ids.count >= minPhotosPerPlace ? "✅" : "❌"
+            print("   \(status) \(place): \(ids.count) photos")
+        }
+        print("📇 PhotoIndexService: places cache built – \(sortedPlaces.count) places (dropped \(placeMap.count - filtered.count) with fewer than \(minPhotosPerPlace) photos).")
 #endif
     }
 
@@ -744,7 +837,7 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
     private func buildPeopleCache() {
         var peopleNames: [String] = []
 
-        // Method 1: Try the conventional People subtypes.
+        // Method 1: Try the conventional People smart-album subtypes.
         // Apple has used different raw values across iOS versions.
         let candidateSubtypes: [Int] = [54, 210, 211, 212]
         for rawValue in candidateSubtypes {
@@ -761,7 +854,25 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
             }
         }
 
-        // Method 2: Fallback — scan ALL smart albums.
+        // Method 2: Scan smart albums of type .album (not .smartAlbum).
+        // On modern iOS (17+), People/Faces albums are often stored as
+        // regular albums with subtype .smartAlbumFaces (1000101) or
+        // similar non-smartAlbum types.  We scan all .album collections
+        // and filter out system names afterwards.
+        if peopleNames.isEmpty {
+            let albumResults = PHAssetCollection.fetchAssetCollections(
+                with: .album,
+                subtype: .any,
+                options: nil
+            )
+            albumResults.enumerateObjects { collection, _, _ in
+                guard let title = collection.localizedTitle, !title.isEmpty else { return }
+                let assets = PHAsset.fetchAssets(in: collection, options: nil)
+                if assets.count > 0 { peopleNames.append(title) }
+            }
+        }
+
+        // Method 3: Fallback — scan ALL smart albums.
         if peopleNames.isEmpty {
             let allSmartAlbums = PHAssetCollection.fetchAssetCollections(
                 with: .smartAlbum,
@@ -785,14 +896,14 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
         }
 
 #if DEBUG
-        print("📇 PhotoIndexService: people cache built – \(sorted.count) people (filtered \(peopleNames.count - filtered.count) system albums).")
+        print("📇 PhotoIndexService: people cache built – \(sorted.count) people from \(peopleNames.count) candidates (filtered \(peopleNames.count - filtered.count) system albums).")
 #endif
     }
 
-    /// Find a People album by scanning all smart album subtypes for a
-    /// matching title.  This uses the documented PHAssetCollection API.
+    /// Find a People album by scanning smart albums, regular albums, and
+    /// all smart album subtypes for a matching title.
     private func findPeopleAlbumDocumented(named title: String) -> PHAssetCollection? {
-        // Try known People subtypes first.
+        // Try known People smart-album subtypes first.
         let candidateSubtypes: [Int] = [54, 210, 211, 212]
         for rawValue in candidateSubtypes {
             guard let subtype = PHAssetCollectionSubtype(rawValue: rawValue) else { continue }
@@ -810,6 +921,21 @@ class PhotoIndexService: NSObject, PhotoIndexServiceProtocol, PHPhotoLibraryChan
             }
             if let found { return found }
         }
+
+        // Try regular albums (People albums on modern iOS).
+        let albums = PHAssetCollection.fetchAssetCollections(
+            with: .album,
+            subtype: .any,
+            options: nil
+        )
+        var albumMatch: PHAssetCollection?
+        albums.enumerateObjects { collection, _, stop in
+            if collection.localizedTitle == title {
+                albumMatch = collection
+                stop.pointee = true
+            }
+        }
+        if let albumMatch { return albumMatch }
 
         // Fallback: scan all smart albums.
         let all = PHAssetCollection.fetchAssetCollections(

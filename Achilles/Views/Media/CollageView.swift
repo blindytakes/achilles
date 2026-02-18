@@ -56,6 +56,23 @@ private struct Palette {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    /// Dark immersive background for the source picker (dark charcoal → muted green).
+    static let heroBackground = LinearGradient(
+        colors: [Color(red: 0.08, green: 0.08, blue: 0.08), Color(red: 0.08, green: 0.18, blue: 0.08)],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    /// Vibrant gradient for the full-width Go button.
+    static let goButtonGradient = LinearGradient(
+        colors: [lightGreen, medGreen],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    /// Subtle glow for the centre highlight pill on dark backgrounds.
+    static let wheelGlow = Color.white.opacity(0.12)
 }
 
 
@@ -83,21 +100,24 @@ struct CollageView: View {
     /// Which tab is active in the source picker.
     @State private var activeTab: PickerTab = .years
 
-    /// Scroll-position ID for each wheel (the index currently at centre).
-    /// These are the single source of truth — text styling AND scroll
-    /// position both read from these.
+    /// Scroll-position ID for each wheel (drives the ScrollView position).
     @State private var focusedYearIndex: Int? = 0
     @State private var focusedPlaceIndex: Int? = 0
-    @State private var focusedPersonIndex: Int? = 0
+
+    /// Geometry-detected centre item for each wheel.  Updated by wheelRow
+    /// when it measures itself as being closest to the visual centre.
+    /// The Go button reads from these so it always matches the highlight.
+    @State private var centeredYearIndex: Int = 0
+    @State private var centeredPlaceIndex: Int = 0
 
     // MARK: - Body
 
     var body: some View {
         NavigationView {
             ZStack {
-                // Background that shifts between picker gradient and display
+                // Background that shifts between hero gradient and display
                 if selectedSource == nil {
-                    Palette.pickerBackground.ignoresSafeArea()
+                    Palette.heroBackground.ignoresSafeArea()
                         .transition(.opacity)
                 } else {
                     Color(.systemBackground).ignoresSafeArea()
@@ -120,7 +140,7 @@ struct CollageView: View {
             }
             .animation(.spring(response: 0.5, dampingFraction: 0.85), value: selectedSource != nil)
             .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle(selectedSource.map(\.displayTitle) ?? "Make a Collage")
+            .navigationTitle(selectedSource.map(\.displayTitle) ?? "")
             .toolbar {
                 if selectedSource != nil {
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -165,42 +185,24 @@ struct CollageView: View {
 
     private var sourcePickerView: some View {
         VStack(spacing: 0) {
-            // ── Header ──
-            VStack(spacing: 10) {
-                ZStack {
-                    Text("🎞️")
-                        .font(.system(size: 38))
-                        .rotationEffect(.degrees(-10))
-                        .offset(x: -26, y: 4)
-                    Text("📸")
-                        .font(.system(size: 46))
-                    Text("✨")
-                        .font(.system(size: 26))
-                        .offset(x: 28, y: -16)
-                }
-                .scaleEffect(pickerAppeared ? 1.0 : 0.3)
-                .opacity(pickerAppeared ? 1.0 : 0.0)
+            Spacer()
 
+            // ── Title ──
+            VStack(spacing: 6) {
                 Text("Create a Collage")
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(.primary)
-                    .opacity(pickerAppeared ? 1.0 : 0.0)
-                    .offset(y: pickerAppeared ? 0 : 12)
-
-                Text("Pick a vibe and we'll find your best shots")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                    .opacity(pickerAppeared ? 1.0 : 0.0)
-                    .offset(y: pickerAppeared ? 0 : 8)
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.white)
             }
-            .padding(.top, 16)
-            .padding(.bottom, 16)
+            .opacity(pickerAppeared ? 1.0 : 0.0)
+            .animation(
+                .spring(response: 0.6, dampingFraction: 0.75),
+                value: pickerAppeared
+            )
+            .padding(.bottom, 20)
 
             // ── Segmented tab bar ──
             segmentedTabBar
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 20)
                 .opacity(pickerAppeared ? 1.0 : 0.0)
                 .animation(
                     .spring(response: 0.6, dampingFraction: 0.75).delay(0.06),
@@ -209,7 +211,7 @@ struct CollageView: View {
 
             // ── Wheel for active tab ──
             wheelForActiveTab
-                .padding(.top, 20)
+                .padding(.top, 16)
                 .scaleEffect(pickerAppeared ? 1.0 : 0.85)
                 .opacity(pickerAppeared ? 1.0 : 0.0)
                 .animation(
@@ -219,13 +221,15 @@ struct CollageView: View {
 
             // ── "Go" button ──
             goButton
-                .padding(.top, 20)
+                .padding(.top, 16)
+                .padding(.horizontal, 20)
                 .opacity(pickerAppeared ? 1.0 : 0.0)
                 .animation(
                     .spring(response: 0.6, dampingFraction: 0.75).delay(0.15),
                     value: pickerAppeared
                 )
 
+            Spacer()
             Spacer()
         }
     }
@@ -527,9 +531,8 @@ struct CollageView: View {
     // MARK: - Segmented Tab Bar
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    /// All three tabs are always visible; empty ones show a helpful message.
     private var availableTabs: [PickerTab] {
-        [.years, .places, .people]
+        [.years, .places]
     }
 
     private var segmentedTabBar: some View {
@@ -543,13 +546,13 @@ struct CollageView: View {
                 } label: {
                     VStack(spacing: 6) {
                         Image(systemName: tab.icon)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 20, weight: .medium))
                         Text(tab.label)
-                            .font(.caption.weight(.semibold))
+                            .font(.subheadline.weight(.semibold))
                     }
-                    .foregroundColor(activeTab == tab ? .white : .secondary)
+                    .foregroundColor(activeTab == tab ? .white : .white.opacity(0.6))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 14)
                     .background(
                         Group {
                             if activeTab == tab {
@@ -566,7 +569,7 @@ struct CollageView: View {
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.systemGray6))
+                .fill(Color.white.opacity(0.1))
         )
         .onAppear {
             // Default to the first available tab
@@ -581,7 +584,7 @@ struct CollageView: View {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /// Height of one row in the scroll wheel.
-    private let wheelRowHeight: CGFloat = 52
+    private let wheelRowHeight: CGFloat = 72
     /// Visible rows (odd so center is focused).
     private let visibleWheelRows: Int = 5
 
@@ -590,7 +593,6 @@ struct CollageView: View {
         switch activeTab {
         case .years:  return viewModel.availableYears.map { "\($0)" }
         case .places: return viewModel.availablePlaces
-        case .people: return viewModel.availablePeople
         }
     }
 
@@ -599,7 +601,6 @@ struct CollageView: View {
         switch activeTab {
         case .years:  return $focusedYearIndex
         case .places: return $focusedPlaceIndex
-        case .people: return $focusedPersonIndex
         }
     }
 
@@ -608,12 +609,24 @@ struct CollageView: View {
         activeFocusedIndex.wrappedValue ?? 0
     }
 
-    /// The accent color for the active tab.
+    /// Binding to the geometry-detected centre index for the active tab.
+    private var activeCenteredIndex: Binding<Int> {
+        switch activeTab {
+        case .years:  return $centeredYearIndex
+        case .places: return $centeredPlaceIndex
+        }
+    }
+
+    /// The geometry-detected centre index (what the user actually sees highlighted).
+    private var resolvedCenteredIndex: Int {
+        activeCenteredIndex.wrappedValue
+    }
+
+    /// The accent color for the active tab (bright for dark background).
     private var activeAccentColor: Color {
         switch activeTab {
-        case .years:  return Palette.darkGreen
-        case .places: return Color(red: 0.2, green: 0.6, blue: 0.85)
-        case .people: return Color(red: 0.85, green: 0.45, blue: 0.55)
+        case .years:  return Palette.lightGreen
+        case .places: return Color(red: 0.3, green: 0.7, blue: 0.95)
         }
     }
 
@@ -624,8 +637,6 @@ struct CollageView: View {
             return ("📅", "No Years Found", "Photos are still loading…")
         case .places:
             return ("📍", "No Places Found", "Photos need location data to appear here")
-        case .people:
-            return ("👤", "No People Found", "Open the People album in Photos first")
         }
     }
 
@@ -638,10 +649,10 @@ struct CollageView: View {
                     .font(.system(size: 36))
                 Text(emptyWheelMessage.title)
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 Text(emptyWheelMessage.subtitle)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
@@ -651,6 +662,7 @@ struct CollageView: View {
             scrollWheel(
                 items: items,
                 focusedIndex: activeFocusedIndex,
+                centeredIndex: activeCenteredIndex,
                 accentColor: activeAccentColor
             )
             .id(activeTab) // Force fresh wheel when tab changes
@@ -659,6 +671,19 @@ struct CollageView: View {
                 removal: .move(edge: .leading).combined(with: .opacity)
             ))
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: activeTab)
+            // Clamp indices when the data source changes to prevent stale out-of-range values
+            .onChange(of: viewModel.availableYears.count) { _, newCount in
+                guard newCount > 0 else { return }
+                let maxIdx = newCount - 1
+                if centeredYearIndex > maxIdx { centeredYearIndex = maxIdx }
+                if let fi = focusedYearIndex, fi > maxIdx { focusedYearIndex = maxIdx }
+            }
+            .onChange(of: viewModel.availablePlaces.count) { _, newCount in
+                guard newCount > 0 else { return }
+                let maxIdx = newCount - 1
+                if centeredPlaceIndex > maxIdx { centeredPlaceIndex = maxIdx }
+                if let fi = focusedPlaceIndex, fi > maxIdx { focusedPlaceIndex = maxIdx }
+            }
         }
     }
 
@@ -669,6 +694,7 @@ struct CollageView: View {
     private func scrollWheel(
         items: [String],
         focusedIndex: Binding<Int?>,
+        centeredIndex: Binding<Int>,
         accentColor: Color
     ) -> some View {
         let wheelHeight = wheelRowHeight * CGFloat(visibleWheelRows)
@@ -677,13 +703,14 @@ struct CollageView: View {
 
         return ZStack {
             // ── Fixed highlight pill, always dead-centre ──
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(accentColor.opacity(0.1))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(accentColor.opacity(0.12))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(accentColor.opacity(0.25), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(accentColor.opacity(0.4), lineWidth: 1.5)
                 )
                 .frame(height: wheelRowHeight)
+                .padding(.horizontal, 16)
                 .allowsHitTesting(false)
 
             // ── Scrollable items that move through the centre ──
@@ -698,7 +725,8 @@ struct CollageView: View {
                             item: item,
                             centerY: centerY,
                             accentColor: accentColor,
-                            focusedIndex: focusedIndex
+                            focusedIndex: focusedIndex,
+                            centeredIndex: centeredIndex
                         )
                         .id(index)
                     }
@@ -717,27 +745,29 @@ struct CollageView: View {
             .mask(
                 VStack(spacing: 0) {
                     LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: wheelRowHeight * 1.2)
+                        .frame(height: wheelRowHeight * 1.5)
                     Color.black
                     LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: wheelRowHeight * 1.2)
+                        .frame(height: wheelRowHeight * 1.5)
                 }
             )
         }
         .coordinateSpace(name: Self.wheelCoordinateSpace)
         .frame(height: wheelHeight)
-        .padding(.horizontal, 40)
+        .padding(.horizontal, 24)
     }
 
     /// A single row in the scroll wheel.  Uses GeometryReader to measure its
-    /// vertical position inside the wheel and styles itself as "focused" when
-    /// it's physically near the centre — no reliance on the binding value.
+    /// vertical position and applies continuous proximity-based styling for a
+    /// 3D carousel effect.  The closest-to-centre row writes its index to
+    /// `centeredIndex` so the Go button label stays in sync.
     private func wheelRow(
         index: Int,
         item: String,
         centerY: CGFloat,
         accentColor: Color,
-        focusedIndex: Binding<Int?>
+        focusedIndex: Binding<Int?>,
+        centeredIndex: Binding<Int>
     ) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -748,16 +778,29 @@ struct CollageView: View {
             GeometryReader { geo in
                 let rowMidY  = geo.frame(in: .named(Self.wheelCoordinateSpace)).midY
                 let distance = abs(rowMidY - centerY)
-                let isFocused = distance < (wheelRowHeight * 0.6)
+                // 0 at edges → 1 at dead centre, gentle curve so neighbors stay readable
+                let rawProgress = max(0, 1 - distance / (wheelRowHeight * 3))
+                let progress = pow(rawProgress, 1.2)
+                // Continuous interpolation
+                let fontSize: CGFloat = 22 + (52 - 22) * progress
+                let rowOpacity = 0.35 + (1.0 - 0.35) * progress
+                let rowScale   = 0.75 + (1.0 - 0.75) * progress
+                let isCentered = distance < (wheelRowHeight * 0.5)
 
                 Text(item)
                     .font(.system(
-                        size: isFocused ? 28 : 17,
-                        weight: isFocused ? .bold : .medium
+                        size: fontSize,
+                        weight: progress > 0.5 ? .bold : .medium
                     ))
-                    .foregroundColor(isFocused ? accentColor : .secondary)
+                    .foregroundColor(.white.opacity(0.4 + 0.6 * progress))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .animation(.easeOut(duration: 0.15), value: isFocused)
+                    .scaleEffect(rowScale)
+                    .opacity(rowOpacity)
+                    .onChange(of: isCentered) { _, nowCentered in
+                        if nowCentered {
+                            centeredIndex.wrappedValue = index
+                        }
+                    }
             }
         }
         .buttonStyle(.plain)
@@ -770,17 +813,17 @@ struct CollageView: View {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /// The CollageSourceType for the current wheel selection.
+    /// Uses the geometry-detected centre index so it always matches
+    /// what the user sees highlighted in the scroll wheel.
     private var activeSource: CollageSourceType? {
         let items = activeWheelItems
         guard !items.isEmpty else { return nil }
-        let idx = min(resolvedFocusedIndex, items.count - 1)
+        let idx = min(max(resolvedCenteredIndex, 0), items.count - 1)
         switch activeTab {
         case .years:
             return .year(viewModel.availableYears[idx])
         case .places:
             return .place(viewModel.availablePlaces[idx])
-        case .people:
-            return .person(viewModel.availablePeople[idx])
         }
     }
 
@@ -788,7 +831,7 @@ struct CollageView: View {
     private var goButtonLabel: String {
         let items = activeWheelItems
         guard !items.isEmpty else { return "Create Collage" }
-        let idx = min(resolvedFocusedIndex, items.count - 1)
+        let idx = min(max(resolvedCenteredIndex, 0), items.count - 1)
         return "Create \(items[idx]) Collage"
     }
 
@@ -803,16 +846,16 @@ struct CollageView: View {
         } label: {
             HStack(spacing: 8) {
                 Text(goButtonLabel)
-                    .font(.headline.weight(.bold))
+                    .font(.system(size: 20, weight: .bold))
                 Image(systemName: "arrow.right")
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(size: 16, weight: .bold))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 13)
-            .background(Palette.primaryGradient)
-            .clipShape(Capsule())
-            .shadow(color: Palette.darkGreen.opacity(0.35), radius: 8, x: 0, y: 4)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Palette.goButtonGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: Palette.darkGreen.opacity(0.4), radius: 10, x: 0, y: 5)
         }
         .disabled(activeSource == nil)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: goButtonLabel)
@@ -975,15 +1018,14 @@ private struct BounceButtonStyle: ButtonStyle {
 
 // MARK: - PickerTab
 
-/// The three categories in the segmented source picker.
+/// The categories in the segmented source picker.
 private enum PickerTab: Hashable {
-    case years, places, people
+    case years, places
 
     var label: String {
         switch self {
         case .years:  return "Years"
         case .places: return "Places"
-        case .people: return "People"
         }
     }
 
@@ -991,7 +1033,6 @@ private enum PickerTab: Hashable {
         switch self {
         case .years:  return "calendar"
         case .places: return "mappin.and.ellipse"
-        case .people: return "person.2.fill"
         }
     }
 }

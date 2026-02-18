@@ -117,7 +117,7 @@ struct MemoryCollage {
 
     /// How many candidates to fetch from the index before randomly sampling
     /// down to maxPhotos.  Larger pool = more variety on each Regenerate.
-    static let candidatePoolSize = 25
+    static let candidatePoolSize = 150
 
     // MARK: - Convenience
     var title: String { source.displayTitle }
