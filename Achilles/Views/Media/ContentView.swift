@@ -297,6 +297,8 @@ struct TutorialOverlayView: View {
 
 // MARK: - Main Content View (Your existing structure preserved)
 struct ContentView: View {
+    var initialSelectedYear: Int? = nil
+
     @EnvironmentObject var authVM: AuthViewModel
     @EnvironmentObject var viewModel: PhotoViewModel
     @StateObject private var tutorialManager = InteractiveTutorialManager()
@@ -335,9 +337,14 @@ struct ContentView: View {
         }
         .onReceive(viewModel.$availableYearsAgo) { availableYears in
             if selectedYearsAgo == nil, !availableYears.isEmpty {
-                let defaultYear = availableYears.contains(defaultTargetYear)
-                                    ? defaultTargetYear
-                                    : availableYears.first!
+                let defaultYear: Int
+                if let carouselYear = initialSelectedYear, availableYears.contains(carouselYear) {
+                    defaultYear = carouselYear
+                } else if availableYears.contains(defaultTargetYear) {
+                    defaultYear = defaultTargetYear
+                } else {
+                    defaultYear = availableYears.first!
+                }
                 selectedYearsAgo = defaultYear
                 print("Setting initial selected year to: \(defaultYear)")
                 

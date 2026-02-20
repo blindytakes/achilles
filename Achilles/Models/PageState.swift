@@ -20,10 +20,16 @@
 import Foundation
 
 
-enum PageState {
+enum PageState: Equatable {
     case idle
     case loading
     case loaded(featured: MediaItem?, grid: [MediaItem]) // Holds prepared data
     case empty
     case error(message: String)
+
+    /// Whether this state is `.loaded` (used for reactivity in SwiftUI onChange)
+    var isLoaded: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
 }

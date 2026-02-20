@@ -81,7 +81,9 @@ struct ThrowbaksApp: App {
     @StateObject private var photoViewModel = PhotoViewModel()
     @State private var photoStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDate: Double = 0.0
-    
+    @State private var showCarousel = true
+    @State private var carouselSelectedYear: Int? = nil
+
     // Local notification service for daily memory reminders
     private let notificationService = NotificationService()
 
@@ -268,37 +270,9 @@ struct ThrowbaksApp: App {
                     ])
                 }
         } else {
-            // All authenticated users (registered AND guests): decide between intro video or main content
-            if !shouldPlayIntroVideo() || authVM.showMainApp {
-                ContentView()
-                    .onAppear {
-                        
-                        clearDeliveredNotifications()
-                        
-                        // Log main content screen view
-                        Analytics.logEvent(AnalyticsEventScreenView, parameters: [
-                            AnalyticsParameterScreenName: "main_content",
-                            AnalyticsParameterScreenClass: "ContentView"
-                        ])
-                        
-                        // Log app open event
-                        Analytics.logEvent("app_open", parameters: [
-                            "source": "direct",
-                            "user_type": authVM.user?.isAnonymous == true ? "anonymous" : "registered"
-                        ])
-                        
-                        // Set user properties
-                        Analytics.setUserProperty(
-                            authVM.user?.isAnonymous == true ? "anonymous" : "registered",
-                            forName: "user_type"
-                        )
-                        
-                        // Schedule daily memory notifications
-                        Task {
-                            await scheduleDailyMemoryNotifications()
-                        }
-                    }
-            } else {
+            // All authenticated users (registered AND guests):
+            // Flow: DailyWelcomeView (once/day) → YearCarouselView (every cold start) → ContentView
+            if shouldPlayIntroVideo() && !authVM.showMainApp {
                 DailyWelcomeView()
                     .onAppear {
                         // Log daily welcome screen view
@@ -306,11 +280,55 @@ struct ThrowbaksApp: App {
                             AnalyticsParameterScreenName: "daily_welcome",
                             AnalyticsParameterScreenClass: "DailyWelcomeView"
                         ])
-                        
+
                         // Log onboarding start
                         Analytics.logEvent("onboarding_start", parameters: [
                             "onboarding_type": "daily_welcome"
                         ])
+                    }
+            } else if showCarousel {
+                YearCarouselView(
+                    selectedYear: $carouselSelectedYear,
+                    onDismiss: {
+                        showCarousel = false
+                    }
+                )
+                .onAppear {
+                    clearDeliveredNotifications()
+
+                    Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                        AnalyticsParameterScreenName: "year_carousel",
+                        AnalyticsParameterScreenClass: "YearCarouselView"
+                    ])
+                }
+            } else {
+                ContentView(initialSelectedYear: carouselSelectedYear)
+                    .onAppear {
+
+                        clearDeliveredNotifications()
+
+                        // Log main content screen view
+                        Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                            AnalyticsParameterScreenName: "main_content",
+                            AnalyticsParameterScreenClass: "ContentView"
+                        ])
+
+                        // Log app open event
+                        Analytics.logEvent("app_open", parameters: [
+                            "source": "direct",
+                            "user_type": authVM.user?.isAnonymous == true ? "anonymous" : "registered"
+                        ])
+
+                        // Set user properties
+                        Analytics.setUserProperty(
+                            authVM.user?.isAnonymous == true ? "anonymous" : "registered",
+                            forName: "user_type"
+                        )
+
+                        // Schedule daily memory notifications
+                        Task {
+                            await scheduleDailyMemoryNotifications()
+                        }
                     }
             }
         }

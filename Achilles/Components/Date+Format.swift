@@ -79,9 +79,17 @@ extension Date {
         return "\(monthDayWithOrdinalPart) \(year)"
     }
     
-    /// “Apr 27, 2025, 9:22 PM”
+    /// "Apr 27, 2025, 9:22 PM"
     func abbreviatedDateShortTime() -> String {
         return Self.abbreviatedDateShortTimeFormatter.string(from: self)
+    }
+
+    /// "Feb 19th" — abbreviated month + day with ordinal
+    func shortMonthDayWithOrdinal() -> String {
+        let df = DateFormatter()
+        df.dateFormat = "MMM d"
+        let base = df.string(from: self)
+        return "\(base)\(ordinalSuffix)"
     }
 }
 

@@ -671,6 +671,27 @@ class PhotoViewModel: ObservableObject {
         return preloadedFeaturedImages[yearsAgo]
     }
 
+    // MARK: - Carousel Support
+
+    /// Returns the featured MediaItem for a given year, if loaded.
+    func getFeaturedItem(for yearsAgo: Int) -> MediaItem? {
+        guard case .loaded(let featured, _) = pageStateByYear[yearsAgo] else { return nil }
+        return featured
+    }
+
+    /// Load pages and featured images for all given years (used by carousel).
+    func loadFeaturedImagesForCarousel(years: [Int]) {
+        for year in years {
+            loadPage(yearsAgo: year)
+
+            if preloadedFeaturedImages[year] == nil,
+               activeFeaturedPrefetchTasks[year] == nil,
+               let loadTask = activeLoadTasks[year] {
+                startDefinitiveFeaturedImagePrefetchTask(for: year, mainLoadTask: loadTask)
+            }
+        }
+    }
+
     func requestImage(for asset: PHAsset, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
         let assetIdentifier = asset.localIdentifier
         let isHighRes = targetSize == PHImageManagerMaximumSize
