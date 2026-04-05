@@ -1,25 +1,8 @@
-import CoreMotion
-import Combine
-
-class ParallaxMotionManager: ObservableObject {
-    @Published var xOffset: CGFloat = 0
-    @Published var yOffset: CGFloat = 0
-
-    private var motionManager = CMMotionManager()
-
-    init() {
-        motionManager.deviceMotionUpdateInterval = 1.0 / 60.0
-        motionManager.startDeviceMotionUpdates(to: .main) { motion, error in
-            guard let motion = motion else { return }
-            DispatchQueue.main.async {
-                self.xOffset = CGFloat(motion.attitude.roll) * 10
-                self.yOffset = CGFloat(motion.attitude.pitch) * 10
-            }
-        }
-    }
-
-    deinit {
-        motionManager.stopDeviceMotionUpdates()
-    }
-}
-
+// ParallaxMotionManager.swift
+//
+// ⚠️ REMOVED — This component has been retired.
+//
+// Was only used by FeaturedYearFullScreenView, which has been removed.
+// The parallax motion effect no longer exists in the app.
+//
+// This file can be safely deleted from the Xcode project.

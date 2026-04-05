@@ -31,7 +31,7 @@ class InteractiveTutorialManager: ObservableObject {
             switch self {
             case .welcome: return "Welcome to Throwbaks!"
             case .swipeYears: return "Swipe Between Years"
-            case .tapFeatured: return "Tap Your Featured Photo"
+            case .tapFeatured: return "Tap a Memory"
             case .viewDetails: return "Zoom, Live Photos, & Share"
             case .useLocation: return "View Photo Locations"
             case .completed: return "Get Ready To Explore!"
@@ -45,7 +45,7 @@ class InteractiveTutorialManager: ObservableObject {
             case .swipeYears:
                 return "Swipe Left to see older years, Swipe Right to see newer years"
             case .tapFeatured:
-                return "Tap the Featured Photo to see all photos from that day"
+                return "Tap any photo to open that memory in full view"
             case .viewDetails:
                 return "Zoom in, View Live Photos, & Share to your favorite apps"
             case .useLocation:
@@ -295,6 +295,48 @@ struct TutorialOverlayView: View {
     }
 }
 
+private struct MainExperienceHintView: View {
+    let text: String
+    var showsDirectionalArrows: Bool = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if showsDirectionalArrows {
+                swipeArrow(systemName: "arrow.left", rotation: 0, xOffset: -2, yOffset: 0)
+            }
+
+            Text(text)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+
+            if showsDirectionalArrows {
+                swipeArrow(systemName: "arrow.right", rotation: 0, xOffset: 2, yOffset: 0)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 24)
+        .allowsHitTesting(false)
+    }
+
+    private func swipeArrow(systemName: String, rotation: Double, xOffset: CGFloat, yOffset: CGFloat) -> some View {
+        Image(systemName: systemName)
+            .font(.footnote.weight(.black))
+            .foregroundColor(.white.opacity(0.9))
+            .rotationEffect(.degrees(rotation))
+            .offset(x: xOffset, y: yOffset)
+            .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 2)
+    }
+}
+
 // MARK: - Main Content View (Your existing structure preserved)
 struct ContentView: View {
     var initialSelectedYear: Int? = nil
@@ -539,22 +581,27 @@ struct TutorialEnabledLoadedYearContentView: View {
         if case .loaded(_, let items) = pageState { return items }
         return []
     }
-    private var hasDismissedSplash: Bool {
-        viewModel.dismissedSplashForYearsAgo.contains(yearsAgo)
-    }
     private var allGridItems: [MediaItem] {
         var items = [MediaItem]()
         if let featured = featuredItem { items.append(featured) }
         items.append(contentsOf: gridItems)
         return items
     }
+    private var mainExperienceHintText: String? {
+        guard tutorialManager.hasCompleted, !tutorialManager.isActive else { return nil }
+        return "Swipe left/right between years"
+    }
     
     @State private var didAnimateDate = false
     @State private var dateAppeared = false
     @State private var dateBounce = false
     @State private var selectedDetail: MediaItem?
+    @Environment(\.heroNamespace) private var heroNamespace
+    @Environment(\.heroYear) private var heroYear
+    @Environment(\.showCarousel) private var showCarousel
+    @State private var gridAppeared = false
+    @State private var heroTransitionDone = false
     
-    private let fadeDuration: Double = 1.0
     private let dateSpringResponse: Double = 0.7
     private let dateSpringDamping: Double = 0.9
     private let dateBounceDelay: Double = 0.2
@@ -575,107 +622,127 @@ struct TutorialEnabledLoadedYearContentView: View {
         GridItem(.flexible(), spacing: 5),
         GridItem(.flexible(), spacing: 5)
     ]
+
+    private func animateDateHeaderIfNeeded() {
+        guard !didAnimateDate else { return }
+        didAnimateDate = true
+
+        withAnimation(.spring(
+            response: dateSpringResponse,
+            dampingFraction: dateSpringDamping
+        )) {
+            dateAppeared = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceDelay) {
+            withAnimation(.spring(
+                response: dateSpringResponse,
+                dampingFraction: dateSpringDamping
+            )) {
+                dateBounce = true
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceEnd) {
+                withAnimation(.spring(
+                    response: dateSpringResponse,
+                    dampingFraction: dateSpringDamping
+                )) {
+                    dateBounce = false
+                }
+            }
+        }
+    }
     
     private var gridView: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if hasDismissedSplash {
-                    VStack(spacing: 3) {
-                        Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
-                            .font(.largeTitle.bold())
-                            .padding(.top, 16)
-                        
-                        Text(formattedDate)
-                            .font(.system(size: 20, weight: .regular))
-                            .scaleEffect(dateAppeared ? (dateBounce ? dateBounceScale : 1) : dateAppearScale)
-                            .rotationEffect(dateAppeared ? .zero : .degrees(dateAppearRotation))
-                            .animation(.spring(response: dateSpringResponse, dampingFraction: dateSpringDamping),
-                                       value: dateAppeared)
-                            .animation(.spring(response: dateSpringResponse, dampingFraction: dateSpringDamping),
-                                       value: dateBounce)
-                    }
-                    .padding(.bottom, 12)
-                    .onChange(of: hasDismissedSplash) { oldValue, newValue in
-                        guard newValue, !didAnimateDate else { return }
-                        didAnimateDate = true
-                        
-                        withAnimation(.spring(
-                            response: dateSpringResponse,
-                            dampingFraction: dateSpringDamping
-                        )) {
-                            dateAppeared = true
-                        }
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceDelay) {
-                            withAnimation(.spring(
-                                response: dateSpringResponse,
-                                dampingFraction: dateSpringDamping
-                            )) {
-                                dateBounce = true
-                            }
-                            
-                            DispatchQueue.main.asyncAfter(deadline: .now() + dateBounceEnd) {
-                                withAnimation(.spring(
-                                    response: dateSpringResponse,
-                                    dampingFraction: dateSpringDamping
-                                )) {
-                                    dateBounce = false
-                                }
-                            }
-                        }
-                    }
+                VStack(spacing: 3) {
+                    Text("\(yearsAgo) Year\(yearsAgo == 1 ? "" : "s") Ago")
+                        .font(.largeTitle.bold())
+                        .padding(.top, 16)
+
+                    Text(formattedDate)
+                        .font(.system(size: 20, weight: .regular))
+                        .scaleEffect(dateAppeared ? (dateBounce ? dateBounceScale : 1) : dateAppearScale)
+                        .rotationEffect(dateAppeared ? .zero : .degrees(dateAppearRotation))
+                        .animation(.spring(response: dateSpringResponse, dampingFraction: dateSpringDamping),
+                                   value: dateAppeared)
+                        .animation(.spring(response: dateSpringResponse, dampingFraction: dateSpringDamping),
+                                   value: dateBounce)
                 }
+                .padding(.bottom, 12)
+                .onAppear(perform: animateDateHeaderIfNeeded)
                 
                 LazyVGrid(columns: columns, spacing: 4) {
-                    ForEach(allGridItems, id: \.id) { item in
-                        withAnimation(nil) {
+                    ForEach(Array(allGridItems.enumerated()), id: \.element.id) { index, item in
+                        let isHero = index == 0 && heroYear == yearsAgo
+                        let delay = Double(min(index, 8)) * 0.06
+
+                        if isHero, let ns = heroNamespace {
+                            // Hero cell: GridItemView loads underneath while the
+                            // preloaded image flies in via matchedGeometryEffect.
+                            ZStack {
+                                GridItemView(viewModel: viewModel, item: item) {
+                                    selectedDetail = item
+                                    tutorialManager.actionPerformed(for: .tapFeatured)
+                                    tutorialManager.actionPerformed(for: .viewDetails)
+                                }
+                                .aspectRatio(1, contentMode: .fill)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+
+                                if !heroTransitionDone,
+                                   let heroImg = viewModel.getPreloadedFeaturedImage(for: yearsAgo) {
+                                    Image(uiImage: heroImg)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .aspectRatio(1, contentMode: .fill)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                                        .matchedGeometryEffect(
+                                            id: "hero-featured-\(yearsAgo)",
+                                            in: ns,
+                                            isSource: !showCarousel
+                                        )
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                        } else {
                             GridItemView(viewModel: viewModel, item: item) {
                                 selectedDetail = item
+                                tutorialManager.actionPerformed(for: .tapFeatured)
                                 tutorialManager.actionPerformed(for: .viewDetails)
                             }
                             .aspectRatio(1, contentMode: .fill)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                             .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                            .opacity(gridAppeared ? 1 : 0)
+                            .offset(y: gridAppeared ? 0 : 24)
+                            .animation(.easeOut(duration: 0.45).delay(delay), value: gridAppeared)
                         }
-                        .transaction { tx in tx.animation = nil }
                     }
                 }
                 .padding(.horizontal, 6)
                 
-                if hasDismissedSplash {
-                    Text("Make More Memories!")
-                      .font(.headline)
-                      .padding(.vertical, 12)
-                }
+                Text("Make More Memories!")
+                  .font(.headline)
+                  .padding(.vertical, 12)
                 
                 Spacer()
-            }
-            .opacity(hasDismissedSplash ? 1 : 0)
-            .animation(nil, value: hasDismissedSplash)
-            .transaction { tx in
-                tx.animation = nil
-                tx.disablesAnimations = true
             }
         }
     }
     
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             gridView
-            
-            if let featured = featuredItem, !hasDismissedSplash {
-                FeaturedYearFullScreenView(
-                    item: featured,
-                    yearsAgo: yearsAgo,
-                    onTap: {
-                        viewModel.markSplashDismissed(for: yearsAgo)
-                        tutorialManager.actionPerformed(for: .tapFeatured)
-                    },
-                    viewModel: viewModel,
-                    preloadedImage: viewModel.getPreloadedFeaturedImage(for: yearsAgo)
+
+            if let hintText = mainExperienceHintText {
+                MainExperienceHintView(
+                    text: hintText,
+                    showsDirectionalArrows: true
                 )
-                .transition(.opacity)
-                .animation(.easeInOut(duration: fadeDuration), value: hasDismissedSplash)
+                    .transition(.opacity)
             }
         }
         .sheet(item: $selectedDetail) { item in
@@ -687,6 +754,25 @@ struct TutorialEnabledLoadedYearContentView: View {
             )
         }
         .onDisappear { selectedDetail = nil }
+        .onAppear {
+            // Normal page transition (carousel already gone): start stagger immediately
+            if !showCarousel { gridAppeared = true }
+        }
+        .onChange(of: showCarousel) { _, newValue in
+            guard !newValue else { return }
+            // Carousel just dismissed — stagger starts after hero animation begins
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                gridAppeared = true
+            }
+            // Fade out the hero overlay once the matched-geometry animation settles
+            if heroYear == yearsAgo {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        heroTransitionDone = true
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -20,8 +20,6 @@ struct YearCarouselView: View {
 
     // Carousel state
     @State private var hasAppeared = false
-    @State private var isTransitioning = false
-    @State private var expandingCardYear: Int? = nil
     @State private var lastCenteredYear: Int? = nil
 
     private static let carouselCoordinateSpace = "carouselCoord"
@@ -45,8 +43,6 @@ struct YearCarouselView: View {
                 if viewModel.initialYearScanComplete {
                     if viewModel.availableYearsAgo.isEmpty {
                         emptyStateView
-                    } else if isTransitioning, let year = expandingCardYear {
-                        expandedCardView(yearsAgo: year, in: geometry)
                     } else {
                         carouselContent(in: geometry)
                     }
@@ -175,66 +171,9 @@ struct YearCarouselView: View {
 
     private func handleCardTap(yearsAgo: Int) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-
-        Analytics.logEvent("carousel_year_selected", parameters: [
-            "years_ago": yearsAgo
-        ])
-
-        expandingCardYear = yearsAgo
-
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-            isTransitioning = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            selectedYear = yearsAgo
-            onDismiss()
-        }
-    }
-
-    @ViewBuilder
-    private func expandedCardView(yearsAgo: Int, in geometry: GeometryProxy) -> some View {
-        ZStack {
-            if let image = viewModel.getPreloadedFeaturedImage(for: yearsAgo) {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .clipped()
-            } else {
-                Color.black
-            }
-
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    .clear,
-                    .clear,
-                    .black.opacity(0.3),
-                    .black.opacity(0.7)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(spacing: 16) {
-                Text(yearsAgo == 1 ? "1 Year Ago" : "\(yearsAgo) Years Ago")
-                    .font(.system(size: 56, weight: .bold))
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
-                    .shadow(color: .white.opacity(0.3), radius: 2, x: 0, y: 0)
-                    .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 0)
-
-                Text(Self.dateLabel(for: yearsAgo))
-                    .font(.custom("SnellRoundhand-Bold", size: 42))
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(1.0), radius: 2, x: 0, y: 0)
-                    .shadow(color: .black.opacity(0.65), radius: 6, x: 0, y: 2)
-                    .shadow(color: .white.opacity(0.3), radius: 1.8, x: 0, y: 0)
-            }
-            .padding(.top, geometry.size.height * 0.55)
-        }
-        .ignoresSafeArea()
-        .transition(.scale(scale: 0.7).combined(with: .opacity))
+        Analytics.logEvent("carousel_year_selected", parameters: ["years_ago": yearsAgo])
+        selectedYear = yearsAgo
+        onDismiss()
     }
 
     // MARK: - Empty & Loading States
@@ -285,6 +224,27 @@ struct YearCarouselView: View {
     }
 }
 
+// MARK: - Hero card image modifier
+
+private struct HeroCardImageModifier: ViewModifier {
+    let yearsAgo: Int
+    @Environment(\.heroNamespace) private var heroNamespace
+    @Environment(\.heroYear) private var heroYear
+    @Environment(\.showCarousel) private var showCarousel
+
+    func body(content: Content) -> some View {
+        if let ns = heroNamespace, heroYear == yearsAgo {
+            content.matchedGeometryEffect(
+                id: "hero-featured-\(yearsAgo)",
+                in: ns,
+                isSource: showCarousel
+            )
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Year Carousel Card
 
 struct YearCarouselCard: View {
@@ -321,6 +281,7 @@ struct YearCarouselCard: View {
                     .aspectRatio(contentMode: .fill)
                     .frame(width: cardWidth, height: cardHeight)
                     .clipped()
+                    .modifier(HeroCardImageModifier(yearsAgo: yearsAgo))
             } else {
                 Rectangle()
                     .fill(Color(.systemGray6))

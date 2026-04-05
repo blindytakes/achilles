@@ -83,6 +83,7 @@ struct ThrowbaksApp: App {
     @AppStorage("lastIntroVideoPlayDate") private var lastIntroVideoPlayDate: Double = 0.0
     @State private var showCarousel = true
     @State private var carouselSelectedYear: Int? = nil
+    @Namespace private var heroNamespace
 
     // Local notification service for daily memory reminders
     private let notificationService = NotificationService()
@@ -286,50 +287,43 @@ struct ThrowbaksApp: App {
                             "onboarding_type": "daily_welcome"
                         ])
                     }
-            } else if showCarousel {
-                YearCarouselView(
-                    selectedYear: $carouselSelectedYear,
-                    onDismiss: {
-                        showCarousel = false
-                    }
-                )
-                .onAppear {
-                    clearDeliveredNotifications()
-
-                    Analytics.logEvent(AnalyticsEventScreenView, parameters: [
-                        AnalyticsParameterScreenName: "year_carousel",
-                        AnalyticsParameterScreenClass: "YearCarouselView"
-                    ])
-                }
             } else {
-                ContentView(initialSelectedYear: carouselSelectedYear)
-                    .onAppear {
+                // ZStack: ContentView renders underneath while carousel is shown.
+                // Both are in the hierarchy simultaneously so matchedGeometryEffect
+                // can animate the hero card → grid cell transition.
+                ZStack {
+                    ContentView(initialSelectedYear: carouselSelectedYear)
 
-                        clearDeliveredNotifications()
-
-                        // Log main content screen view
-                        Analytics.logEvent(AnalyticsEventScreenView, parameters: [
-                            AnalyticsParameterScreenName: "main_content",
-                            AnalyticsParameterScreenClass: "ContentView"
-                        ])
-
-                        // Log app open event
-                        Analytics.logEvent("app_open", parameters: [
-                            "source": "direct",
-                            "user_type": authVM.user?.isAnonymous == true ? "anonymous" : "registered"
-                        ])
-
-                        // Set user properties
-                        Analytics.setUserProperty(
-                            authVM.user?.isAnonymous == true ? "anonymous" : "registered",
-                            forName: "user_type"
+                    if showCarousel {
+                        YearCarouselView(
+                            selectedYear: $carouselSelectedYear,
+                            onDismiss: { showCarousel = false }
                         )
-
-                        // Schedule daily memory notifications
-                        Task {
-                            await scheduleDailyMemoryNotifications()
-                        }
+                        .transition(.opacity)
+                        .onAppear { clearDeliveredNotifications() }
                     }
+                }
+                .animation(.spring(response: 0.5, dampingFraction: 0.85), value: showCarousel)
+                .environment(\.heroNamespace, heroNamespace)
+                .environment(\.heroYear, carouselSelectedYear)
+                .environment(\.showCarousel, showCarousel)
+                .onChange(of: showCarousel) { _, newValue in
+                    guard !newValue else { return }
+                    clearDeliveredNotifications()
+                    Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+                        AnalyticsParameterScreenName: "main_content",
+                        AnalyticsParameterScreenClass: "ContentView"
+                    ])
+                    Analytics.logEvent("app_open", parameters: [
+                        "source": "direct",
+                        "user_type": authVM.user?.isAnonymous == true ? "anonymous" : "registered"
+                    ])
+                    Analytics.setUserProperty(
+                        authVM.user?.isAnonymous == true ? "anonymous" : "registered",
+                        forName: "user_type"
+                    )
+                    Task { await scheduleDailyMemoryNotifications() }
+                }
             }
         }
     }

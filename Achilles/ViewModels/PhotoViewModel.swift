@@ -51,12 +51,6 @@ class PhotoViewModel: ObservableObject {
     @Published var availableYearsAgo: [Int] = []
     @Published var authorizationStatus: PHAuthorizationStatus = .notDetermined
     @Published var initialYearScanComplete: Bool = false // Now means Phase 1 is complete
-    @Published var dismissedSplashForYearsAgo: Set<Int> = []
-    @Published var gridAnimationDone: Set<Int> = []
-    @Published var gridDateAnimationsCompleted: Set<Int> = []
-    @Published var featuredTextAnimationsCompleted: Set<Int> = []
-    @Published var featuredImageAnimationsCompleted: Set<Int> = []
-
     // MARK: - Internal Properties
     // Task Management
     private var activeLoadTasks: [Int: Task<Void, Never>] = [:]
@@ -100,25 +94,6 @@ class PhotoViewModel: ObservableObject {
                 self?.clearImageCache()
             }
         }
-    }
-
-    // MARK: - Animation State Handling
-    func shouldAnimate(yearsAgo: Int) -> Bool {
-        !featuredTextAnimationsCompleted.contains(yearsAgo)
-    }
-    func markAnimated(yearsAgo: Int) {
-        featuredTextAnimationsCompleted.insert(yearsAgo)
-        print("✍️ Marked TEXT animation done for \(yearsAgo)")
-    }
-    func shouldAnimateImageEffects(yearsAgo: Int) -> Bool {
-        !featuredImageAnimationsCompleted.contains(yearsAgo)
-    }
-    func markImageEffectsAnimated(yearsAgo: Int) {
-        featuredImageAnimationsCompleted.insert(yearsAgo)
-        print("🖼️ Marked IMAGE effects animation done for \(yearsAgo)")
-    }
-    func markSplashDismissed(for yearsAgo: Int) {
-        dismissedSplashForYearsAgo.insert(yearsAgo)
     }
 
     // MARK: - Authorization Handling
