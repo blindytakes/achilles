@@ -57,8 +57,7 @@ class ImageCacheService: ImageCacheServiceProtocol {
 
         // Configure **NEW** Live Photo cache
         livePhotoCache.countLimit = CacheConstants.livePhotoCacheCountLimit
-        print("💾 Also initialized placemark cache")
-        print("💾 ImageCacheService initialized with 3 caches (Thumbnails, HighRes Images, Live Photos).")
+        debugLog("ImageCacheService initialized with 3 caches (Thumbnails, HighRes, Live Photos).")
     }
 
     // MARK: - ImageCacheServiceProtocol Implementation
@@ -70,7 +69,6 @@ class ImageCacheService: ImageCacheServiceProtocol {
         let cacheName = isHighRes ? "high-res" : "thumbnail"
 
         cacheToUse.setObject(image, forKey: assetIdentifier as NSString, cost: cost)
-        print("📦 [SVC] Cached \(cacheName) image for asset: \(assetIdentifier), cost: \(cost)")
     }
 
     func cachedImage(for assetIdentifier: String, isHighRes: Bool) -> UIImage? {
@@ -78,7 +76,6 @@ class ImageCacheService: ImageCacheServiceProtocol {
         let cacheName = isHighRes ? "high-res" : "thumbnail"
 
         if let cached = cacheToUse.object(forKey: assetIdentifier as NSString) {
-            print("✅ [SVC] Using cached \(cacheName) image for asset: \(assetIdentifier)")
             return cached
         }
         return nil
@@ -89,7 +86,6 @@ class ImageCacheService: ImageCacheServiceProtocol {
     func cachedLivePhoto(for key: String) -> PHLivePhoto? {
         let nsKey = key as NSString
         if let cached = livePhotoCache.object(forKey: nsKey) {
-            print("✅ [SVC] Using cached Live Photo for asset: \(key)")
             return cached
         }
         return nil
@@ -100,7 +96,6 @@ class ImageCacheService: ImageCacheServiceProtocol {
         // Set cost to 0, relying on countLimit set in init()
         let cost = 0
         livePhotoCache.setObject(livePhoto, forKey: nsKey, cost: cost)
-        print("📦 [SVC] Cached Live Photo for asset: \(key), cost: \(cost)")
     }
     
     func cachedPlacemark(for assetIdentifier: String) -> String? {
@@ -109,19 +104,16 @@ class ImageCacheService: ImageCacheServiceProtocol {
     
     func cachePlacemark(_ placemark: String, for assetIdentifier: String) {
         placemarkCache[assetIdentifier] = placemark
-        print("📦 [SVC] Cached placemark for asset \(assetIdentifier): “\(placemark)”")
     }
 
     // --- Clear Cache Method (Updated) ---
 
     func clearCache() {
-        print("ImageCacheService: Received call to clear ALL caches.")
-        print("🧹 [SVC] Clearing ALL caches (thumbnails, high-res images, live photos)...")
+        debugLog("Clearing all caches.")
         imageCache.removeAllObjects()
         highResCache.removeAllObjects()
         livePhotoCache.removeAllObjects()
         placemarkCache.removeAll()
-        print("🧹 [SVC] All caches cleared.")
     }
 }
 

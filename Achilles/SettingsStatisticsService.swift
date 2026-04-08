@@ -39,7 +39,7 @@ class SettingsStatisticsService {
                 let countForThisDate = await fetchPhotoCountFromService(forDate: specificDateInTargetYear)
                 totalSum += countForThisDate
             } else {
-                print("SettingsStatisticsService: Could not construct a valid date for yearOffset: \(yearOffset), month: \(String(describing: currentMonthDayComponents.month)), day: \(String(describing: currentMonthDayComponents.day))")
+                debugLog("SettingsStatisticsService: Could not construct a valid date for yearOffset: \(yearOffset), month: \(String(describing: currentMonthDayComponents.month)), day: \(String(describing: currentMonthDayComponents.day))")
             }
         }
         return totalSum
@@ -53,7 +53,7 @@ class SettingsStatisticsService {
                 case .success(let items):
                     continuation.resume(returning: items.count)
                 case .failure(let error):
-                    print("SettingsStatisticsService: Error fetching items for date \(date): \(error.localizedDescription)")
+                    debugLog("SettingsStatisticsService: Error fetching items for date \(date): \(error.localizedDescription)")
                     continuation.resume(returning: 0) // Return 0 on error for this specific date
                 }
             }

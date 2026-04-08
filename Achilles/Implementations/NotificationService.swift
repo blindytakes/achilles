@@ -33,10 +33,10 @@ class NotificationService: NotificationServiceProtocol {
             let granted = try await notificationCenter.requestAuthorization(
                 options: [.alert, .badge, .sound]
             )
-            print("📱 Local notification permission granted: \(granted)")
+            debugLog("Local notification permission granted: \(granted)")
             return granted
         } catch {
-            print("❌ Error requesting notification authorization: \(error)")
+            debugLog("Error requesting notification authorization: \(error)")
             return false
         }
     }
@@ -65,7 +65,7 @@ class NotificationService: NotificationServiceProtocol {
         // First check if we have authorization
         let status = await checkAuthorizationStatus()
         guard status == .authorized else {
-            print("⚠️ Cannot schedule notification - not authorized (status: \(status))")
+            debugLog("Cannot schedule notification - not authorized (status: \(status))")
             return
         }
         
@@ -80,7 +80,7 @@ class NotificationService: NotificationServiceProtocol {
             hour: hour,
             minute: minute
         ) else {
-            print("❌ Could not calculate target date for notification")
+            debugLog("Could not calculate target date for notification")
             return
         }
         
@@ -113,9 +113,9 @@ class NotificationService: NotificationServiceProtocol {
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
             formatter.timeStyle = .short
-            print("✅ Inactivity reminder scheduled for: \(formatter.string(from: targetDate))")
+            debugLog("Inactivity reminder scheduled for: \(formatter.string(from: targetDate))")
         } catch {
-            print("❌ Error scheduling inactivity reminder: \(error)")
+            debugLog("Error scheduling inactivity reminder: \(error)")
         }
     }
     
@@ -128,10 +128,10 @@ class NotificationService: NotificationServiceProtocol {
         // Clear badge
         UNUserNotificationCenter.current().setBadgeCount(0) { error in
             if let error = error {
-                print("❌ Error clearing badge: \(error)")
+                debugLog("Error clearing badge: \(error)")
             }
         }
-        print("🗑️ All notifications cancelled")
+        debugLog("All notifications cancelled")
     }
     
     // MARK: - Helper Methods
@@ -180,11 +180,11 @@ class NotificationService: NotificationServiceProtocol {
     /// Print all pending notifications (useful for debugging)
     func printPendingNotifications() async {
         let requests = await notificationCenter.pendingNotificationRequests()
-        print("📋 Pending notifications (\(requests.count)):")
+        debugLog("Pending notifications (\(requests.count)):")
         for request in requests {
-            print("  - \(request.identifier): \(request.content.title)")
+            debugLog("  - \(request.identifier): \(request.content.title)")
             if let trigger = request.trigger as? UNCalendarNotificationTrigger {
-                print("    Trigger: \(trigger.dateComponents)")
+                debugLog("    Trigger: \(trigger.dateComponents)")
             }
         }
     }

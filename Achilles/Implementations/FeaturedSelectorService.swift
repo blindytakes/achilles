@@ -38,7 +38,6 @@ class FeaturedSelectorService: FeaturedSelectorServiceProtocol {
 
     func pickFeaturedItem(from items: [MediaItem]) -> MediaItem? {
         guard !items.isEmpty else {
-            print("ℹ️ FeaturedSelectorService (Simplified): No items to select from.")
             return nil
         }
 
@@ -48,12 +47,13 @@ class FeaturedSelectorService: FeaturedSelectorServiceProtocol {
         // --- 2. Sort by score to find the best and log contenders ---
         let sortedItems = scoredItems.sorted { $0.score > $1.score }
         
-        // --- 3. NEW: Log the top contenders for easy debugging ---
-        print("--- Featured Item Score Contenders (Top 5) ---")
+        // --- 3. Log the top contenders in debug builds ---
+        #if DEBUG
+        debugLog("--- Featured Item Score Contenders (Top 5) ---")
         for (item, score) in sortedItems.prefix(5) {
-            print("  - Item ID: \(item.id), Score: \(score)")
+            debugLog("  - Item ID: \(item.id), Score: \(score)")
         }
-        print("---------------------------------------------")
+        #endif
 
         // --- 4. Select the best item ---
         guard let bestScoredItem = sortedItems.first else {
@@ -62,12 +62,11 @@ class FeaturedSelectorService: FeaturedSelectorServiceProtocol {
         
         // If the best score is negative, feature nothing.
         if bestScoredItem.score < 0 {
-            print("⚠️ FeaturedSelectorService (Simplified): Best item score is \(bestScoredItem.score). No item is worthy of being featured.")
+            debugLog("FeaturedSelector: Best score is \(bestScoredItem.score), skipping.")
             return nil
         }
 
-        // Log the final choice
-        print("🏆 Featured item selected: \(bestScoredItem.item.id) with score: \(bestScoredItem.score)")
+        debugLog("Featured item: \(bestScoredItem.item.id) score: \(bestScoredItem.score)")
         return bestScoredItem.item
     }
 

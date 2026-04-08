@@ -28,23 +28,19 @@ struct GridItemView: View {
     @State private var isPressed = false
     @State private var isLoadingThumbnail = false
 
-    private let itemFrameSize: CGFloat = 189
-
     var body: some View {
-        ZStack {
-            // Background placeholder
-            Color(.systemGray6)
+        GeometryReader { geo in
+            ZStack {
+                // Background placeholder
+                Color(.systemGray6)
 
-            if let thumbnail = thumbnail {
-                // Thumbnail image
-                Image(uiImage: thumbnail)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: itemFrameSize, height: itemFrameSize)
-                    .clipped()
-
-                // Overlays for Live Photo and video duration
-                ZStack(alignment: .topLeading) {
+                if let thumbnail = thumbnail {
+                    // Thumbnail image
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
 
                     // Video duration badge
                     if item.asset.mediaType == .video {
@@ -62,17 +58,18 @@ struct GridItemView: View {
                             }
                         }
                     }
-                }
 
-            } else {
-                // Loading indicator
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .tint(.gray)
+                } else {
+                    // Loading indicator
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(.gray)
+                }
             }
         }
-        .frame(width: itemFrameSize, height: itemFrameSize)
         .contentShape(Rectangle())
+        .accessibilityLabel(item.asset.mediaType == .video ? "Video, \(formattedDuration(item.asset.duration))" : "Photo")
+        .accessibilityAddTraits(.isButton)
         .scaleEffect(isPressed ? 0.97 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
         .onTapGesture {
@@ -92,16 +89,20 @@ struct GridItemView: View {
 
     // MARK: - Helpers
     private func loadThumbnail() {
-        isLoadingThumbnail = true // <<<< SET LOADING STATE >>>>
+        isLoadingThumbnail = true
         let scale = UIScreen.main.scale
-        let targetPointSize = 200.0 // Matches your prefetchThumbnailSize point width
-        let size = CGSize(width: targetPointSize * scale, height: targetPointSize * scale)
+        // Compute actual cell width from screen width so the request exactly
+        // matches what's displayed — no over-fetching on small screens, no
+        // under-fetching on large ones (iPhone Plus / Max).
+        let screenWidth = UIScreen.main.bounds.width
+        let cellPt = floor((screenWidth - 17) / 2) // 12pt h-padding + 5pt grid gap
+        let size = CGSize(width: cellPt * scale, height: cellPt * scale)
         viewModel.requestImage(for: item.asset, targetSize: size) { image in
+            // Both @State mutations must happen on the main thread.
             DispatchQueue.main.async {
                 self.thumbnail = image
+                self.isLoadingThumbnail = false
             }
-            self.isLoadingThumbnail = false // <<<< RESET LOADING STATE >>>>
-
         }
     }
 
@@ -112,4 +113,3 @@ struct GridItemView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
-

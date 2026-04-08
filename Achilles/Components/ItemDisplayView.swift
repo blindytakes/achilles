@@ -96,7 +96,7 @@ struct ItemDisplayView: View {
             await loadMediaData()
         }
         .onChange(of: item.id) { _, newId in
-            print("ItemDisplayView: item.id changed to \(newId). Resetting local state.")
+            debugLog("ItemDisplayView: item.id changed to \(newId). Resetting local state.")
             showInfoPanel = false
             currentZoomScale = 1.0
         }
@@ -142,6 +142,7 @@ struct ItemDisplayView: View {
             }
             .frame(width: 60, height: 60)
         }
+        .accessibilityLabel("Show photo location on map")
     }
 
     // MARK: - Main Content Switcher

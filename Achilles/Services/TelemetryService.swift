@@ -6,19 +6,25 @@ class TelemetryService {
     static let shared = TelemetryService()
 
     // MARK: - Grafana Cloud OTLP credentials
-    private let baseURL    = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
-    private let instanceID = "1471077"
-    private let apiKey     = "glc_eyJvIjoiMTYxOTE5MyIsIm4iOiJzdGFjay0xNDcxMDc3LW90bHAtd3JpdGUtdGhyb3diYWtzIiwiayI6IjBFY0wwRFdVM1QwVjRJWnpNSzE0Mjd6MyIsIm0iOnsiciI6InByb2QtdXMtZWFzdC0zIn19"
+    // Loaded from Info.plist (set via .xcconfig excluded from git)
+    private let baseURL: String
+    private let instanceID: String
+    private let apiKey: String
 
     // MARK: - Service identity (shows up in Tempo)
     private let serviceName    = "throwbaks-ios"
     private let serviceVersion = "3.3"   // matches MARKETING_VERSION in pbxproj
 
-    private init() {}
+    private init() {
+        let bundle = Bundle.main
+        self.baseURL    = bundle.object(forInfoDictionaryKey: "GRAFANA_OTLP_URL") as? String ?? ""
+        self.instanceID = bundle.object(forInfoDictionaryKey: "GRAFANA_INSTANCE_ID") as? String ?? ""
+        self.apiKey     = bundle.object(forInfoDictionaryKey: "GRAFANA_API_KEY") as? String ?? ""
+    }
 
     /// Call once on app launch.
     func initialize() {
-        print("📊 TelemetryService initialized (service: \(serviceName) v\(serviceVersion))")
+        debugLog("TelemetryService initialized (service: \(serviceName) v\(serviceVersion))")
     }
 
     // MARK: - Span status
@@ -297,11 +303,11 @@ class TelemetryService {
 
     private func sendPayload(_ payload: [String: Any], path: String) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            print("❌ TelemetryService: JSON serialisation failed")
+            debugLog("TelemetryService: JSON serialisation failed")
             return
         }
         guard let url = URL(string: baseURL + path) else {
-            print("❌ TelemetryService: invalid endpoint URL")
+            debugLog("TelemetryService: invalid endpoint URL")
             return
         }
 
@@ -314,7 +320,7 @@ class TelemetryService {
 
         URLSession.shared.dataTask(with: request) { _, response, error in
             if let error = error {
-                print("❌ TelemetryService: network error — \(error.localizedDescription)")
+                debugLog("TelemetryService: network error — \(error.localizedDescription)")
                 return
             }
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -322,9 +328,9 @@ class TelemetryService {
                 let kind = path.contains("metrics") ? "Metrics"
                          : path.contains("logs")    ? "Log"
                          :                            "Trace"
-                print("📤 \(kind) sent to Grafana Cloud successfully (HTTP \(code))")
+                debugLog("\(kind) sent to Grafana Cloud (HTTP \(code))")
             } else {
-                print("❌ TelemetryService: Grafana returned HTTP \(code)")
+                debugLog("TelemetryService: Grafana returned HTTP \(code)")
             }
         }.resume()
     }

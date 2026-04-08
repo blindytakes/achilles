@@ -189,7 +189,7 @@ struct LoginSignupView: View {
              }
          }
         .sheet(isPresented: $showingAuthSheet, onDismiss: {
-            print("Auth sheet dismissed")
+            debugLog("Auth sheet dismissed")
         }) {
             AuthFormView(
                 authScreenMode: $currentAuthScreenMode,
@@ -236,7 +236,7 @@ struct LoginSignupView: View {
     private func handleGoogleSignIn() {
         guard let presentingViewController = getRootViewController() else {
             authVM.errorMessage = "Cannot find a window to present Google Sign-In."
-            print("❌ LoginSignupView: Could not find root view controller for Google Sign-In.")
+            debugLog("LoginSignupView: Could not find root view controller for Google Sign-In.")
             return
         }
         

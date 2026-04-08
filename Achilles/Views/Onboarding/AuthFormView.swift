@@ -154,7 +154,7 @@ struct AuthFormView: View {
 
     @MainActor
     private func handleAuthentication() {
-        print("AuthFormView: handleAuthentication called. Mode: \(authScreenMode)")
+        debugLog("AuthFormView: handleAuthentication called. Mode: \(authScreenMode)")
         formErrorMessage = nil
         authVM.errorMessage = nil
         isLoading = true
@@ -172,38 +172,38 @@ struct AuthFormView: View {
             
             if authScreenMode == .signUp {
                 if password != confirmPassword {
-                    print("AuthFormView: Passwords do not match.")
+                debugLog("AuthFormView: Passwords do not match.")
                     formErrorMessage = "Passwords do not match."
                     return
                 }
                 if username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    print("AuthFormView: Username is empty.")
+                    debugLog("AuthFormView: Username is empty.")
                     formErrorMessage = "Username cannot be empty."
                     return
                 }
-                print("AuthFormView: Calling authVM.signUp with display name: '\(username)'")
+                debugLog("AuthFormView: Calling authVM.signUp with display name: '\(username)'")
                 authAttemptSuccessful = await authVM.signUp(email: email, password: password, displayName: username)
             } else { // signIn mode
-                print("AuthFormView: Calling authVM.signIn.")
+                debugLog("AuthFormView: Calling authVM.signIn.")
                 authAttemptSuccessful = await authVM.signIn(email: email, password: password)
             }
             
-            print("AuthFormView: Firebase call completed. Success: \(authAttemptSuccessful)")
+            debugLog("AuthFormView: Firebase call completed. Success: \(authAttemptSuccessful)")
             
             if authAttemptSuccessful {
-                print("AuthFormView: ✅ Auth function reported success.")
+                debugLog("AuthFormView: Auth success.")
                 UserDefaults.standard.set(email, forKey: "lastUsedEmail")
                 
                 // Wait a moment for the auth state to update
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
                 
-                print("AuthFormView: Calling onAuthenticationSuccess to dismiss sheet.")
+                debugLog("AuthFormView: Calling onAuthenticationSuccess to dismiss sheet.")
                 onAuthenticationSuccess()
             } else if let errorFromVM = authVM.errorMessage {
-                print("AuthFormView: 🚨 Auth function reported failure! Error: \(errorFromVM)")
+                debugLog("AuthFormView: Auth failure: \(errorFromVM)")
                 formErrorMessage = errorFromVM
             } else {
-                print("AuthFormView: ⚠️ Auth function reported failure, but no error message.")
+                debugLog("AuthFormView: Auth failure with no error message.")
                 formErrorMessage = "An unexpected authentication error occurred."
             }
         }

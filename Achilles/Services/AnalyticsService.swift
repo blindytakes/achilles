@@ -1,4 +1,3 @@
-
 import Foundation
 import FirebaseAnalytics
 
@@ -13,107 +12,77 @@ class AnalyticsService {
             AnalyticsParameterScreenName: screenName,
             AnalyticsParameterScreenClass: screenClass ?? screenName
         ])
-        print("🔥 Analytics: Screen view - \(screenName)")
     }
     
     // MARK: - User Authentication
     func logSignUp(method: String) {
-        Analytics.logEvent(AnalyticsEventSignUp, parameters: [
-            AnalyticsParameterMethod: method
-        ])
-        print("🔥 Analytics: Sign up - \(method)")
+        Analytics.logEvent(AnalyticsEventSignUp, parameters: [AnalyticsParameterMethod: method])
     }
     
     func logLogin(method: String) {
-        Analytics.logEvent(AnalyticsEventLogin, parameters: [
-            AnalyticsParameterMethod: method
-        ])
-        print("🔥 Analytics: Login - \(method)")
+        Analytics.logEvent(AnalyticsEventLogin, parameters: [AnalyticsParameterMethod: method])
     }
     
     // MARK: - Content Engagement
     func logPhotoView(yearsAgo: Int, hasLocation: Bool = false, isVideo: Bool = false) {
         Analytics.logEvent("photo_view", parameters: [
-            "years_ago": yearsAgo,
-            "has_location": hasLocation,
+            "years_ago": yearsAgo, "has_location": hasLocation,
             "content_type": isVideo ? "video" : "photo"
         ])
-        print("🔥 Analytics: \(isVideo ? "Video" : "Photo") view - \(yearsAgo) years ago")
     }
     
     func logPhotoShare(yearsAgo: Int, shareMethod: String) {
         Analytics.logEvent(AnalyticsEventShare, parameters: [
-            "content_type": "photo",
-            "years_ago": yearsAgo,
-            "method": shareMethod
+            "content_type": "photo", "years_ago": yearsAgo, "method": shareMethod
         ])
-        print("🔥 Analytics: Photo shared via \(shareMethod)")
     }
     
     // MARK: - Memory Discovery
     func logMemoryDiscovery(yearsAgo: Int, photoCount: Int) {
         Analytics.logEvent("memory_discovery", parameters: [
-            "years_ago": yearsAgo,
-            "photo_count": photoCount
+            "years_ago": yearsAgo, "photo_count": photoCount
         ])
-        print("🔥 Analytics: Memory discovered - \(photoCount) photos from \(yearsAgo) years ago")
     }
     
     func logFeaturedPhotoTap(yearsAgo: Int) {
-        Analytics.logEvent("featured_photo_tap", parameters: [
-            "years_ago": yearsAgo
-        ])
-        print("🔥 Analytics: Featured photo tapped - \(yearsAgo) years ago")
+        Analytics.logEvent("featured_photo_tap", parameters: ["years_ago": yearsAgo])
     }
     
     // MARK: - Feature Usage
     func logLocationView(yearsAgo: Int) {
         Analytics.logEvent("location_view", parameters: [
-            "years_ago": yearsAgo,
-            "feature": "location_panel"
+            "years_ago": yearsAgo, "feature": "location_panel"
         ])
-        print("🔥 Analytics: Location viewed for \(yearsAgo) years ago")
     }
     
     func logTutorialProgress(step: String, completed: Bool) {
         Analytics.logEvent("tutorial_progress", parameters: [
-            "tutorial_step": step,
-            "completed": completed
+            "tutorial_step": step, "completed": completed
         ])
-        print("🔥 Analytics: Tutorial \(step) - \(completed ? "completed" : "started")")
     }
     
     func logTutorialComplete(timeSpent: TimeInterval) {
-        Analytics.logEvent("tutorial_complete", parameters: [
-            "time_spent_seconds": Int(timeSpent)
-        ])
-        print("🔥 Analytics: Tutorial completed in \(Int(timeSpent)) seconds")
+        Analytics.logEvent("tutorial_complete", parameters: ["time_spent_seconds": Int(timeSpent)])
     }
     
     // MARK: - User Properties
     func setUserProperties(isAnonymous: Bool, daysSinceSignup: Int? = nil) {
         Analytics.setUserProperty(isAnonymous ? "anonymous" : "registered", forName: "user_type")
-        
         if let days = daysSinceSignup {
             Analytics.setUserProperty(String(days), forName: "days_since_signup")
         }
-        
-        print("🔥 Analytics: User properties set - \(isAnonymous ? "anonymous" : "registered")")
     }
     
     // MARK: - Search and Navigation
     func logYearSwipe(fromYear: Int, toYear: Int) {
         Analytics.logEvent("year_swipe", parameters: [
-            "from_year": fromYear,
-            "to_year": toYear,
+            "from_year": fromYear, "to_year": toYear,
             "direction": toYear > fromYear ? "forward" : "backward"
         ])
     }
     
     func logPhotoLibraryAccess(granted: Bool) {
-        Analytics.logEvent("photo_library_access", parameters: [
-            "granted": granted
-        ])
+        Analytics.logEvent("photo_library_access", parameters: ["granted": granted])
     }
     
     // MARK: - Error Tracking
@@ -123,15 +92,13 @@ class AnalyticsService {
             "context": context,
             "error_description": error.localizedDescription
         ])
-        print("🔥 Analytics: Error logged - \(error.localizedDescription)")
 
         TelemetryService.shared.recordSpan(
-            name: "error",
-            durationMs: 0,
+            name: "error", durationMs: 0,
             attributes: [
-                "error.type":        String(describing: type(of: error)),
+                "error.type": String(describing: type(of: error)),
                 "error.description": error.localizedDescription,
-                "error.context":     context
+                "error.context": context
             ],
             status: .error
         )
@@ -140,8 +107,7 @@ class AnalyticsService {
             attributes: ["error.type": String(describing: type(of: error)), "error.context": context]
         )
         TelemetryService.shared.log(
-            error.localizedDescription,
-            severity: .error,
+            error.localizedDescription, severity: .error,
             attributes: ["error.type": String(describing: type(of: error)), "error.context": context]
         )
     }
@@ -149,16 +115,13 @@ class AnalyticsService {
     // MARK: - Performance Events
     func logPhotoLoadTime(yearsAgo: Int, loadTimeMs: Int) {
         Analytics.logEvent("photo_load_performance", parameters: [
-            "years_ago": yearsAgo,
-            "load_time_ms": loadTimeMs
+            "years_ago": yearsAgo, "load_time_ms": loadTimeMs
         ])
     }
     
     // MARK: - Engagement Metrics
     func logSessionDuration(durationSeconds: Int) {
-        Analytics.logEvent("session_duration", parameters: [
-            "duration_seconds": durationSeconds
-        ])
+        Analytics.logEvent("session_duration", parameters: ["duration_seconds": durationSeconds])
     }
     
     func logDailyActiveUser() {
@@ -169,46 +132,55 @@ class AnalyticsService {
 
     // MARK: - Collage Events
 
-    /// Fired when the user views the collage source-picker page.
     func logCollageSourceView(source: String) {
-        Analytics.logEvent("collage_source_view", parameters: [
-            "source_type": source
-        ])
-        print("🔥 Analytics: Collage source viewed - \(source)")
+        Analytics.logEvent("collage_source_view", parameters: ["source_type": source])
     }
 
-    /// Fired when a collage is successfully generated (rendered).
     func logCollageGenerated(source: String, photoCount: Int, durationMs: Int) {
         Analytics.logEvent("collage_generated", parameters: [
-            "source_type":   source,
-            "photo_count":   photoCount,
-            "duration_ms":   durationMs
+            "source_type": source, "photo_count": photoCount, "duration_ms": durationMs
         ])
-        print("🔥 Analytics: Collage generated - \(source), \(photoCount) photos, \(durationMs) ms")
     }
 
-    /// Fired when the user saves a collage to their photo library.
     func logCollageSaved(source: String) {
-        Analytics.logEvent("collage_saved", parameters: [
-            "source_type": source
-        ])
-        print("🔥 Analytics: Collage saved - \(source)")
+        Analytics.logEvent("collage_saved", parameters: ["source_type": source])
     }
 
-    /// Fired when the user switches collage layout.
     func logCollageLayoutSwitched(layout: String) {
-        Analytics.logEvent("collage_layout_switched", parameters: [
-            "layout": layout
-        ])
-        print("🔥 Analytics: Collage layout switched - \(layout)")
+        Analytics.logEvent("collage_layout_switched", parameters: ["layout": layout])
     }
-}
 
-// MARK: - DateFormatter Extension
-private extension DateFormatter {
-    static let yyyyMMdd: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
+    // MARK: - App Lifecycle
+
+    func logAppOpen(source: String, userType: String? = nil) {
+        var params: [String: Any] = ["source": source]
+        if let userType = userType { params["user_type"] = userType }
+        Analytics.logEvent("app_open", parameters: params)
+    }
+
+    func logDeepLink(url: String) {
+        Analytics.logEvent("app_open", parameters: ["source": "deep_link", "url": url])
+    }
+
+    func logOnboardingStart(type: String) {
+        Analytics.logEvent("onboarding_start", parameters: ["onboarding_type": type])
+    }
+
+    func logNotificationsScheduled(inactivityDays: Int, memoriesCount: Int) {
+        Analytics.logEvent("notifications_scheduled", parameters: [
+            "inactivity_days": inactivityDays, "memories_count": memoriesCount
+        ])
+    }
+
+    func logPhotoPermissionChanged(status: String) {
+        Analytics.logEvent("photo_permission_changed", parameters: ["new_status": status])
+    }
+
+    func logCarouselYearSelected(yearsAgo: Int) {
+        Analytics.logEvent("carousel_year_selected", parameters: ["years_ago": yearsAgo])
+    }
+
+    func setUserType(_ type: String) {
+        Analytics.setUserProperty(type, forName: "user_type")
+    }
 }

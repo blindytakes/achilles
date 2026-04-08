@@ -2,6 +2,9 @@
 .DS_Store
 *.localized
 
+# Secrets
+Secrets.xcconfig
+
 # Xcode
 *.xcuserstate
 xcuserdata/

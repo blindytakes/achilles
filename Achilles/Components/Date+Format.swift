@@ -93,3 +93,14 @@ extension Date {
     }
 }
 
+// MARK: - Shared DateFormatter Constants
+
+extension DateFormatter {
+    /// "2025-04-08" — used by analytics and telemetry.
+    static let yyyyMMdd: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+

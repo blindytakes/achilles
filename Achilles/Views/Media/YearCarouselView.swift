@@ -7,7 +7,6 @@
 
 import SwiftUI
 import Photos
-import FirebaseAnalytics
 
 // MARK: - Year Carousel View
 
@@ -171,7 +170,7 @@ struct YearCarouselView: View {
 
     private func handleCardTap(yearsAgo: Int) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        Analytics.logEvent("carousel_year_selected", parameters: ["years_ago": yearsAgo])
+        AnalyticsService.shared.logCarouselYearSelected(yearsAgo: yearsAgo)
         selectedYear = yearsAgo
         onDismiss()
     }
@@ -326,6 +325,9 @@ struct YearCarouselCard: View {
         .frame(width: cardWidth, height: cardHeight)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(lightningGlowBorder)
+        .accessibilityLabel("\(yearLabel), \(dateLabel)")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Tap to explore memories")
         .onAppear {
             startGlowAnimations()
         }
