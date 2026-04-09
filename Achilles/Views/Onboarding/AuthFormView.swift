@@ -47,7 +47,7 @@ struct AuthFormView: View {
     }
 
     var body: some View {
-        NavigationView { // Wrap in NavigationView to get a toolbar for the title and dismiss button
+        NavigationStack {
             VStack(spacing: 18) { // Consistent spacing
                 if authScreenMode == .signUp {
                     CustomTextField(placeholder: "Username", text: $username, iconName: "person")

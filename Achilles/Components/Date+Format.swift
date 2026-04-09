@@ -84,11 +84,15 @@ extension Date {
         return Self.abbreviatedDateShortTimeFormatter.string(from: self)
     }
 
-    /// "Feb 19th" — abbreviated month + day with ordinal
-    func shortMonthDayWithOrdinal() -> String {
+    private static let shortMonthDayFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "MMM d"
-        let base = df.string(from: self)
+        return df
+    }()
+
+    /// "Feb 19th" — abbreviated month + day with ordinal
+    func shortMonthDayWithOrdinal() -> String {
+        let base = Self.shortMonthDayFormatter.string(from: self)
         return "\(base)\(ordinalSuffix)"
     }
 }

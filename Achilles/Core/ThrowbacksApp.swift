@@ -58,13 +58,11 @@ struct ThrowbaksApp: App {
         FirebaseApp.configure()
         Analytics.setAnalyticsCollectionEnabled(true)
         
-        Analytics.setUserProperty(
-            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-            forName: "app_version"
+        AnalyticsService.shared.setAppVersion(
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         )
-        Analytics.setUserProperty(
-            Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
-            forName: "build_number"
+        AnalyticsService.shared.setBuildNumber(
+            Bundle.main.infoDictionary?["CFBundleVersion"] as? String
         )
         
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: FirebaseApp.app()?.options.clientID ?? "")

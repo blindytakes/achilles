@@ -130,9 +130,7 @@ class CollageViewModel: ObservableObject {
         availableYears  = sourceService.availableYears()
         availablePlaces = sourceService.availablePlaces()
         availablePeople = sourceService.availablePeople()
-#if DEBUG
-        print("📇 CollageViewModel: refreshed sources – \(availableYears.count) years, \(availablePlaces.count) places, \(availablePeople.count) people")
-#endif
+        debugLog("📇 CollageViewModel: refreshed sources – \(availableYears.count) years, \(availablePlaces.count) places, \(availablePeople.count) people")
     }
 
     /// Generate a collage for the given source.  Cancels any in-flight
@@ -219,17 +217,13 @@ class CollageViewModel: ObservableObject {
                     "collage video saved to photo library",
                     attributes: [:]
                 )
-                #if DEBUG
-                print("✅ CollageViewModel: video saved to photo library.")
-                #endif
+                debugLog("✅ CollageViewModel: video saved to photo library.")
             } catch {
                 await MainActor.run {
                     self.isSavingVideo = false
                     self.saveMessage = "Save failed. Please try again."
                 }
-                #if DEBUG
-                print("❌ CollageViewModel: video save failed – \(error.localizedDescription)")
-                #endif
+                debugLog("❌ CollageViewModel: video save failed – \(error.localizedDescription)")
                 TelemetryService.shared.log(
                     "collage video save failed",
                     severity: .error,
@@ -361,18 +355,14 @@ class CollageViewModel: ObservableObject {
             )
             AnalyticsService.shared.logCollageSaved(source: source.analyticsLabel)
 
-            #if DEBUG
-            print("✅ CollageViewModel: collage saved to photo library.")
-            #endif
+            debugLog("✅ CollageViewModel: collage saved to photo library.")
 
         } catch {
             await MainActor.run {
                 self.isSaving   = false
                 self.saveMessage = "Save failed. Please try again."
             }
-            #if DEBUG
-            print("❌ CollageViewModel: save failed – \(error.localizedDescription)")
-            #endif
+            debugLog("❌ CollageViewModel: save failed – \(error.localizedDescription)")
             TelemetryService.shared.log(
                 "collage save failed",
                 severity: .error,
@@ -426,9 +416,7 @@ class CollageViewModel: ObservableObject {
                 ]
             )
 
-            #if DEBUG
-            print("✅ CollageViewModel: video exported → \(videoURL.path)")
-            #endif
+            debugLog("✅ CollageViewModel: video exported → \(videoURL.path)")
 
         } catch {
             await MainActor.run {
@@ -437,9 +425,7 @@ class CollageViewModel: ObservableObject {
                 self.saveMessage = "Video export failed. Please try again."
             }
 
-            #if DEBUG
-            print("❌ CollageViewModel: video export failed – \(error.localizedDescription)")
-            #endif
+            debugLog("❌ CollageViewModel: video export failed – \(error.localizedDescription)")
 
             TelemetryService.shared.log(
                 "collage video export failed",
@@ -474,9 +460,7 @@ class CollageViewModel: ObservableObject {
     private func cleanupVideoFile() {
         guard let url = exportedVideoURL else { return }
         try? FileManager.default.removeItem(at: url)
-        #if DEBUG
-        print("🗑️ CollageViewModel: deleted temp video → \(url.lastPathComponent)")
-        #endif
+        debugLog("🗑️ CollageViewModel: deleted temp video → \(url.lastPathComponent)")
     }
 
     deinit {

@@ -113,7 +113,7 @@ struct CollageView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background that shifts between hero gradient and display
                 if selectedSource == nil {

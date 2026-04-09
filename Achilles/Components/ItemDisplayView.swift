@@ -27,6 +27,7 @@ struct ItemDisplayView: View {
     // MARK: - Internal State
     @State private var viewState: DetailViewState = .loading
     @State private var currentZoomScale: CGFloat = 1.0
+    @State private var dismissMapObserver: NSObjectProtocol? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -300,7 +301,11 @@ struct ItemDisplayView: View {
 
     // MARK: - Notification Observers
     private func setupNotificationObservers() {
-        NotificationCenter.default.addObserver(
+        // Remove any existing observer first
+        if let existing = dismissMapObserver {
+            NotificationCenter.default.removeObserver(existing)
+        }
+        dismissMapObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name("DismissMapPanel"),
             object: nil,
             queue: .main
@@ -317,11 +322,10 @@ struct ItemDisplayView: View {
     }
 
     private func removeNotificationObservers() {
-        NotificationCenter.default.removeObserver(
-            self,
-            name: Notification.Name("DismissMapPanel"),
-            object: nil
-        )
+        if let observer = dismissMapObserver {
+            NotificationCenter.default.removeObserver(observer)
+            dismissMapObserver = nil
+        }
     }
 }
 

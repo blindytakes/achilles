@@ -183,4 +183,18 @@ class AnalyticsService {
     func setUserType(_ type: String) {
         Analytics.setUserProperty(type, forName: "user_type")
     }
+
+    // MARK: - App Configuration
+
+    func enableAnalyticsCollection(_ enabled: Bool) {
+        Analytics.setAnalyticsCollectionEnabled(enabled)
+    }
+
+    func setAppVersion(_ version: String?) {
+        Analytics.setUserProperty(version, forName: "app_version")
+    }
+
+    func setBuildNumber(_ build: String?) {
+        Analytics.setUserProperty(build, forName: "build_number")
+    }
 }

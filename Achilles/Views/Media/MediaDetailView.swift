@@ -65,17 +65,9 @@ struct MediaDetailView: View {
     @State private var controlsHidden: Bool = false
 
     var body: some View {
-        Group {
-            // STEP 1: Conditional NavigationStack on iOS 16+
-            if #available(iOS 16, *) {
-                NavigationStack { content }
-            } else {
-                NavigationView { content }
-                    .navigationViewStyle(.stack)
-            }
-        }
-        // Adapt accent color based on color scheme
-        .accentColor(colorScheme == .dark ? .white : .blue)
+        NavigationStack { content }
+            // Adapt accent color based on color scheme
+            .accentColor(colorScheme == .dark ? .white : .blue)
     }
 
     // MARK: Extracted content

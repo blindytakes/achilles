@@ -42,7 +42,7 @@ struct ErrorYearView: View {
 
             Button("Retry") {
                 // <<< CHANGE: Call retryLoad on the ViewModel >>>
-                print("🔁 Retry button tapped for \(yearsAgo) years ago.")
+                debugLog("🔁 Retry button tapped for \(yearsAgo) years ago.")
                 viewModel.retryLoad(yearsAgo: yearsAgo) // Use ViewModel's retry
             }
             .buttonStyle(.bordered)
