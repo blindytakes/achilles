@@ -82,16 +82,6 @@ struct ItemDisplayView: View {
             .background(Color.black)
             .id(item.id)
             .ignoresSafeArea(.all)
-            .simultaneousGesture(
-                TapGesture(count: 1).onEnded {
-                    if currentZoomScale <= ViewConstants.zoomSlightlyAboveMinimum + 0.01
-                       && !showInfoPanel {
-                        onSingleTap()
-                    } else if showInfoPanel {
-                        withAnimation { showInfoPanel = false }
-                    }
-                }
-            )
         }
         .task(id: item.id) {
             await loadMediaData()
@@ -182,7 +172,8 @@ struct ItemDisplayView: View {
                 showInfoPanel: $showInfoPanel,
                 controlsHidden: $controlsHidden,
                 zoomScale: $currentZoomScale,
-                dismissAction: { dismiss() }
+                dismissAction: { dismiss() },
+                onSingleTap: onSingleTap
             ) {
                 ZStack(alignment: .topLeading) {
                     PHLivePhotoViewRepresentable(livePhoto: livePhoto)
@@ -220,7 +211,8 @@ struct ItemDisplayView: View {
                 showInfoPanel: $showInfoPanel,
                 controlsHidden: $controlsHidden,
                 zoomScale: $currentZoomScale,
-                dismissAction: { dismiss() }
+                dismissAction: { dismiss() },
+                onSingleTap: onSingleTap
             ) {
                 Image(uiImage: uiImage)
                     .resizable()

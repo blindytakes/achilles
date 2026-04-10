@@ -45,6 +45,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     @Binding var controlsHidden: Bool
     @Binding var zoomScale: CGFloat
     let dismissAction: () -> Void
+    let onSingleTap: (() -> Void)?
     let contentType: ZoomableContentType
 
     // MARK: Init
@@ -55,6 +56,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         controlsHidden: Binding<Bool>,
         zoomScale: Binding<CGFloat>,
         dismissAction: @escaping () -> Void,
+        onSingleTap: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.contentId = contentId
@@ -63,6 +65,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         self._controlsHidden = controlsHidden
         self._zoomScale = zoomScale
         self.dismissAction = dismissAction
+        self.onSingleTap = onSingleTap
         self.content = content()
     }
 
@@ -88,6 +91,7 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         scrollView.layer.allowsEdgeAntialiasing = true
         scrollView.layer.minificationFilter = .trilinear
         scrollView.layer.magnificationFilter = .trilinear
+        scrollView.decelerationRate = .fast
 
         let hostedView = context.coordinator.hostingController.view!
         hostedView.translatesAutoresizingMaskIntoConstraints = false
@@ -147,6 +151,8 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         var initialPanDirection: CGPoint = .zero
         var initialZoomScale: CGFloat = 1.0
         var lastContentId: String?
+        var hasTriggeredDismissHaptic: Bool = false
+        var hapticGenerator: UIImpactFeedbackGenerator?
         
         weak var customPanGesture: UIPanGestureRecognizer?
 
@@ -194,12 +200,15 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
 
         // MARK: Helper Methods
         func centerContent(_ scrollView: UIScrollView) {
-            guard let hostedView = hostingController.view else { return }
+            guard let _ = hostingController.view else { return }
             let boundsSize = scrollView.bounds.size
-            let horizontalInset = max(Constants.minContentInset, (boundsSize.width - hostedView.frame.size.width * scrollView.zoomScale) / 2.0)
-            let verticalInset = max(Constants.minContentInset, (boundsSize.height - hostedView.frame.size.height * scrollView.zoomScale) / 2.0)
-            let newInsets = UIEdgeInsets(top: verticalInset, left: horizontalInset, bottom: verticalInset, right: horizontalInset)
-            if scrollView.contentInset != newInsets {
+            let contentSize = scrollView.contentSize
+            let hInset = max(Constants.minContentInset, (boundsSize.width - contentSize.width) / 2.0)
+            let vInset = max(Constants.minContentInset, (boundsSize.height - contentSize.height) / 2.0)
+            let newInsets = UIEdgeInsets(top: vInset, left: hInset, bottom: vInset, right: hInset)
+            // Only update if meaningfully different to avoid layout thrashing during zoom
+            if abs(scrollView.contentInset.top - newInsets.top) > 0.5 ||
+               abs(scrollView.contentInset.left - newInsets.left) > 0.5 {
                 scrollView.contentInset = newInsets
             }
         }
@@ -210,7 +219,10 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             let targetScale: CGFloat = (scrollView.zoomScale > scrollView.minimumZoomScale + 0.01) ? scrollView.minimumZoomScale : Constants.doubleTapZoomScale
             let zoomPointInHostedView = gesture.location(in: hostingController.view)
             let zoomRect = zoomRect(for: targetScale, with: zoomPointInHostedView, in: scrollView)
-            scrollView.zoom(to: zoomRect, animated: true)
+            UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.8,
+                           initialSpringVelocity: 0.5, options: .curveEaseInOut) {
+                scrollView.zoom(to: zoomRect, animated: false)
+            }
         }
         
         private func zoomRect(for scale: CGFloat, with center: CGPoint, in scrollView: UIScrollView) -> CGRect {
@@ -223,7 +235,13 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         }
 
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
-            // print("ZoomableScrollView.Coordinator: handleSingleTap (from UIScrollView's gesture).")
+            guard !isZoomed else { return }
+            // If info panel is showing, dismiss it instead of toggling controls
+            if parent.showInfoPanel {
+                DispatchQueue.main.async { self.parent.showInfoPanel = false }
+                return
+            }
+            parent.onSingleTap?()
         }
 
         @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
@@ -242,6 +260,10 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             case .began:
                 startTouchPoint = gesture.location(in: scrollView.superview)
                 initialPanDirection = .zero
+                hapticGenerator = nil
+                hasTriggeredDismissHaptic = false
+                hapticGenerator = UIImpactFeedbackGenerator(style: .light)
+                hapticGenerator?.prepare()
             case .changed:
                 let translation = gesture.translation(in: scrollView.superview)
                 if initialPanDirection == .zero && (abs(translation.x) > 0 || abs(translation.y) > 0) {
@@ -252,13 +274,19 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
                     let progress = min(Constants.panDismissProgressMax, translation.y / Constants.panDismissProgressDistanceDivider)
                     let scaleFactor = 1.0 - (progress * Constants.panFeedbackScaleFactor)
                     let alphaFactor = max(Constants.panFeedbackMinAlpha, 1.0 - (progress * Constants.panFeedbackAlphaFactor))
+                    // Direct assignment for 1:1 finger tracking — no animation on .changed
                     scrollView.alpha = alphaFactor
                     scrollView.transform = CGAffineTransform(translationX: translation.x, y: translation.y).scaledBy(x: scaleFactor, y: scaleFactor)
-                } else if scrollView.transform != .identity {
-                    UIView.animate(withDuration: Constants.panFeedbackAnimationDuration) {
-                        scrollView.alpha = 1.0
-                        scrollView.transform = .identity
+                    // Haptic when crossing dismiss threshold
+                    if translation.y > Constants.panMinVerticalDistanceForDismiss && !hasTriggeredDismissHaptic {
+                        hapticGenerator?.impactOccurred()
+                        hasTriggeredDismissHaptic = true
+                    } else if translation.y < Constants.panMinVerticalDistanceForDismiss {
+                        hasTriggeredDismissHaptic = false
                     }
+                } else if scrollView.transform != .identity {
+                    scrollView.alpha = 1.0
+                    scrollView.transform = .identity
                 }
             case .ended, .cancelled:
                 let translation = gesture.translation(in: scrollView.superview)
@@ -293,7 +321,11 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             if gestureRecognizer == self.customPanGesture {
                 if isZoomed { return false }
-                return true
+                // Only begin if clearly vertical and downward — let horizontal swipes go to TabView paging
+                guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
+                      let view = pan.view else { return false }
+                let velocity = pan.velocity(in: view)
+                return abs(velocity.y) > abs(velocity.x) * 1.5 && velocity.y > 0
             }
             return true
         }
