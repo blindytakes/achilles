@@ -58,12 +58,21 @@ class PhotoViewModel: ObservableObject {
     private var activeFeaturedPrefetchTasks: [Int: Task<Void, Never>] = [:]
     private var backgroundYearScanTask: Task<Void, Never>? = nil // Task for Phase 2 scan
     private var memoryWarningObserver: NSObjectProtocol?
+    private var cachedAssetsByYear: [Int: [PHAsset]] = [:] // IMPROVEMENT 2: Track assets cached via startCachingImages
 
     
     // Preloaded Data Storage
     private var preloadedFeaturedImages: [Int: UIImage] = [:]
 
     var thumbnailSize = Constants.defaultThumbnailSize
+
+    // IMPROVEMENT 4: Screen-resolution target size for detail view.
+    // Computed on the class (which is @MainActor) to guarantee UIScreen.main access is on the main thread.
+    private lazy var displayImageSize: CGSize = {
+        let screen = UIScreen.main
+        return CGSize(width: screen.bounds.width * screen.scale,
+                      height: screen.bounds.height * screen.scale)
+    }()
 
     // Caching Properties
     private var activeRequests: [String: PHImageRequestID] = [:]
@@ -438,6 +447,18 @@ class PhotoViewModel: ObservableObject {
         let yearsToCheck = [centerYearsAgo + 1, centerYearsAgo - 1].filter { $0 > 0 }
         debugLog("Triggering prefetch check around \(centerYearsAgo). Checking: \(yearsToCheck)")
         for yearToPrefetch in yearsToCheck { prefetchIfNeeded(forYear: yearToPrefetch) }
+
+        // IMPROVEMENT 2: Stop system-level caching for years that are no longer adjacent
+        let activeYears = Set(yearsToCheck + [centerYearsAgo])
+        let yearsToStop = cachedAssetsByYear.keys.filter { !activeYears.contains($0) }
+        for year in yearsToStop {
+            guard let assets = cachedAssetsByYear.removeValue(forKey: year) else { continue }
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .opportunistic
+            options.resizeMode = .fast
+            imageManager.stopCachingImages(for: assets, targetSize: Constants.prefetchThumbnailSize, contentMode: .aspectFill, options: options)
+            debugLog("Stopped system caching for year \(year) (\(assets.count) assets)")
+        }
     }
     
     private func startDefinitiveFeaturedImagePrefetchTask(for yearToPrefetch: Int, mainLoadTask: Task<Void, Never>) {
@@ -511,6 +532,19 @@ class PhotoViewModel: ObservableObject {
                 guard !initialItems.isEmpty else { return }
                 
                 debugLog("Requesting \(initialItems.count) thumbnails proactively for \(yearToPrefetch)...")
+
+                // IMPROVEMENT 2: Use PHCachingImageManager's system-level pre-decoding
+                let assets = initialItems.map { $0.asset }
+                let cachingOptions = PHImageRequestOptions()
+                cachingOptions.deliveryMode = .opportunistic
+                cachingOptions.resizeMode = .fast
+                cachingOptions.isNetworkAccessAllowed = true
+                await MainActor.run {
+                    self.imageManager.startCachingImages(for: assets, targetSize: Constants.prefetchThumbnailSize, contentMode: .aspectFill, options: cachingOptions)
+                    self.cachedAssetsByYear[yearToPrefetch] = assets
+                    debugLog("Started system caching for year \(yearToPrefetch) (\(assets.count) assets)")
+                }
+
                 for item in initialItems {
                     try Task.checkCancellation()
                     requestImage(for: item.asset, targetSize: Constants.prefetchThumbnailSize) { _ in }
@@ -524,6 +558,12 @@ class PhotoViewModel: ObservableObject {
             await MainActor.run { activePrefetchThumbnailTasks[yearToPrefetch] = nil }
         }
         activePrefetchThumbnailTasks[yearToPrefetch] = thumbnailTask
+    }
+
+    // MARK: - Progressive Loading Support
+    /// Returns a cached thumbnail for the asset if one exists (used for instant placeholder in detail view)
+    func cachedThumbnail(for asset: PHAsset) -> UIImage? {
+        return imageCacheService.cachedImage(for: asset.localIdentifier, isHighRes: false)
     }
 
     func getPreloadedFeaturedImage(for yearsAgo: Int) -> UIImage? {
@@ -753,6 +793,9 @@ class PhotoViewModel: ObservableObject {
         }
     }
 
+    // IMPROVEMENT 4: Use requestImage with screen-resolution target instead of requestImageDataAndOrientation.
+    // This avoids loading the full raw image data (20-50MB for 48MP photos) into memory.
+    // The raw data path (requestFullImageData) is still used for sharing/export.
     func requestFullSizeImage(for asset: PHAsset, completion: @escaping (UIImage?) -> Void) {
         let assetIdentifier = asset.localIdentifier
         let isHighRes = true
@@ -765,31 +808,42 @@ class PhotoViewModel: ObservableObject {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
-        options.resizeMode = .none
+        options.resizeMode = .exact
         options.isSynchronous = false
         options.version = .current
-        options.progressHandler = { _,_,_,_ in }
         
-        let _ = imageManager.requestImageDataAndOrientation(for: asset, options: options) { [weak self] data, _, _, info in
+        cancelActiveRequest(for: assetIdentifier)
+        
+        let requestID = imageManager.requestImage(
+            for: asset,
+            targetSize: displayImageSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { [weak self] image, info in
             guard let self = self else { return }
+            
+            if self.activeRequests[assetIdentifier] == info?[PHImageResultRequestIDKey] as? PHImageRequestID {
+                self.activeRequests.removeValue(forKey: assetIdentifier)
+            }
             
             let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
             if isCancelled { completion(nil); return }
             
             if let error = info?[PHImageErrorKey] as? Error {
-                debugLog("Error loading full-size image: \(error.localizedDescription)")
+                debugLog("Error loading display image: \(error.localizedDescription)")
                 completion(nil)
                 return
             }
             
-            guard let data = data, let image = UIImage(data: data) else {
-                completion(nil)
-                return
+            if let image = image {
+                self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
+                DispatchQueue.main.async { completion(image) }
+            } else {
+                DispatchQueue.main.async { completion(nil) }
             }
-            
-            self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: isHighRes)
-            completion(image)
         }
+        
+        activeRequests[assetIdentifier] = requestID
     }
 
     // MARK: - Limited Library Handling
@@ -843,6 +897,8 @@ class PhotoViewModel: ObservableObject {
         backgroundYearScanTask?.cancel()
         backgroundYearScanTask = nil
         preloadedFeaturedImages.removeAll()
+        imageManager.stopCachingImagesForAllAssets() // IMPROVEMENT 2: Clean up system caching
+        cachedAssetsByYear.removeAll()
         debugLog("ViewModel cleanup complete.")
     }
 

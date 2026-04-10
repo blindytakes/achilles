@@ -63,6 +63,7 @@ struct MediaDetailView: View {
     @State private var currentPlayer: AVPlayer? = nil
     @State private var currentPlayerItemURL: URL? = nil
     @State private var controlsHidden: Bool = false
+    @State private var prefetchedVideoURLs: [String: URL] = [:] // IMPROVEMENT 3: Cached video URLs for adjacent items
 
     var body: some View {
         NavigationStack { content }
@@ -93,6 +94,7 @@ struct MediaDetailView: View {
             .task(id: currentItem()?.id) {
                 updatePlayerForCurrentIndex()
                 showLocationPanel = false
+                prefetchAdjacentVideoURLs() // IMPROVEMENT 3
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -132,29 +134,48 @@ struct MediaDetailView: View {
     private func updatePlayerForCurrentIndex() {
         guard let item = currentItem() else {
             currentPlayer?.pause()
-            currentPlayer = nil
+            currentPlayer?.replaceCurrentItem(with: nil) // IMPROVEMENT 5: Clear item instead of discarding player
             currentPlayerItemURL = nil
             return
         }
 
         guard item.asset.mediaType == .video else {
             currentPlayer?.pause()
-            currentPlayer = nil
+            currentPlayer?.replaceCurrentItem(with: nil) // IMPROVEMENT 5
             currentPlayerItemURL = nil
             return
         }
 
         let videoId = item.id
         Task {
+            // IMPROVEMENT 3: Check prefetched cache first
+            if let cachedURL = prefetchedVideoURLs[item.asset.localIdentifier] {
+                guard currentItem()?.id == videoId, cachedURL != currentPlayerItemURL else { return }
+                // IMPROVEMENT 5: Reuse player, swap item
+                let playerItem = AVPlayerItem(url: cachedURL)
+                if currentPlayer == nil {
+                    currentPlayer = AVPlayer(playerItem: playerItem)
+                } else {
+                    currentPlayer?.replaceCurrentItem(with: playerItem)
+                }
+                currentPlayerItemURL = cachedURL
+                currentPlayer?.play()
+                return
+            }
+
             let url = await viewModel.requestVideoURL(for: item.asset)
             guard currentItem()?.id == videoId,
                   let validURL = url,
                   validURL != currentPlayerItemURL
             else { return }
 
-            let newPlayer = AVPlayer(url: validURL)
-            currentPlayer?.pause()
-            currentPlayer = newPlayer
+            // IMPROVEMENT 5: Reuse player, swap item
+            let playerItem = AVPlayerItem(url: validURL)
+            if currentPlayer == nil {
+                currentPlayer = AVPlayer(playerItem: playerItem)
+            } else {
+                currentPlayer?.replaceCurrentItem(with: playerItem)
+            }
             currentPlayerItemURL = validURL
             currentPlayer?.play()
         }
@@ -168,6 +189,31 @@ struct MediaDetailView: View {
     private func titleForCurrentItem() -> String {
         guard let date = currentItem()?.asset.creationDate else { return "Detail" }
         return date.longDateShortTime()
+    }
+
+    // IMPROVEMENT 3: Prefetch video URLs for items at currentIndex ± 1
+    @MainActor
+    private func prefetchAdjacentVideoURLs() {
+        let indicesToPrefetch = [currentItemIndex - 1, currentItemIndex, currentItemIndex + 1]
+            .filter { itemsForYear.indices.contains($0) }
+
+        // Evict stale URLs outside the ±1 window (temporary file paths can expire)
+        let activeAssetIds = Set(indicesToPrefetch.map { itemsForYear[$0].asset.localIdentifier })
+        prefetchedVideoURLs = prefetchedVideoURLs.filter { activeAssetIds.contains($0.key) }
+
+        for index in indicesToPrefetch {
+            let item = itemsForYear[index]
+            guard item.asset.mediaType == .video else { continue }
+            let assetId = item.asset.localIdentifier
+            guard prefetchedVideoURLs[assetId] == nil else { continue }
+
+            Task {
+                if let url = await viewModel.requestVideoURL(for: item.asset) {
+                    prefetchedVideoURLs[assetId] = url
+                    debugLog("Prefetched video URL for adjacent item \(assetId)")
+                }
+            }
+        }
     }
 
     // MARK: - Share Preparation

@@ -260,6 +260,10 @@ struct ItemDisplayView: View {
                     ?? .error("Failed to load Live Photo")
             }
         } else if item.asset.mediaType == .image {
+            // IMPROVEMENT 1: Show cached thumbnail instantly as placeholder while full-res loads
+            if let cachedThumb = viewModel.cachedThumbnail(for: item.asset) {
+                viewState = .image(displayImage: cachedThumb)
+            }
             viewModel.requestFullSizeImage(for: item.asset) { fetchedImage in
                 guard self.item.asset.localIdentifier == currentItemID else { return }
                 self.viewState = fetchedImage
