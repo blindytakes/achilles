@@ -114,9 +114,27 @@ class PhotoViewModel: ObservableObject {
          case .authorized, .limited:
              debugLog("Photo Library access status: \(status)")
              if !initialYearScanComplete && backgroundYearScanTask == nil {
+                  // Start the prefetch timer the moment we know we can load photos.
+                  // All [Ready] / [End] logs are measured relative to this so we can
+                  // see how much head start the prefetch has before the video even
+                  // appears. This fires at t≈auth-granted, not at view-appear, so it
+                  // beats the old DailyWelcomeView trigger by ~100–125ms.
+                  if prefetchStartTime == 0 {
+                      prefetchStartTime = CFAbsoluteTimeGetCurrent()
+                      print("[Start] Photo pipeline — 0ms")
+                  }
                   Task { await startYearScanningProcess() }
              }
+             // Defer the PhotoIndexService build until after the startup prefetch
+             // has had a chance to deliver the first carousel images. The index
+             // does a full-library PHAsset.fetchAssets + scoring pass on first-ever
+             // launch, which saturates the Photos daemon and starves Year 1's
+             // image request even though it's at .high priority (daemon-level
+             // serialization ignores Swift task priorities). 5s is long enough
+             // for the three startup prefetches to complete, short enough that
+             // the index is ready well before the user navigates to Collage.
              Task.detached(priority: .background) {
+                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                  await PhotoIndexService.shared.buildIndex()
                  await PhotoIndexService.shared.rebuildIfNeeded()
              }
@@ -168,7 +186,22 @@ class PhotoViewModel: ObservableObject {
         var initialYearsFound: [Int] = []
 
         do {
-            initialYearsFound = try await scanYearsInRange(range: initialRange)
+            // Publish each year to availableYearsAgo the moment it's confirmed, and
+            // trigger its prefetch immediately — we don't wait for the whole range
+            // (years 1–4) to finish before year 1's image starts loading. This shaves
+            // 15–150ms off Year 1's critical path since years 2–4 are still scanning
+            // when year 1's image request kicks off.
+            initialYearsFound = try await scanYearsInRange(range: initialRange) { [weak self] year in
+                guard let self = self else { return }
+                // We're on MainActor here: scanYearsInRange inherits this actor's
+                // isolation when called from Phase 1, so the callback runs on main.
+                if !self.availableYearsAgo.contains(year) {
+                    var updated = self.availableYearsAgo
+                    updated.append(year)
+                    self.availableYearsAgo = updated.sorted()
+                }
+                self.prefetchYearIfEligible(year)
+            }
             debugLog("Phase 1 scan complete. Found years: \(initialYearsFound.sorted())")
         } catch is CancellationError {
             debugLog("Phase 1 scan cancelled.")
@@ -179,7 +212,8 @@ class PhotoViewModel: ObservableObject {
         }
 
         await MainActor.run {
-            self.availableYearsAgo = initialYearsFound.sorted()
+            // availableYearsAgo was populated incrementally above; just flip the
+            // "scan complete" signal for any observers that still gate on it.
             self.initialYearScanComplete = true
             if let error = phase1Error {
                 debugLog("Phase 1 completed with error: \(error.localizedDescription)")
@@ -199,12 +233,28 @@ class PhotoViewModel: ObservableObject {
             guard let self = self else { return }
 
             do {
-                let foundYears = try await self.scanYearsInRange(range: remainingRange)
+                // Pass the same prefetch callback Phase 1 uses, so years discovered
+                // in Phase 2 (5+) also get the startup prefetch treatment up to the
+                // cap. Without this, Year 5 would only ever be loaded by
+                // loadFeaturedImagesForCarousel after the carousel appears.
+                let foundYears = try await self.scanYearsInRange(range: remainingRange) { year in
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        if !self.availableYearsAgo.contains(year) {
+                            var updated = self.availableYearsAgo
+                            updated.append(year)
+                            self.availableYearsAgo = updated.sorted()
+                        }
+                        self.prefetchYearIfEligible(year)
+                    }
+                }
                 try Task.checkCancellation()
                 debugLog("Phase 2 scan complete. Found additional years: \(foundYears.sorted())")
 
                 await MainActor.run {
                     guard !Task.isCancelled else { return }
+                    // availableYearsAgo was populated incrementally above, but merge
+                    // just in case any year slipped through (belt-and-suspenders).
                     let combined = Set(self.availableYearsAgo + foundYears)
                     self.availableYearsAgo = Array(combined).sorted()
                     debugLog("Combined available years: \(self.availableYearsAgo)")
@@ -219,7 +269,10 @@ class PhotoViewModel: ObservableObject {
         }
     }
 
-    private func scanYearsInRange(range: ClosedRange<Int>) async throws -> [Int] {
+    private func scanYearsInRange(
+        range: ClosedRange<Int>,
+        onYearFound: ((Int) -> Void)? = nil
+    ) async throws -> [Int] {
         var foundYears: [Int] = []
         let calendar = Calendar.current
         let today = Date()
@@ -240,6 +293,9 @@ class PhotoViewModel: ObservableObject {
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
             if fetchResult.firstObject != nil {
                  foundYears.append(yearsAgoValue)
+                 // Notify caller immediately so downstream work (publishing, prefetch)
+                 // can start on this year without waiting for the rest of the range.
+                 onYearFound?(yearsAgoValue)
             }
         }
         debugLog("Finished scanning range: \(range). Found: \(foundYears.count > 0 ? foundYears.sorted() : [])")
@@ -481,9 +537,17 @@ class PhotoViewModel: ObservableObject {
                 return
             }
                         
-            self.requestFullSizeImage(for: featured.asset) { image in
+            // Use the opportunistic path (requestCarouselImage) instead of the slow
+            // .highQualityFormat / .exact one. The callback fires twice with
+            // opportunistic delivery — we only store the final (non-degraded) image
+            // and clear the active task then. This applies to ALL years, so swiping
+            // past Years 1–3 in the carousel doesn't fall back to the old slow path.
+            self.requestCarouselImage(for: featured.asset, targetSize: self.displayImageSize) { image, isDegraded in
                 Task { @MainActor in
                     guard !Task.isCancelled else { return }
+                    // Degraded proxy: don't overwrite cached image, don't clear task —
+                    // wait for the final high-quality delivery.
+                    if isDegraded { return }
                     if let loadedImage = image {
                         debugLog("Featured image preloaded for \(yearToPrefetch)")
                         self.preloadedFeaturedImages[yearToPrefetch] = loadedImage
@@ -568,6 +632,22 @@ class PhotoViewModel: ObservableObject {
 
     func getPreloadedFeaturedImage(for yearsAgo: Int) -> UIImage? {
         return preloadedFeaturedImages[yearsAgo]
+    }
+
+    /// Public accessor for the screen-sized target used by the startup prefetch.
+    /// Exposed so `YearCarouselCard`'s fallback uses the same target size and hits
+    /// the same cache entry as the prefetch, avoiding duplicate decodes at different
+    /// sizes for the same asset.
+    var carouselDisplayImageSize: CGSize {
+        return displayImageSize
+    }
+
+    /// Allows views that loaded a featured image via the fallback path to register
+    /// the result in `preloadedFeaturedImages`, so subsequent reads (e.g. swiping
+    /// back to the same card, or the hero transition into the grid) pick up the
+    /// cached image instead of re-triggering a load.
+    func storePreloadedFeaturedImage(_ image: UIImage, for yearsAgo: Int) {
+        preloadedFeaturedImages[yearsAgo] = image
     }
 
     // MARK: - Carousel Support
@@ -844,6 +924,175 @@ class PhotoViewModel: ObservableObject {
         }
         
         activeRequests[assetIdentifier] = requestID
+    }
+
+    // MARK: - Carousel Image (First Photo First)
+
+    /// Requests an image optimized for carousel display, delivering progressively.
+    /// With opportunistic delivery PhotoKit fires the completion **twice**:
+    ///   1. First call: a low-resolution "proxy" image (~20–50ms) — `isDegraded == true`
+    ///   2. Second call: the high-quality image (~200–500ms) — `isDegraded == false`
+    /// This gives the UI something recognizable to show instantly while the sharp
+    /// version arrives. The raw-data / `UIImage(data:)` path is avoided entirely,
+    /// so there's no ~1s blocking decode of a 20–50MB HEIC.
+    /// - Parameters:
+    ///   - asset: The PHAsset to load.
+    ///   - targetSize: Desired image size in pixels (typically card size × screen scale).
+    ///   - completion: Called on the main thread, potentially twice.
+    ///                 `isDegraded` is true on the low-res proxy delivery.
+    func requestCarouselImage(
+        for asset: PHAsset,
+        targetSize: CGSize,
+        completion: @escaping (UIImage?, Bool) -> Void
+    ) {
+        let assetIdentifier = asset.localIdentifier
+
+        // Fast path: already have the high-res cached — deliver once and skip.
+        if let cachedImage = imageCacheService.cachedImage(for: assetIdentifier, isHighRes: true) {
+            completion(cachedImage, false)
+            return
+        }
+
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        // Fires twice: degraded low-res proxy (~50ms), then the final sharp image.
+        options.deliveryMode = .opportunistic
+        // .exact gives a sharp final image at exactly the requested size. We used
+        // .fast previously, but on large card-sized displays the nearest-cached-
+        // thumbnail resizing looked noticeably soft, especially for years further
+        // back. The degraded callback still fires fast; only the final is .exact,
+        // so perceived latency is unchanged while final quality is much better.
+        options.resizeMode = .exact
+        options.isSynchronous = false
+        options.version = .current
+
+        cancelActiveRequest(for: assetIdentifier)
+
+        let requestID = imageManager.requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        ) { [weak self] image, info in
+            guard let self = self else { return }
+
+            let isCancelled = info?[PHImageCancelledKey] as? Bool ?? false
+            if isCancelled { return }
+
+            if let error = info?[PHImageErrorKey] as? Error {
+                debugLog("Carousel image load error for \(assetIdentifier): \(error.localizedDescription)")
+                DispatchQueue.main.async { completion(nil, false) }
+                return
+            }
+
+            let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+
+            // Only clear the active request and cache on the final (non-degraded) delivery.
+            // The degraded callback is a transient proxy — not worth caching.
+            if !isDegraded {
+                if self.activeRequests[assetIdentifier] == info?[PHImageResultRequestIDKey] as? PHImageRequestID {
+                    self.activeRequests.removeValue(forKey: assetIdentifier)
+                }
+                if let image = image {
+                    self.imageCacheService.cacheImage(image, for: assetIdentifier, isHighRes: true)
+                }
+            }
+
+            DispatchQueue.main.async { completion(image, isDegraded) }
+        }
+
+        activeRequests[assetIdentifier] = requestID
+    }
+
+    // MARK: - Startup Prefetch
+
+    /// Tracks which years have already had their startup prefetch kicked off.
+    /// Caps at 5 so we cover the typical first-swipe range without excessive
+    /// memory use or daemon contention during the video. Years 6+ get loaded
+    /// by `loadFeaturedImagesForCarousel` when the carousel appears.
+    private var startupPrefetchYears: Set<Int> = []
+    private let startupPrefetchCap = 5
+
+    /// Timestamp captured when the photo pipeline starts (set in handleAuthorization).
+    /// Used to print elapsed milliseconds on [Ready] / [End] logs so we can see
+    /// exactly how long after pipeline-start each featured photo became available.
+    private(set) var prefetchStartTime: CFAbsoluteTime = 0
+
+    /// Returns elapsed time in milliseconds since the photo pipeline started.
+    /// Returns 0 if the pipeline hasn't started yet.
+    func prefetchElapsedMs() -> Int {
+        guard prefetchStartTime > 0 else { return 0 }
+        return Int((CFAbsoluteTimeGetCurrent() - prefetchStartTime) * 1000)
+    }
+
+    /// Called from the Phase 1 scan callback as each year is confirmed. Kicks
+    /// off the featured-image prefetch (and, for the first year, the grid
+    /// thumbnail prefetch) if we haven't already started 3 prefetches.
+    ///
+    /// Called on MainActor. Safe to call multiple times for the same year —
+    /// the set guards against duplicates and downstream calls (loadPage,
+    /// requestCarouselImage) are individually idempotent.
+    private func prefetchYearIfEligible(_ year: Int) {
+        guard startupPrefetchYears.count < startupPrefetchCap else { return }
+        guard !startupPrefetchYears.contains(year) else { return }
+        startupPrefetchYears.insert(year)
+
+        // First year found gets .high — it's the first card the user sees.
+        // Subsequent years at .utility so they stay out of the video decoder's way.
+        let isFirst = (startupPrefetchYears.count == 1)
+        let priority: TaskPriority = isFirst ? .high : .utility
+
+        Task(priority: priority) { [weak self] in
+            await self?.prefetchCarouselFeatured(for: year)
+        }
+
+        // First year also gets its grid thumbnails prefetched so they're ready
+        // the moment the user taps the card and the grid appears.
+        if isFirst, activePrefetchThumbnailTasks[year] == nil {
+            startThumbnailPrefetchTask(for: year)
+        }
+    }
+
+    /// Loads the featured item for a year (if not already loaded) and requests its
+    /// carousel image via the opportunistic path. Stores the final high-quality image
+    /// in `preloadedFeaturedImages` so the carousel card picks it up instantly on first
+    /// render.
+    ///
+    /// Note: `preloadedFeaturedImages` isn't @Published. That's intentional here —
+    /// the write typically happens before the carousel view exists, so the first
+    /// render reads the already-populated value. If the prefetch ever completes
+    /// *after* the carousel first renders, the fast fallback path in
+    /// `YearCarouselCard` will cover it.
+    private func prefetchCarouselFeatured(for yearsAgo: Int) async {
+        // Fast path: already preloaded.
+        if preloadedFeaturedImages[yearsAgo] != nil {
+            print("[Ready] Featured Photo for \(yearsAgo) (cache hit) — \(prefetchElapsedMs())ms")
+            return
+        }
+
+        // Trigger the page load if it isn't already in flight. loadPage is idempotent.
+        loadPage(yearsAgo: yearsAgo)
+
+        // Wait for the page load to finish so we know the featured item.
+        if let loadTask = activeLoadTasks[yearsAgo] {
+            await loadTask.value
+        }
+
+        guard let featured = getFeaturedItem(for: yearsAgo) else {
+            debugLog("prefetchYearIfEligible: no featured item for year \(yearsAgo)")
+            return
+        }
+
+        // Use screen-sized target so the image is good for both carousel display and
+        // any later full-screen viewing (consistent with the existing prefetch path).
+        requestCarouselImage(
+            for: featured.asset,
+            targetSize: displayImageSize
+        ) { [weak self] image, isDegraded in
+            guard let self = self, let image = image, !isDegraded else { return }
+            self.preloadedFeaturedImages[yearsAgo] = image
+            print("[Ready] Featured Photo for \(yearsAgo) — \(self.prefetchElapsedMs())ms")
+        }
     }
 
     // MARK: - Limited Library Handling

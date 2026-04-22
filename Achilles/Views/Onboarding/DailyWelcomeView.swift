@@ -73,6 +73,7 @@ struct DailyWelcomeView: View {
 
     /// Finalize intro: record timestamp and navigate to main app
     private func finishVideo() {
+        print("[End] Intro Video — \(photoViewModel.prefetchElapsedMs())ms")
         lastIntroVideoPlayDateStorage = Date().timeIntervalSince1970
         authVM.navigateToMainApp()
     }
@@ -125,6 +126,12 @@ struct DailyWelcomeView: View {
             }
         }
         .onAppear {
+            // The photo pipeline already started the moment auth was granted
+            // (see PhotoViewModel.handleAuthorization). prefetchElapsedMs() shows
+            // how much head start the prefetch got before this view appeared —
+            // expect ~100–150ms on a cold launch.
+            print("[Start] Intro Video — \(photoViewModel.prefetchElapsedMs())ms")
+
             if player == nil {
                 setupPlayer()
             }

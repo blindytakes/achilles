@@ -338,22 +338,45 @@ struct YearCarouselCard: View {
             }
         }
         .task {
-            // Give the preload system a moment, then self-load if needed
-            try? await Task.sleep(nanoseconds: 800_000_000)
+            // Give the preload pipeline a brief window to deliver, then self-load
+            // if it hasn't. With the opportunistic carousel path a prefetch hit
+            // typically lands in ~50–300ms, so 250ms is a comfortable upper bound
+            // before we fall back — and if the fallback does fire, it uses the
+            // same opportunistic path so it snaps in quickly too.
+            try? await Task.sleep(nanoseconds: 250_000_000)
             if displayImage == nil {
                 loadFeaturedImageFallback()
             }
         }
     }
 
-    /// Fallback: directly request the featured image when the preload pipeline hasn't delivered it yet
+    /// Fallback: request the featured image via PHImageManager with opportunistic delivery.
+    /// PhotoKit fires the completion twice — first with a low-res "proxy" (~20–50ms),
+    /// then with the sharp image. This produces a visible snap from blurry to sharp
+    /// instead of staring at a shimmer for 1s+ while a 20–50MB HEIC decodes.
     private func loadFeaturedImageFallback() {
         guard let featured = viewModel.getFeaturedItem(for: yearsAgo) else { return }
-        Task {
-            if let data = await viewModel.requestFullImageData(for: featured.asset),
-               let uiImage = UIImage(data: data) {
-                withAnimation(.easeIn(duration: 0.3)) {
-                    cardImage = uiImage
+
+        // Use the same display-size target as the startup prefetch so both paths hit
+        // the same cache entry. If we used a smaller card-sized target here, PhotoKit
+        // would decode a second (lower-quality) image for the same asset, and years
+        // that fell through to the fallback (e.g. years 4+ not in the startup set)
+        // would end up looking softer than years that were prefetched.
+        let targetSize = viewModel.carouselDisplayImageSize
+
+        viewModel.requestCarouselImage(for: featured.asset, targetSize: targetSize) { image, isDegraded in
+            guard let image = image else { return }
+            if isDegraded {
+                // Low-res proxy: show instantly, no animation (this is the "first photo").
+                cardImage = image
+            } else {
+                // High-res final: brief crossfade so the snap from blurry → sharp is smooth.
+                // Also hoist into preloadedFeaturedImages so swiping back to this card
+                // (or the detail view hero transition) picks up the sharp cached image
+                // instead of re-triggering the fallback.
+                viewModel.storePreloadedFeaturedImage(image, for: yearsAgo)
+                withAnimation(.easeIn(duration: 0.2)) {
+                    cardImage = image
                 }
             }
         }
