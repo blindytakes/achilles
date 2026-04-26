@@ -370,17 +370,33 @@ struct TutorialEnabledLoadedYearContentView: View {
 
                                 if !heroTransitionDone,
                                    let heroImg = viewModel.getPreloadedFeaturedImage(for: yearsAgo) {
-                                    Image(uiImage: heroImg)
-                                        .resizable()
-                                        .aspectRatio(1, contentMode: .fill)
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                                        .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
-                                        .matchedGeometryEffect(
-                                            id: "hero-featured-\(yearsAgo)",
-                                            in: ns,
-                                            isSource: !showCarousel
-                                        )
-                                        .allowsHitTesting(false)
+                                    // Wrap in GeometryReader so the image can be sized
+                                    // explicitly with .scaledToFill() + .frame + .clipped(),
+                                    // matching GridItemView's pattern. The previous
+                                    // .aspectRatio(1, contentMode: .fill) on a .resizable()
+                                    // image stretched the photo content to a 1:1 view
+                                    // regardless of the source asset's natural aspect ratio,
+                                    // which manifested as a visibly squashed featured cell
+                                    // on the year the user originally tapped from the
+                                    // carousel (esp. on revisits, where heroTransitionDone
+                                    // resets but the dismiss-event never re-fires to flip
+                                    // it true again, leaving the overlay stuck on screen).
+                                    GeometryReader { geo in
+                                        Image(uiImage: heroImg)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                            .clipped()
+                                    }
+                                    .aspectRatio(1, contentMode: .fill)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                                    .matchedGeometryEffect(
+                                        id: "hero-featured-\(yearsAgo)",
+                                        in: ns,
+                                        isSource: !showCarousel
+                                    )
+                                    .allowsHitTesting(false)
                                 }
                             }
                         } else {
