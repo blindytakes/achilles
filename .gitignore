@@ -4,6 +4,7 @@
 
 # Secrets
 Secrets.xcconfig
+Achilles/GoogleMaps3DConfig.plist
 
 # Xcode
 *.xcuserstate

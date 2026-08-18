@@ -24,6 +24,23 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+        backgroundTask = application.beginBackgroundTask(withName: "FlushPhotoIndex") {
+            if backgroundTask != .invalid {
+                application.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
+        }
+        Task {
+            await PhotoIndexService.shared.flushPendingWrites()
+            if backgroundTask != .invalid {
+                application.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
+        }
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -125,6 +142,10 @@ struct ThrowbaksApp: App {
                 .onReceive(
                     NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
                 ) { _ in
+                    let updatedStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                    photoStatus = updatedStatus
+                    photoViewModel.checkAuthorization()
+                    PhotoIndexService.shared.photoLibraryAuthorizationDidChange()
                     updateLastOpened()
                     TelemetryService.shared.log("app_foreground")
                     AnalyticsService.shared.logAppOpen(source: "foreground_return")

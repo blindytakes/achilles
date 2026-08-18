@@ -136,7 +136,6 @@ class PhotoViewModel: ObservableObject {
              Task.detached(priority: .background) {
                  try? await Task.sleep(nanoseconds: 5_000_000_000)
                  await PhotoIndexService.shared.buildIndex()
-                 await PhotoIndexService.shared.rebuildIfNeeded()
              }
          case .restricted, .denied:
              debugLog("Photo Library access restricted or denied.")
@@ -1096,7 +1095,24 @@ class PhotoViewModel: ObservableObject {
     }
 
     // MARK: - Limited Library Handling
-    func presentLimitedLibraryPicker() { debugLog("Placeholder: Would present limited library picker here.") }
+    func presentLimitedLibraryPicker() {
+        guard authorizationStatus == .limited else { return }
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+              let rootViewController = scene.windows
+            .first(where: \.isKeyWindow)?
+            .rootViewController else {
+            debugLog("Unable to present the limited library picker: no active window.")
+            return
+        }
+
+        var presenter = rootViewController
+        while let presented = presenter.presentedViewController {
+            presenter = presented
+        }
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: presenter)
+    }
 
     // MARK: - Address Lookup
     private let geocoder = CLGeocoder()

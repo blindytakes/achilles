@@ -15,6 +15,7 @@
 		2A8232872DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2A8232852DA0BCF000D759FB /* PlayfairDisplay-VariableFont_wght.ttf */; };
 		2AF628462DE93DDC00BF0908 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2AF628452DE93DDC00BF0908 /* GoogleSignIn */; };
 		2AF628482DE93DDC00BF0908 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 2AF628472DE93DDC00BF0908 /* GoogleSignInSwift */; };
+		2B3D00032E00000100000003 /* GoogleMaps3D in Frameworks */ = {isa = PBXBuildFile; productRef = 2B3D00022E00000100000002 /* GoogleMaps3D */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +104,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2B3D00032E00000100000003 /* GoogleMaps3D in Frameworks */,
 				2A2F7E172DCA5B220035B532 /* FirebaseMessaging in Frameworks */,
 				2A2F7E072DCA4C700035B532 /* FirebaseAuth in Frameworks */,
 				2A4144302DEBDEDC002BF2CF /* FirebaseAnalytics in Frameworks */,
@@ -180,6 +182,7 @@
 			);
 			name = Achilles;
 			packageProductDependencies = (
+				2B3D00022E00000100000002 /* GoogleMaps3D */,
 				2A2F7E062DCA4C700035B532 /* FirebaseAuth */,
 				2A2F7E082DCA4CBE0035B532 /* FirebaseFirestore */,
 				2A2F7E162DCA5B220035B532 /* FirebaseMessaging */,
@@ -264,6 +267,7 @@
 			mainGroup = 2A8092E42D98827F00EED088;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				2B3D00012E00000100000001 /* XCRemoteSwiftPackageReference "ios-maps-3d-sdk" */,
 				2A2F7E052DCA4C700035B532 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				2AF628442DE93DDC00BF0908 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -469,7 +473,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Achilles/Achilles.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 28;
+				CURRENT_PROJECT_VERSION = 32;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_ASSET_PATHS = "\"Achilles/Preview Content\"";
 				DEVELOPMENT_TEAM = 6QNXZ3RS35;
@@ -489,7 +493,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 5.6;
+				MARKETING_VERSION = 6.2;
 				PRODUCT_BUNDLE_IDENTIFIER = plzwork.Achilles;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -505,7 +509,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Achilles/Achilles.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 28;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_ASSET_PATHS = "\"Achilles/Preview Content\"";
 				DEVELOPMENT_TEAM = 6QNXZ3RS35;
 				ENABLE_PREVIEWS = YES;
@@ -524,7 +528,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 5.6;
+				MARKETING_VERSION = 6.2;
 				PRODUCT_BUNDLE_IDENTIFIER = plzwork.Achilles;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -663,6 +667,14 @@
 				minimumVersion = 8.0.0;
 			};
 		};
+		2B3D00012E00000100000001 /* XCRemoteSwiftPackageReference "ios-maps-3d-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-maps-3d-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 0.2.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -695,6 +707,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2AF628442DE93DDC00BF0908 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		2B3D00022E00000100000002 /* GoogleMaps3D */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2B3D00012E00000100000001 /* XCRemoteSwiftPackageReference "ios-maps-3d-sdk" */;
+			productName = GoogleMaps3D;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -148,6 +148,7 @@ struct TutorialEnabledPagedYearsView: View {
     
     private struct Constants {
         static let transitionDuration: Double = 0.3
+        static let placesPageTag:     Int = -2
         static let collagePageTag:    Int = -1
         static let settingsPageTag:   Int = -999
     }
@@ -162,6 +163,22 @@ struct TutorialEnabledPagedYearsView: View {
                 )
                 .tag(Optional(yearsAgo))
             }
+
+            PlacesView(
+                photoViewModel: viewModel,
+                onNavigateToMemories: {
+                    guard let destination = viewModel.availableYearsAgo.last else { return }
+                    withAnimation(.easeInOut(duration: Constants.transitionDuration)) {
+                        selectedYearsAgo = destination
+                    }
+                },
+                onNavigateToCreate: {
+                    withAnimation(.easeInOut(duration: Constants.transitionDuration)) {
+                        selectedYearsAgo = Constants.collagePageTag
+                    }
+                }
+            )
+                .tag(Optional(Constants.placesPageTag))
             
             CollageView()
                 .tag(Optional(Constants.collagePageTag))
@@ -179,6 +196,7 @@ struct TutorialEnabledPagedYearsView: View {
         .onChange(of: selectedYearsAgo) { _, newValue in
             if let currentYearsAgo = newValue,
                currentYearsAgo != Constants.settingsPageTag,
+               currentYearsAgo != Constants.placesPageTag,
                currentYearsAgo != Constants.collagePageTag {
                 debugLog("Current page: \(currentYearsAgo) years ago. Triggering prefetch.")
                 viewModel.triggerPrefetch(around: currentYearsAgo)

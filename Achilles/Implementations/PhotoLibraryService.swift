@@ -36,10 +36,13 @@ class PhotoLibraryService: PhotoLibraryServiceProtocol {
         }
 
         let options = PHFetchOptions()
-        options.predicate = NSPredicate(
-            format: "creationDate >= %@ AND creationDate < %@",
-            argumentArray: [start, end]
-        )
+        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate(
+                format: "creationDate >= %@ AND creationDate < %@",
+                argumentArray: [start, end]
+            ),
+            NSPredicate(format: "isHidden == NO")
+        ])
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: true)
         ]
@@ -47,6 +50,7 @@ class PhotoLibraryService: PhotoLibraryServiceProtocol {
         let result = PHAsset.fetchAssets(with: options)
         var items = [MediaItem]()
         result.enumerateObjects { asset, _, _ in
+            guard !asset.isHidden else { return }
             items.append(MediaItem(asset: asset))
         }
         completion(.success(items))
@@ -84,4 +88,3 @@ class PhotoLibraryService: PhotoLibraryServiceProtocol {
         return requestID
     }
 }
-
